@@ -1,2 +1,12 @@
 # halfin
-A runner for Bitcoin-related binaries used for unit testing between applications (i.e. `bitcoind`, `electrs`, `utreexod`, `florestad`)
+
+A Bitcoin-related binary runner used for integration tests.
+
+## TODO
+
+Support these binaries:
+
+- [ ] `bitcoind` via `corepc-node`
+- [ ] `electrs` 
+- [ ] `utreexod`
+- [ ] `florestad`
