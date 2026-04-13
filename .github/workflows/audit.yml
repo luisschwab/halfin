@@ -1,0 +1,30 @@
+name: Security Audit
+
+on: [push, pull_request]
+env:
+    CARGO_TERM_COLOR: always
+permissions: {}
+
+jobs:
+    audit:
+        name: cargo-audit
+        runs-on: ubuntu-latest
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  persist-credentials: false
+
+            - name: Install cargo-audit
+              run: cargo install cargo-audit@0.22.1 --locked
+
+            - name: Check for audit warnings
+              run: cargo audit -D warnings
+              continue-on-error: true
+
+            - name: Check for vulnerabilities
+              run: cargo audit

@@ -1,12 +1,26 @@
 [package]
 name = "halfin"
 version = "0.0.0"
-edition = "2024"
-authors = ["Luis Schwab <luisschwab@protonmail.com"]
+authors = ["Luis Schwab <dev@luisschwab.net"]
 repository = "https://github.com/luisschwab/halfin"
 description = "A Bitcoin-related binary runner used for integration tests"
-keywords = ["bitcoin", "tests", "binary", "runner"]
-license = "MIT"
+keywords = ["bitcoin", "runner", "testing"]
+license = "MIT OR Apache-2.0"
 readme = "README.md"
+edition = "2024"
+rust-version = "1.85.0" # MSRV
 
 [dependencies]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.rbmt.toolchains]
+stable = "1.85.0"
+nightly = "nightly-2026-03-18"
+
+# Allow packages of different versions in the dependency tree.
+[package.metadata.rbmt.lint]
+allowed_duplicates = [
+]
