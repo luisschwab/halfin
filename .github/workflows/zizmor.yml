@@ -1,0 +1,27 @@
+name: Zizmor
+on:
+    push:
+    pull_request:
+    schedule:
+        - cron: "0 12 * * 1" # Monday, 12:00:00 UTC
+    workflow_dispatch:
+
+permissions: {}
+
+jobs:
+    zizmor:
+        name: Action Static Analysis
+        runs-on: ubuntu-latest
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  persist-credentials: false
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
+
+            - name: Run zizmor
+              run: uvx zizmor .
