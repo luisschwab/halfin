@@ -1,3 +1,4 @@
+alias b := build
 alias c := check
 alias cs := check-sigs
 alias d := doc
@@ -12,11 +13,15 @@ _default:
     @echo "> A regtest runner for \`bitcoind\` and \`utreexod\`"
     @just --list
 
+[doc: "Build `halfin`"]
+build:
+    cargo build
+
 [doc: "Check code formatting, compilation, and linting"]
 check:
-    RBMT_LOG_LEVEL=quiet cargo rbmt fmt --check
-    RBMT_LOG_LEVEL=quiet cargo rbmt lint
-    RBMT_LOG_LEVEL=quiet cargo rbmt docs
+    cargo rbmt fmt --check
+    cargo rbmt lint
+    cargo rbmt docs
 
 [doc: "Checks whether all commits in this branch are signed"]
 check-sigs:
@@ -32,26 +37,26 @@ check-sigs:
 
 [doc: "Generate documentation"]
 doc:
-    RBMT_LOG_LEVEL=quiet cargo rbmt docs
-    RBMT_LOG_LEVEL=quiet cargo doc --no-deps
+    cargo rbmt docs
+    cargo doc --no-deps
 
 [doc: "Generate and open documentation"]
 doc-open:
-    RBMT_LOG_LEVEL=quiet cargo rbmt docs
-    RBMT_LOG_LEVEL=quiet cargo doc --no-deps --open
+    cargo rbmt docs
+    cargo doc --no-deps --open
 
 [doc: "Format code"]
 fmt:
-    RBMT_LOG_LEVEL=quiet cargo rbmt fmt
+    cargo rbmt fmt
 
 [doc: "Regenerate Cargo-recent.lock and Cargo-minimal.lock"]
 lock:
-    RBMT_LOG_LEVEL=quiet cargo rbmt lock
+    cargo rbmt lock
 
 [doc: "Run tests across all toolchains and lockfiles"]
 test:
-    RBMT_LOG_LEVEL=quiet cargo rbmt test --toolchain stable --lock-file recent
-    RBMT_LOG_LEVEL=quiet cargo rbmt test --toolchain stable --lock-file minimal
+    cargo rbmt test --toolchain stable --lock-file recent
+    cargo rbmt test --toolchain stable --lock-file minimal
 
 [doc: "Run pre-push suite: lock, fmt, check, and test"]
 pre-push: lock fmt check check-sigs test
