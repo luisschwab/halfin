@@ -71,7 +71,7 @@ const BITCOIND_WALLET: &str = "wallet";
 /// # Directory precedence
 ///
 /// Exactly one of `tmpdir` / `staticdir` may be set at a time; setting both
-/// returns [`HalfinError::BothDirsSpecified`].
+/// returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
@@ -452,7 +452,7 @@ impl BitcoinD {
 pub fn get_bitcoind_path() -> anyhow::Result<PathBuf> {
     use versions::BITCOIND_VERSION;
 
-    let mut path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("bin");
 

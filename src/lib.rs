@@ -149,8 +149,7 @@ impl fmt::Display for Error {
 }
 
 impl error::Error for Error {
-    /// Returns the wrapped lower-level error for [`HalfinError::Io`] and
-    /// [`HalfinError::Rpc`]; `None` for all other variants.
+    /// Returns the wrapped lower-level error for [`Error::Io`] and [`Error::Rpc`], and `None` for all other variants.
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         use Error::*;
         match self {

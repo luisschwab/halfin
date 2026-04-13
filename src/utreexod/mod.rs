@@ -54,7 +54,7 @@ const RPC_PASS: &str = "halfin";
 /// # Directory precedence
 ///
 /// Exactly one of `tmpdir` / `staticdir` may be set at a time; setting both
-/// returns [`HalfinError::BothDirsSpecified`].
+/// returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
@@ -404,15 +404,12 @@ impl UtreexoD {
 /// Resolution order:
 /// 1. `UTREEXOD_DOWNLOAD_DIR` env var (joined with `utreexod-<VERSION>/utreexod`).
 /// 2. `<CARGO_MANIFEST_DIR>/target/bin/utreexod-<VERSION>/utreexod`.
-///
-/// Returns [`HalfinError::SkipDownload`] if `BITCOIND_SKIP_DOWNLOAD` is set,
-/// or an error if the resolved path does not exist.
 pub fn get_utreexod_path() -> anyhow::Result<PathBuf> {
     use versions::UTREEXOD_VERSION;
 
-    let mut path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("target")
-            .join("bin");
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("bin");
 
     path.push(format!("utreexod-{}", UTREEXOD_VERSION));
     path.push("utreexod");
