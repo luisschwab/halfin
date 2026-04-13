@@ -10,7 +10,7 @@ alias p := pre-push
 
 _default:
     @echo "> halfin"
-    @echo "> A regtest runner for \`bitcoind\` and \`utreexod\`"
+    @echo "> A regtest runner for \`bitcoind\` and \`utreexod\`\n"
     @just --list
 
 [doc: "Build `halfin`"]
