@@ -1,17 +1,17 @@
 # halfin
 
-> A bitcoin node runner 🏃‍♂️
+> A (regtest) bitcoin node runner 🏃‍♂️
 
 This crate makes it simple to run regtest `bitcoind` and `utreexod` instances from Rust code
 in integration test contexts. Pretty much [`corepc_node`](https://crates.io/crates/corepc-node) 
 with `utreexod` support.
 
-## Supported Implementations
+## Supported Implementations and Versions
 
-| Feature           | Implementation | Version |
-|-------------------|----------------|---------|
-| `bitcoind_30_2`   | `bitcoind`     | v30.2   |
-| `utreexod_0_5_0`  | `utreexod`     | v0.5.0  |
+| Feature           | Implementation | Version(s) |
+|-------------------|----------------|------------|
+| `bitcoind_30_2`   | `bitcoind`     | v30.2      |
+| `utreexod_0_5_0`  | `utreexod`     | v0.5.0     |
 
 Both features are enabled by default. Binaries are downloaded automatically at build time, see [`build.rs`](./build.rs).
 
@@ -20,6 +20,7 @@ Both features are enabled by default. Binaries are downloaded automatically at b
 ```rs
 use halfin::bitcoind::BitcoinD;
 
+// Use downloaded/cached binaries
 let bitcoind_alpha = BitcoinD::download_new().unwrap();
 let bitcoind_beta = BitcoinD::download_new().unwrap();
 
@@ -35,18 +36,23 @@ assert_eq!(bitcoind_beta.get_height().unwrap(), 10);
 ```rust
 use halfin::utreexod::UtreexoD;
 
-let node = UtreexoD::download_new().unwrap();
+// Use a local binary by specifying its path
+let bin_path = PathBuf::from_str("/usr/local/bin/utreexod").unwrap();
+let utreexod = UtreexoD::from_bin(utreexod_bin: &bin_path).unwrap();
 
-node.generate(10).unwrap();
-assert_eq!(node.get_height().unwrap(), 10);
+utreexod.generate(10).unwrap();
+assert_eq!(utreexod.get_height().unwrap(), 10);
 ```
 
 ## Developing
 
-This project uses [`cargo-rbmt`](https://github.com/rust-bitcoin/rust-bitcoin-maintainer-tools/tree/master/cargo-rbmt)
+This project uses [`just`](https://github.com/casey/just) for command running, and
+[`cargo-rbmt`](https://github.com/rust-bitcoin/rust-bitcoin-maintainer-tools/tree/master/cargo-rbmt)
 to manage everything related to `cargo`, such as formatting, linting, testing and CI. To install them, run:
 
 ```console
+~$ cargo install just
+
 ~$ cargo install cargo-rbmt
 ```
 
@@ -58,15 +64,16 @@ A `justfile` is provided for convenience. Run `just` to see available commands:
 > A regtest runner for `bitcoind` and `utreexod`
 
 Available recipes:
-    build      # Build `halfin` [alias: b]
-    check      # Check code formatting, compilation, and linting [alias: c]
-    check-sigs # Checks whether all commits in this branch are signed [alias: cs]
-    doc        # Generate documentation [alias: d]
-    doc-open   # Generate and open documentation [alias: do]
-    fmt        # Format code [alias: f]
-    lock       # Regenerate Cargo-recent.lock and Cargo-minimal.lock [alias: l]
-    pre-push   # Run pre-push suite: lock, fmt, check, and test [alias: p]
-    test       # Run tests across all toolchains and lockfiles [alias: t]
+    build       # Build `halfin` [alias: b]
+    check       # Check code formatting, compilation, and linting [alias: c]
+    check-sigs  # Checks whether all commits in this branch are signed [alias: cs]
+    delete-bins # Delete binaries under `target/bin/` [alias: db]
+    doc         # Generate documentation [alias: d]
+    doc-open    # Generate and open documentation [alias: do]
+    fmt         # Format code [alias: f]
+    lock        # Regenerate Cargo-recent.lock and Cargo-minimal.lock [alias: l]
+    pre-push    # Run pre-push suite: lock, fmt, check, and test [alias: p]
+    test        # Run tests across all toolchains and lockfiles [alias: t]
 ```
 
 
