@@ -27,17 +27,15 @@
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
 
-use core::error;
 use core::fmt;
 use core::net::Ipv4Addr;
-use corepc_client::client_sync;
-use std::io;
+use core::net::SocketAddr;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::ExitStatus;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 use tempfile::TempDir;
+
+pub use bitcoind::BitcoinD;
+pub use utreexod::UtreexoD;
 
 pub mod bitcoind;
 pub mod utreexod;
@@ -45,25 +43,16 @@ pub mod utreexod;
 /// IPv4 Localhost address.
 const LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
+/// The maximum number of attempts at instantiating a [`BitcoinD`] or [`UtreexoD`].
+pub const MAX_RETRIES_NODE_BUILDING: u8 = 5;
+
+/// Ask the OS for an available port, immediately unbind and return it.
 pub fn get_available_port() -> u16 {
-    let mut prng = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    TcpListener::bind((LOCALHOST, 0))
         .unwrap()
-        .subsec_nanos();
-
-    loop {
-        // XOR-shift to get next pseudo-random number.
-        prng ^= prng << 13;
-        prng ^= prng >> 17;
-        prng ^= prng << 5;
-
-        // Pick a outside of the system/ well known range.
-        let port = (prng % (65535 - 1024) + 1024) as u16;
-
-        if TcpListener::bind((LOCALHOST, port)).is_ok() {
-            return port;
-        }
-    }
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// Owns a node's working directory, either as a temporary or a persistent path.
@@ -90,84 +79,57 @@ impl DataDir {
     }
 }
 
-/// Halfin errors.
 #[derive(Debug)]
 pub enum Error {
-    /// A standard I/O error (e.g. failed to spawn a process or create a file).
-    Io(io::Error),
-    /// An error returned by the JSON-RPC client.
-    Rpc(client_sync::Error),
-    /// A method was called that requires a Cargo feature which is not enabled.
-    NoFeature,
-    /// A required environment variable is not set.
-    NoEnvVar,
-    /// The `bitcoind` binary could not be located.
-    BitcoinDNotFound,
-    /// The `utreexod` binary could not be located.
-    UtreexoDNotFound,
-    /// The node process exited before it was expected to.
-    EarlyExit(ExitStatus),
-    /// Both `tmpdir` and `staticdir` were specified in the configuration,
-    /// which is not allowed — exactly one must be set.
+    /// The binary was not found at the expected location.
+    BinaryNotFound(PathBuf),
+    /// Failed to spawn a [process](std::process::Child) for [`BitcoinD`] or [`UtreexoD`].
+    FailedToSpawn(std::io::Error),
+    /// Timed out whilst creating or loading [`BitcoinD`]'s or [`UtreexoD`]'s wallet.
+    WalletTimeout,
+    /// Failed to instantiate [`BitcoinD`] or [`UtreexoD`] after [`MAX_RETRIES_NODE_BUILDING`] attempts.
+    ExhaustedNodeBuildingRetries,
+    /// Failed to stop [`BitcoinD`] or [`UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
+    FailedToStop(corepc_client::client_sync::Error),
+    /// I/O errors.
+    Io(std::io::Error),
+    /// JSON-RPC Errors.
+    JsonRpc(corepc_client::client_sync::Error),
+    /// Timed out whilst waiting for peer connection to succeed.
+    PeerConnectionTimeout((SocketAddr, SocketAddr)),
+    /// Both `tmpdir` and `workdir` were specified.
     BothDirsSpecified,
-    /// The deprecated `-rpcuser`/`-rpcpassword` flags were used.
-    ///
-    /// Use `-rpcauth` instead.
-    RpcUserAndPasswordUsed,
-    /// `bitcoind` started but is not reachable via RPC.
-    BitcoinDNotRunning(String),
-    /// `utreexod` started but is not reachable via RPC.
-    UtreexoDNotRunning(String),
+    /// [`BitcoinD`] is unresponsive (it's probably not running).
+    UnresponsiveBitcoinD(corepc_client::client_sync::Error),
+    /// [`UtreexoD`] is unresponsive (it's probably not running).
+    UnresponsiveUtreexoD(corepc_client::client_sync::Error),
+    /// Timed out whilst waiting for the cookie file to be generated.
+    CookieFileTimeout(PathBuf),
+    /// Timed out whilst waiting for the JSON-RPC client to be ready.
+    RpcClientSetupTimeout,
+    /// Received an unexpected response from the JSON-RPC server
+    UnexpectedResponse,
 }
 
+#[rustfmt::skip]
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Error::*;
         match self {
-            Io(e) => write!(f, "io error: {}", e),
-            Rpc(e) => write!(f, "rpc error: {}", e),
-            NoFeature => write!(f, "called a method requiring a feature that is not enabled"),
-            NoEnvVar => write!(f, "required environment variable is not set"),
-            BitcoinDNotFound => write!(
-                f,
-                "`bitcoind` not found: set `BITCOIND_EXE` or enable the `download` feature"
-            ),
-            UtreexoDNotFound => write!(
-                f,
-                "`utreexod` not found: set `UTREEXOD_EXE` or enable the `download` feature"
-            ),
-            EarlyExit(status) => write!(f, "process terminated early with exit code {}", status),
-            BothDirsSpecified => write!(f, "`tmpdir` and `staticdir` cannot both be specified"),
-            RpcUserAndPasswordUsed => write!(
-                f,
-                "`-rpcuser`/`-rpcpassword` are deprecated, use `-rpcauth` instead"
-            ),
-            BitcoinDNotRunning(msg) => write!(f, "bitcoind is not reachable: {}", msg),
-            UtreexoDNotRunning(msg) => write!(f, "utreexod is not reachable: {}", msg),
+            BinaryNotFound(path) => write!(f, "The `utreexod` binary was not found at the expected location: {}", path.display()),
+            FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
+            WalletTimeout => write!(f, "Timed out whilst creating or loading a wallet"),
+            ExhaustedNodeBuildingRetries => write!(f, "Failed to instantiate the node after {} attempts", MAX_RETRIES_NODE_BUILDING),
+            FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
+            Io(err) => write!(f, "I/O Error: {err:?}"),
+            JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
+            PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
+            BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
+            UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
+            UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
+            CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
+            RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
+            UnexpectedResponse => write!(f, "Received an unexpected response from the JSON-RPC server"),
         }
-    }
-}
-
-impl error::Error for Error {
-    /// Returns the wrapped lower-level error for [`Error::Io`] and [`Error::Rpc`], and `None` for all other variants.
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        use Error::*;
-        match self {
-            Io(e) => Some(e),
-            Rpc(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::Io(e)
-    }
-}
-
-impl From<client_sync::Error> for Error {
-    fn from(e: client_sync::Error) -> Self {
-        Error::Rpc(e)
     }
 }

@@ -20,6 +20,7 @@ mod versions;
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
 use std::env;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
@@ -30,14 +31,15 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-use anyhow::Context;
 use corepc_client::client_sync::Auth;
+use corepc_client::client_sync::v17::AddNodeCommand;
 use corepc_client::client_sync::v17::Client;
 use tempfile::TempDir;
 
 use crate::DataDir;
 use crate::Error;
 use crate::LOCALHOST;
+use crate::MAX_RETRIES_NODE_BUILDING;
 use crate::get_available_port;
 
 /// Username used for RPC authentication with `utreexod`.
@@ -84,7 +86,7 @@ pub struct UtreexoDConf<'a> {
     /// How many times to retry spawning `utreexod` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to `5`.
+    /// errors are automatically recovered from. Defaults to [`MAX_RETRIES_NODE_BUILDING`].
     pub max_retries: u8,
 }
 
@@ -100,7 +102,7 @@ impl Default for UtreexoDConf<'_> {
             ],
             tmpdir: None,
             staticdir: None,
-            max_retries: 5,
+            max_retries: MAX_RETRIES_NODE_BUILDING,
         }
     }
 }
@@ -150,19 +152,19 @@ impl UtreexoD {
     /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with the default [`UtreexoDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
-    pub fn download_new() -> anyhow::Result<UtreexoD> {
+    pub fn download_new() -> Result<UtreexoD, Error> {
         UtreexoD::from_bin(get_utreexod_path()?)
     }
 
     /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with a custom [`UtreexoDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
-    pub fn from_downloaded_with_conf(conf: &UtreexoDConf) -> anyhow::Result<UtreexoD> {
+    pub fn from_downloaded_with_conf(conf: &UtreexoDConf) -> Result<UtreexoD, Error> {
         UtreexoD::from_bin_with_conf(get_utreexod_path()?, conf)
     }
 
     /// Create a [`UtreexoD`] instance running the binary at [`Path`] with the default [`UtreexoDConf`].
-    pub fn from_bin<P: AsRef<Path>>(utreexod_bin: P) -> anyhow::Result<UtreexoD> {
+    pub fn from_bin<P: AsRef<Path>>(utreexod_bin: P) -> Result<UtreexoD, Error> {
         UtreexoD::from_bin_with_conf(utreexod_bin, &UtreexoDConf::default())
     }
 
@@ -179,7 +181,7 @@ impl UtreexoD {
     pub fn from_bin_with_conf<P: AsRef<Path>>(
         utreexod_bin: P,
         conf: &UtreexoDConf,
-    ) -> anyhow::Result<UtreexoD> {
+    ) -> Result<UtreexoD, Error> {
         for _attempt in 0..conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
 
@@ -208,7 +210,11 @@ impl UtreexoD {
                 .arg("--v2transport")
                 .stdout(Stdio::null())
                 .spawn()
-                .with_context(|| format!("Error while executing {:?}", utreexod_bin.as_ref()))?;
+                .map_err(Error::FailedToSpawn)?;
+
+            // Add a small timeout to let `bitcoind` fail
+            // and retry in the case of a port collision.
+            thread::sleep(Duration::from_millis(100));
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
@@ -220,7 +226,6 @@ impl UtreexoD {
             }
 
             let auth = Auth::UserPass(RPC_USER.to_string(), RPC_PASS.to_string());
-
             match Self::wait_for_client(&rpc_url, &auth, Duration::from_secs(10)) {
                 Ok(rpc_client) => {
                     return Ok(UtreexoD {
@@ -237,10 +242,8 @@ impl UtreexoD {
                 }
             }
         }
-        Err(anyhow::anyhow!(
-            "Failed to start utreexod after {} attempts",
-            conf.max_retries
-        ))
+
+        Err(Error::ExhaustedNodeBuildingRetries)
     }
 
     /// Send `stop` via RPC and wait for the process to exit.
@@ -249,9 +252,13 @@ impl UtreexoD {
     /// kills the process automatically. It is provided for cases where you
     /// need the exit status or want to ensure the node has fully shut down
     /// before proceeding.
-    pub fn stop(&mut self) -> anyhow::Result<ExitStatus> {
-        self.rpc_client.stop()?;
-        Ok(self.process.wait()?)
+    pub fn stop(&mut self) -> Result<ExitStatus, Error> {
+        // Send a `stop` over RPC.
+        let _ = self.rpc_client.stop().map_err(Error::FailedToStop)?;
+        // Wait for the process to terminate and get its exit status.
+        let exit_status = self.process.wait().map_err(Error::Io)?;
+
+        Ok(exit_status)
     }
 
     /// Return the OS process ID of the running `utreexod` process.
@@ -284,12 +291,13 @@ impl UtreexoD {
     // ----> RPC CALL WRAPPERS
 
     /// Get the current chain height.
-    pub fn get_height(&self) -> anyhow::Result<u32> {
+    pub fn get_height(&self) -> Result<u32, Error> {
         let height = self
             .rpc_client
-            .call::<serde_json::Value>("getblockchaininfo", &[])?["blocks"]
+            .call::<serde_json::Value>("getblockchaininfo", &[])
+            .map_err(Error::JsonRpc)?["blocks"]
             .as_u64()
-            .unwrap_or(0) as u32;
+            .ok_or(Error::UnexpectedResponse)? as u32;
         Ok(height)
     }
 
@@ -298,14 +306,10 @@ impl UtreexoD {
     ///
     /// Returns an error if the peer does not appear in `getpeerinfo` within
     /// the timeout.
-    pub fn add_peer(&self, socket: SocketAddr) -> anyhow::Result<()> {
-        self.rpc_client.call::<serde_json::Value>(
-            "addnode",
-            &[
-                serde_json::to_value(socket.to_string())?,
-                serde_json::to_value("add")?,
-            ],
-        )?;
+    pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
+        self.rpc_client
+            .add_node(&socket.to_string(), AddNodeCommand::Add)
+            .map_err(Error::JsonRpc)?;
 
         let mut delay = Duration::from_millis(100);
         let timeout = Duration::from_secs(5);
@@ -314,7 +318,8 @@ impl UtreexoD {
         while start.elapsed() < timeout {
             let peers = self
                 .rpc_client
-                .call::<serde_json::Value>("getpeerinfo", &[])?;
+                .call::<serde_json::Value>("getpeerinfo", &[])
+                .map_err(Error::JsonRpc)?;
             if peers
                 .as_array()
                 .map(|v| {
@@ -333,24 +338,28 @@ impl UtreexoD {
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
-        Err(anyhow::anyhow!(
-            "timeout waiting for peer {} to connect",
-            socket
-        ))
+        Err(Error::PeerConnectionTimeout((
+            self.get_p2p_socket(),
+            socket,
+        )))
     }
 
     /// Get [`UtreexoD`]'s peer count.
-    pub fn get_peer_count(&self) -> anyhow::Result<u32> {
+    pub fn get_peer_count(&self) -> Result<u32, Error> {
         let peers = self
             .rpc_client
-            .call::<serde_json::Value>("getpeerinfo", &[])?;
-        Ok(peers.as_array().map(|v| v.len()).unwrap_or(0) as u32)
+            .call::<serde_json::Value>("getpeerinfo", &[])
+            .map_err(Error::JsonRpc)?;
+        let peer_count = peers.as_array().ok_or(Error::UnexpectedResponse)?.len() as u32;
+
+        Ok(peer_count)
     }
 
     /// Generate `count` blocks.
-    pub fn generate(&self, count: usize) -> anyhow::Result<()> {
+    pub fn generate(&self, count: usize) -> Result<(), Error> {
         self.rpc_client
-            .call::<serde_json::Value>("generate", &[serde_json::to_value(count)?])?;
+            .call::<serde_json::Value>("generate", &[serde_json::to_value(count).unwrap()])
+            .map_err(Error::JsonRpc)?;
         Ok(())
     }
 
@@ -361,19 +370,22 @@ impl UtreexoD {
     /// Precedence: `conf.tmpdir` → `TEMPDIR_ROOT` env var → system temp.
     /// If `conf.staticdir` is set the directory is created but never cleaned
     /// up automatically.
-    fn init_work_dir(conf: &UtreexoDConf) -> anyhow::Result<DataDir> {
+    fn init_work_dir(conf: &UtreexoDConf) -> Result<DataDir, Error> {
         let tmpdir = conf
             .tmpdir
             .clone()
             .or_else(|| env::var("TEMPDIR_ROOT").map(PathBuf::from).ok());
         let work_dir = match (&tmpdir, &conf.staticdir) {
-            (Some(_), Some(_)) => return Err(Error::BothDirsSpecified.into()),
-            (Some(tmpdir), None) => DataDir::Temporary(TempDir::new_in(tmpdir)?),
+            // Cannot specify both directories.
+            (Some(_), Some(_)) => return Err(Error::BothDirsSpecified),
+            // Create a persistent directory.
             (None, Some(workdir)) => {
-                std::fs::create_dir_all(workdir)?;
+                fs::create_dir_all(workdir).map_err(Error::Io)?;
                 DataDir::Persistent(workdir.to_owned())
             }
-            (None, None) => DataDir::Temporary(TempDir::new()?),
+            // Create a new temporary directory.
+            (Some(tmpdir), None) => DataDir::Temporary(TempDir::new_in(tmpdir).map_err(Error::Io)?),
+            (None, None) => DataDir::Temporary(TempDir::new().map_err(Error::Io)?),
         };
         Ok(work_dir)
     }
@@ -382,7 +394,7 @@ impl UtreexoD {
     /// authenticated client on success.
     ///
     /// Returns `Err` if the node is not responsive within `timeout`.
-    fn wait_for_client(rpc_url: &str, auth: &Auth, timeout: Duration) -> anyhow::Result<Client> {
+    fn wait_for_client(rpc_url: &str, auth: &Auth, timeout: Duration) -> Result<Client, Error> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             if let Ok(client) = Client::new_with_auth(rpc_url, auth.clone()) {
@@ -395,7 +407,7 @@ impl UtreexoD {
             }
             thread::sleep(Duration::from_millis(200));
         }
-        Err(anyhow::anyhow!("timeout waiting for utreexod to be ready"))
+        Err(Error::RpcClientSetupTimeout)
     }
 }
 
@@ -404,20 +416,20 @@ impl UtreexoD {
 /// Resolution order:
 /// 1. `UTREEXOD_DOWNLOAD_DIR` env var (joined with `utreexod-<VERSION>/utreexod`).
 /// 2. `<CARGO_MANIFEST_DIR>/target/bin/utreexod-<VERSION>/utreexod`.
-pub fn get_utreexod_path() -> anyhow::Result<PathBuf> {
+pub fn get_utreexod_path() -> Result<PathBuf, Error> {
     use versions::UTREEXOD_VERSION;
 
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let mut bin_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("bin");
 
-    path.push(format!("utreexod-{}", UTREEXOD_VERSION));
-    path.push("utreexod");
+    bin_path.push(format!("utreexod-{}", UTREEXOD_VERSION));
+    bin_path.push("utreexod");
 
-    if !path.exists() {
-        return Err(anyhow::anyhow!("utreexod binary not found at {:?}", path));
+    match bin_path.exists() {
+        true => Ok(bin_path),
+        false => Err(Error::BinaryNotFound(bin_path)),
     }
-    Ok(path)
 }
 
 #[cfg(test)]

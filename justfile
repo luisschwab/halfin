@@ -2,6 +2,7 @@ alias b := build
 alias c := check
 alias cs := check-sigs
 alias d := doc
+alias db := delete-bins
 alias do := doc-open
 alias f := fmt
 alias l := lock
@@ -34,6 +35,10 @@ check-sigs:
     else
         echo "🔏 All commits in this branch are signed [$TOTAL/$TOTAL]"
     fi
+
+[doc: "Delete binaries under `target/bin/`"]
+delete-bins:
+    rm -rf target/bin
 
 [doc: "Generate documentation"]
 doc:

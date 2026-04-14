@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 fn main() {
-    bitcoind::download().unwrap();
-    utreexod::download().unwrap();
+    // Check if `bitcoind` is cached and download it if not.
+    bitcoind::download();
+    // Check if `utreexod` is cached and download it if not.
+    utreexod::download();
 }
 
 /// Downloads  and verifies the `bitcoind` binary based on the enabled version feature.
@@ -11,14 +13,15 @@ fn main() {
 ///
 /// If the binary was previously dowloaded and exists under `target/bin/bitcoin`, it won't download again.
 mod bitcoind {
+    use std::env;
     use std::ffi::OsStr;
+    use std::fs;
     use std::fs::File;
     use std::io;
     use std::io::BufRead;
     use std::io::BufReader;
-    use std::io::Read;
+    use std::path::PathBuf;
 
-    use anyhow::Context;
     use bitcoin_hashes::hex::FromHex;
     use bitcoin_hashes::sha256;
     use flate2::read::GzDecoder;
@@ -45,121 +48,150 @@ mod bitcoind {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Look up the expected SHA-256 hash for `filename` from the bundled
-    /// `SHA256SUMS` file.
+    /// Look up the expected SHA256 hash for `filename` from the bundled `SHA256SUMS` file.
     ///
     /// Panics if the filename is not found in the checksum file.
     #[allow(clippy::lines_filter_map_ok)]
-    fn get_expected_sha256(filename: &str) -> anyhow::Result<sha256::Hash> {
+    fn get_expected_sha256(bin_name: &str) -> sha256::Hash {
         let sha256sums_filename = format!(
             "sha256/bitcoind/bitcoin-core-{}-SHA256SUMS",
             BITCOIND_VERSION
         );
         let file = File::open(&sha256sums_filename)
-            .with_context(|| format!("cannot find {:?}", sha256sums_filename))?;
+            .map_err(|e| {
+                format!(
+                    "Cannot open `bitcoind` SHA256SUMS file={}: {:?}",
+                    sha256sums_filename, e
+                )
+            })
+            .unwrap();
+
         for line in BufReader::new(file).lines().flatten() {
             let tokens: Vec<_> = line.split("  ").collect();
-            if tokens.len() == 2 && filename == tokens[1] {
+            if tokens.len() == 2 && bin_name == tokens[1] {
                 let bytes = <[u8; 32]>::from_hex(tokens[0]).unwrap();
-                return Ok(sha256::Hash::from_byte_array(bytes));
+                return sha256::Hash::from_byte_array(bytes);
             }
         }
+
+        // Failed to get the expected SHA256SUM for the binary. Is it present in the file?
         panic!(
-            "Couldn't find hash for `{}` in `{}`:\n{}",
-            filename,
-            sha256sums_filename,
-            std::fs::read_to_string(&sha256sums_filename).unwrap()
+            "Failed to find SHA256SUM for binary={} at file={}",
+            bin_name, sha256sums_filename
         );
     }
 
     /// Download, verify, and extract the `bitcoind` binary into
     /// `<CARGO_MANIFEST_DIR>/target/bin/bitcoin-<VERSION>/bitcoind`.
     ///
-    /// Skips the download if the binary already exists.  The download
-    /// endpoint can be overridden with the `BITCOIND_DOWNLOAD_ENDPOINT`
-    /// environment variable; a local tarball can be used instead by setting
-    /// `BITCOIND_TARBALL_FILE`.
-    pub(crate) fn download() -> anyhow::Result<()> {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let download_dir = std::path::PathBuf::from(manifest_dir)
-            .join("target")
-            .join("bin");
+    /// Skips the download if the binary is already cached from a previous build.
+    pub(crate) fn download() {
+        const BITCOIND_DOWNLOAD_URL: &str = "https://bitcoincore.org";
 
-        std::fs::create_dir_all(&download_dir)
-            .with_context(|| format!("cannot create dir {:?}", download_dir))?;
+        let manifest_directory = env::var("CARGO_MANIFEST_DIR").unwrap();
+        let download_directory = PathBuf::from(manifest_directory).join("target").join("bin");
 
-        let existing_filename = download_dir
+        fs::create_dir_all(&download_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create download directory at={}: {:?}",
+                    download_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
+
+        let existing_filename = download_directory
             .join(format!("bitcoin-{}", BITCOIND_VERSION))
             .join("bitcoind");
 
+        let download_filename = get_download_filename();
+        let expected_hash = get_expected_sha256(&download_filename);
+
         if existing_filename.exists() {
-            return Ok(());
+            println!(
+                "cargo:warning=Found cached `bitcoind` under `/target/bin/`, skipping download"
+            );
+            return;
+        } else {
+            println!(
+                "cargo:warning=Downloading `bitcoind` {} from `bitcoincore.org`",
+                download_filename
+            );
         }
 
-        let download_filename = get_download_filename();
-        let expected_hash = get_expected_sha256(&download_filename)?;
+        let bitcoind_tarball_bytes = {
+            let download_url = format!(
+                "{}/bin/bitcoin-core-{}/{}",
+                BITCOIND_DOWNLOAD_URL, BITCOIND_VERSION, download_filename
+            );
 
-        println!(
-            "cargo:warning=Downloading bitcoind {}, this can take a while...",
-            download_filename
-        );
+            let response = bitreq::get(&download_url)
+                .send()
+                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
+                .unwrap();
 
-        let (file_or_url, tarball_bytes) = match std::env::var("BITCOIND_TARBALL_FILE") {
-            Err(_) => {
-                let endpoint = std::env::var("BITCOIND_DOWNLOAD_ENDPOINT")
-                    .unwrap_or_else(|_| "https://bitcoincore.org/bin".to_owned());
-                let url = format!(
-                    "{}/bitcoin-core-{}/{}",
-                    endpoint, BITCOIND_VERSION, download_filename
-                );
-                let resp = bitreq::get(&url)
-                    .send()
-                    .with_context(|| format!("cannot reach url {}", url))?;
-                assert_eq!(resp.status_code, 200, "url {} didn't return 200", url);
-                (url, resp.as_bytes().to_vec())
-            }
-            Ok(path) => {
-                let f = File::open(&path)
-                    .with_context(|| format!("cannot find {:?} (BITCOIND_TARBALL_FILE)", path))?;
-                let mut buf = Vec::new();
-                BufReader::new(f).read_to_end(&mut buf)?;
-                (path, buf)
-            }
+            assert_eq!(
+                response.status_code, 200,
+                "Failed to GET {}: {} {}",
+                download_url, response.status_code, response.reason_phrase
+            );
+
+            let bitcoind_tarball = response.as_bytes().to_vec();
+
+            bitcoind_tarball
         };
 
-        let tarball_hash = sha256::Hash::hash(&tarball_bytes);
+        let bitcoind_tarball_hash = sha256::Hash::hash(&bitcoind_tarball_bytes);
         assert_eq!(
-            expected_hash, tarball_hash,
-            "SHA-256 mismatch for {}",
-            file_or_url
+            bitcoind_tarball_hash, expected_hash,
+            "Downloaded bitcoind binary hash does not match expected hash: downloaded={} != expected={}",
+            bitcoind_tarball_hash, expected_hash
         );
 
-        let dest_dir = download_dir.join(format!("bitcoin-{}", BITCOIND_VERSION));
-        std::fs::create_dir_all(&dest_dir)
-            .with_context(|| format!("cannot create dir {:?}", dest_dir))?;
+        let destination_directory =
+            download_directory.join(format!("bitcoin-{}", BITCOIND_VERSION));
+        fs::create_dir_all(&destination_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create destination directory={}: {}",
+                    destination_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
 
-        let d = GzDecoder::new(&tarball_bytes[..]);
-        let mut archive = Archive::new(d);
+        let gz_decoder = GzDecoder::new(&bitcoind_tarball_bytes[..]);
+        let mut archive = Archive::new(gz_decoder);
+
         for mut entry in archive.entries().unwrap().flatten() {
             if let Ok(path) = entry.path() {
                 if path.file_name() == Some(OsStr::new("bitcoind")) {
-                    let dest = dest_dir.join("bitcoind");
-                    let mut outfile = std::fs::File::create(&dest)
-                        .with_context(|| format!("cannot create file {:?}", dest))?;
-                    io::copy(&mut entry, &mut outfile).unwrap();
+                    let destination_path = destination_directory.join("bitcoind");
+                    let mut output_file = File::create(&destination_path)
+                        .map_err(|e| {
+                            format!(
+                                "Cannot create bitcoind file at destination path={}: {}",
+                                destination_path.display(),
+                                e
+                            )
+                        })
+                        .unwrap();
+
+                    io::copy(&mut entry, &mut output_file).unwrap();
+
                     #[cfg(unix)]
                     {
                         use std::os::unix::fs::PermissionsExt;
-                        let mut perms = outfile.metadata().unwrap().permissions();
+                        let mut perms = output_file.metadata().unwrap().permissions();
                         perms.set_mode(0o755);
-                        outfile.set_permissions(perms).unwrap();
+                        output_file.set_permissions(perms).unwrap();
                     }
                     break;
                 }
             }
         }
 
-        // On `arm64` macOS the extracted binary must be locally code-signed before the OS will allow it to execute.
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             use std::process::Command;
@@ -168,25 +200,19 @@ mod bitcoind {
                 .arg("-v")
                 .arg(&existing_filename)
                 .status()
-                .with_context(|| "failed to verify bitcoind code signature")?;
+                .map_err(|e| format!("Failed to run `codesign -v` on `bitcoind`: {}", e))
+                .unwrap();
 
             if !signing_status.success() {
-                let status = Command::new("codesign")
+                Command::new("codesign")
                     .arg("-s")
                     .arg("-")
                     .arg(&existing_filename)
                     .status()
-                    .with_context(|| "failed to sign bitcoind")?;
-                if !status.success() {
-                    return Err(anyhow::anyhow!(
-                        "codesign failed with exit code {}",
-                        status.code().unwrap_or(-1)
-                    ));
-                }
+                    .map_err(|e| format!("Failed to run `codesign -s` on `bitcoind`: {}", e))
+                    .unwrap();
             }
         }
-
-        Ok(())
     }
 }
 
@@ -204,7 +230,6 @@ mod utreexod {
     use std::io::BufReader;
     use std::path::PathBuf;
 
-    use anyhow::Context;
     use bitcoin_hashes::hex::FromHex;
     use bitcoin_hashes::sha256;
     use flate2::read::GzDecoder;
@@ -231,108 +256,150 @@ mod utreexod {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Look up the expected SHA-256 hash for `filename` from the bundled
-    /// `SHA256SUMS` file.
+    /// Look up the expected SHA256 hash for `filename` from the bundled `SHA256SUMS` file.
     ///
     /// Panics if the filename is not found in the checksum file.
     #[allow(clippy::lines_filter_map_ok)]
-    fn get_expected_sha256(filename: &str) -> anyhow::Result<sha256::Hash> {
+    fn get_expected_sha256(bin_name: &str) -> sha256::Hash {
         let sha256sums_filename =
             format!("sha256/utreexod/utreexod-{}-SHA256SUMS", UTREEXOD_VERSION);
+
         let file = File::open(&sha256sums_filename)
-            .with_context(|| format!("cannot find {:?}", sha256sums_filename))?;
+            .map_err(|e| {
+                format!(
+                    "Cannot open `utreexod` SHA256SUMS file={}: {:?}",
+                    sha256sums_filename, e
+                )
+            })
+            .unwrap();
+
         for line in BufReader::new(file).lines().flatten() {
             let tokens: Vec<_> = line.split("  ").collect();
-            if tokens.len() == 2 && filename == tokens[1] {
+            if tokens.len() == 2 && bin_name == tokens[1] {
                 let bytes = <[u8; 32]>::from_hex(tokens[0]).unwrap();
-                return Ok(sha256::Hash::from_byte_array(bytes));
+                return sha256::Hash::from_byte_array(bytes);
             }
         }
+
+        // Failed to get the expected SHA256SUM for the binary. Is it present in the file?
         panic!(
-            "Couldn't find hash for `{}` in `{}`:\n{}",
-            filename,
-            sha256sums_filename,
-            fs::read_to_string(&sha256sums_filename).unwrap()
+            "Failed to find SHA256SUM for utreexod binary={} at path={}",
+            bin_name, sha256sums_filename
         );
     }
 
     /// Download, verify, and extract the `utreexod` binary into
     /// `<CARGO_MANIFEST_DIR>/target/bin/utreexod-<VERSION>/utreexod`.
     ///
-    /// Skips the download if the binary already exists. The download
-    /// endpoint can be overridden with the `UTREEXOD_DOWNLOAD_ENDPOINT`
-    /// environment variable.
-    pub(crate) fn download() -> anyhow::Result<()> {
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let download_dir = PathBuf::from(manifest_dir).join("target").join("bin");
+    /// Skips the download if the binary is already cached from a previous build.
+    pub(crate) fn download() {
+        const UTREEXOD_DOWNLOAD_URL: &str = "https://github.com/utreexo/utreexod/releases/download";
 
-        fs::create_dir_all(&download_dir)
-            .with_context(|| format!("cannot create dir {:?}", download_dir))?;
+        let manifest_directory = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let download_directory = PathBuf::from(manifest_directory).join("target").join("bin");
 
-        let existing_filename = {
-            let mut p = download_dir.join(format!("utreexod-{}", UTREEXOD_VERSION));
-            if cfg!(target_os = "windows") {
-                p.push("utreexod.exe");
-            } else {
-                p.push("utreexod");
-            }
-            p
-        };
+        fs::create_dir_all(&download_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create download directory at={}: {:?}",
+                    download_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
 
-        if existing_filename.exists() {
-            return Ok(());
-        }
+        let existing_filename = download_directory
+            .join(format!("utreexod-{}", UTREEXOD_VERSION))
+            .join("utreexod");
 
         let download_filename = get_download_filename();
-        let expected_hash = get_expected_sha256(&download_filename)?;
+        let expected_hash = get_expected_sha256(&download_filename);
 
-        println!(
-            "cargo:warning=Downloading utreexod {}, this can take a while...",
-            download_filename
+        if existing_filename.exists() {
+            println!(
+                "cargo:warning=Found cached `utreexod` under `/target/bin/`, skipping download"
+            );
+            return;
+        } else {
+            println!(
+                "cargo:warning=Downloading `utreexod` {} from `github.com`",
+                download_filename
+            );
+        }
+
+        let utreexod_tarball_bytes = {
+            let download_url = format!(
+                "{}/v{}/{}",
+                UTREEXOD_DOWNLOAD_URL, UTREEXOD_VERSION, download_filename
+            );
+
+            let response = bitreq::get(&download_url)
+                .send()
+                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
+                .unwrap();
+
+            assert_eq!(
+                response.status_code, 200,
+                "Failed to GET {}: {} {}",
+                download_url, response.status_code, response.reason_phrase
+            );
+
+            let utreexod_tarball = response.as_bytes().to_vec();
+
+            utreexod_tarball
+        };
+
+        let utreexod_tarball_hash = sha256::Hash::hash(&utreexod_tarball_bytes);
+        assert_eq!(
+            utreexod_tarball_hash, expected_hash,
+            "Downloaded utreexod binary hash does not match expected hash: downloaded={} != expected={}",
+            utreexod_tarball_hash, expected_hash
         );
 
-        let endpoint = std::env::var("UTREEXOD_DOWNLOAD_ENDPOINT").unwrap_or_else(|_| {
-            format!(
-                "https://github.com/utreexo/utreexod/releases/download/v{}",
-                UTREEXOD_VERSION
-            )
-        });
-        let url = format!("{}/{}", endpoint, download_filename);
-        let resp = bitreq::get(&url)
-            .send()
-            .with_context(|| format!("cannot reach url {}", url))?;
-        assert_eq!(resp.status_code, 200, "url {} didn't return 200", url);
+        let destination_directory =
+            download_directory.join(format!("utreexod-{}", UTREEXOD_VERSION));
+        fs::create_dir_all(&destination_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create destination directory={}: {}",
+                    destination_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
 
-        let tarball_bytes = resp.as_bytes().to_vec();
-        let tarball_hash = sha256::Hash::hash(&tarball_bytes);
-        assert_eq!(expected_hash, tarball_hash, "SHA-256 mismatch for {}", url);
+        let gz_decoder = GzDecoder::new(&utreexod_tarball_bytes[..]);
+        let mut archive = Archive::new(gz_decoder);
 
-        let dest_dir = download_dir.join(format!("utreexod-{}", UTREEXOD_VERSION));
-        fs::create_dir_all(&dest_dir)
-            .with_context(|| format!("cannot create dir {:?}", dest_dir))?;
-
-        let d = GzDecoder::new(&tarball_bytes[..]);
-        let mut archive = Archive::new(d);
         for mut entry in archive.entries().unwrap().flatten() {
             if let Ok(path) = entry.path() {
                 if path.file_name() == Some(OsStr::new("utreexod")) {
-                    let dest = dest_dir.join("utreexod");
-                    let mut outfile = fs::File::create(&dest)
-                        .with_context(|| format!("cannot create file {:?}", dest))?;
-                    io::copy(&mut entry, &mut outfile).unwrap();
+                    let destination_path = destination_directory.join("utreexod");
+                    let mut outputfile = File::create(&destination_path)
+                        .map_err(|e| {
+                            format!(
+                                "Cannot create utreexod file at destination path={}: {}",
+                                destination_path.display(),
+                                e
+                            )
+                        })
+                        .unwrap();
+
+                    io::copy(&mut entry, &mut outputfile).unwrap();
+
                     #[cfg(unix)]
                     {
                         use std::os::unix::fs::PermissionsExt;
-                        let mut perms = outfile.metadata().unwrap().permissions();
+                        let mut perms = outputfile.metadata().unwrap().permissions();
                         perms.set_mode(0o755);
-                        outfile.set_permissions(perms).unwrap();
+                        outputfile.set_permissions(perms).unwrap();
                     }
                     break;
                 }
             }
         }
 
-        // On `arm64` macOS the extracted binary must be locally code-signed before the OS will allow it to execute.
+        // MacOS (`arm64`) requires binaries to be code-signed locally for the OS to allow it's execution.
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             use std::process::Command;
@@ -341,24 +408,18 @@ mod utreexod {
                 .arg("-v")
                 .arg(&existing_filename)
                 .status()
-                .with_context(|| "failed to verify utreexod code signature")?;
+                .map_err(|e| format!("Failed to run `codesign -v` on `utreexod`: {}", e))
+                .unwrap();
 
             if !signing_status.success() {
-                let status = Command::new("codesign")
+                Command::new("codesign")
                     .arg("-s")
                     .arg("-")
                     .arg(&existing_filename)
                     .status()
-                    .with_context(|| "failed to sign utreexod")?;
-                if !status.success() {
-                    return Err(anyhow::anyhow!(
-                        "codesign failed with exit code {}",
-                        status.code().unwrap_or(-1)
-                    ));
-                }
+                    .map_err(|e| format!("Failed to run `codesign -s` on `utreexod`: {}", e))
+                    .unwrap();
             }
         }
-
-        Ok(())
     }
 }
