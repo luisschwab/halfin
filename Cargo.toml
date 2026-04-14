@@ -11,7 +11,6 @@ edition = "2024"
 rust-version = "1.85.0" # MSRV
 
 [dependencies]
-anyhow = { version = "1.0.66", default-features = false, features = ["std"] }
 corepc-client = { git = "https://github.com/rust-bitcoin/corepc", version = "0.11.0", features = ["client-sync"] }
 tempfile = { version = "3", default-features = false }
 log = { version = "0.4.8", default-features = false }

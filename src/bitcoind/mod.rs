@@ -43,7 +43,6 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
-use anyhow::Context;
 use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v30::AddNodeCommand;
@@ -53,9 +52,9 @@ use tempfile::TempDir;
 use crate::DataDir;
 use crate::Error;
 use crate::LOCALHOST;
+use crate::MAX_RETRIES_NODE_BUILDING;
 use crate::get_available_port;
 
-pub use anyhow;
 pub use serde_json;
 pub use tempfile;
 pub use which;
@@ -84,24 +83,24 @@ pub struct BitcoinDConf<'a> {
     /// Extra CLI arguments forwarded verbatim to the `bitcoind` process.
     ///
     /// The defaults (`-regtest`, `-fallbackfee=0.0001`) are always present when
-    /// using [`BitcoinDConf::default`].  Replace or extend this vec to
+    /// using [`BitcoinDConf::default`]. Replace or extend this vec to
     /// customise the node (e.g. add `-txindex=1`).
     pub args: Vec<&'a str>,
 
     /// Root directory under which a fresh temporary working directory is
-    /// created for each instance.  Falls back to the `TEMPDIR_ROOT`
+    /// created for each instance. Falls back to the `TEMPDIR_ROOT`
     /// environment variable, then the system temp dir.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory.  The directory is created if it does not
-    /// exist.  Data survives [`Drop`]; the process is stopped but files are
+    /// Persistent data directory. The directory is created if it does not
+    /// exist. Data survives [`Drop`]: the process is stopped but files are
     /// kept so you can inspect or reuse them.
     pub staticdir: Option<PathBuf>,
 
     /// How many times to retry spawning `bitcoind` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from.  Defaults to `5`.
+    /// errors are automatically recovered from. Defaults to [`MAX_RETRIES_NODE_BUILDING`].
     pub max_retries: u8,
 }
 
@@ -111,7 +110,7 @@ impl Default for BitcoinDConf<'_> {
             args: vec!["-regtest", "-fallbackfee=0.0001"],
             tmpdir: None,
             staticdir: None,
-            max_retries: 5,
+            max_retries: MAX_RETRIES_NODE_BUILDING,
         }
     }
 }
@@ -169,19 +168,19 @@ impl BitcoinD {
     /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with the default [`BitcoinDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
-    pub fn download_new() -> anyhow::Result<BitcoinD> {
+    pub fn download_new() -> Result<BitcoinD, Error> {
         BitcoinD::from_bin(get_bitcoind_path()?)
     }
 
     /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with a custom [`BitcoinDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
-    pub fn download_new_with_conf(conf: &BitcoinDConf) -> anyhow::Result<BitcoinD> {
+    pub fn download_new_with_conf(conf: &BitcoinDConf) -> Result<BitcoinD, Error> {
         BitcoinD::from_bin_with_conf(get_bitcoind_path()?, conf)
     }
 
     /// Create a [`BitcoinD`] instance running the binary at [`Path`] with the default [`BitcoinDConf`].
-    pub fn from_bin<P: AsRef<Path>>(bitcoind_bin: P) -> anyhow::Result<BitcoinD> {
+    pub fn from_bin<P: AsRef<Path>>(bitcoind_bin: P) -> Result<BitcoinD, Error> {
         BitcoinD::from_bin_with_conf(bitcoind_bin, &BitcoinDConf::default())
     }
 
@@ -199,7 +198,7 @@ impl BitcoinD {
     pub fn from_bin_with_conf<P: AsRef<Path>>(
         bitcoind_bin: P,
         conf: &BitcoinDConf,
-    ) -> anyhow::Result<BitcoinD> {
+    ) -> Result<BitcoinD, Error> {
         for _ in 0..=conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
             let cookie_file = working_directory
@@ -225,9 +224,10 @@ impl BitcoinD {
                 .arg(&p2p_arg)
                 .stdout(Stdio::null())
                 .spawn()
-                .with_context(|| format!("Error while executing {:?}", bitcoind_bin.as_ref()))?;
+                .map_err(Error::FailedToSpawn)?;
 
-            // Add a small timeout to let `bitcoind` fail in the case of a port collision.
+            // Add a small timeout to let `bitcoind` fail
+            // and retry in the case of a port collision.
             thread::sleep(Duration::from_millis(100));
 
             // If the process exited immediately, try again with new ports.
@@ -239,20 +239,27 @@ impl BitcoinD {
                 Ok(None) => {}
             }
 
+            // Wait up to 5 seconds for the cookie file. Kills
+            // the process and tries again if it exceeds this time.
             if Self::wait_for_cookie_file(&cookie_file, Duration::from_secs(5)).is_err() {
                 let _ = process.kill();
                 continue;
             }
 
+            // Wallet-specific RPC endpoints are prefixed with `/wallet`.
+            let wallet_url = format!("{}/wallet/{}", rpc_url, BITCOIND_WALLET);
+
+            // Create RPC authentication using the cookie file.
             let auth = Auth::CookieFile(cookie_file.clone());
             let client_base = Self::create_base_rpc_client(&rpc_url, &auth)?;
 
-            let wallet_url = format!("{}/wallet/{}", rpc_url, BITCOIND_WALLET);
-            let deadline = Instant::now() + Duration::from_secs(10);
+            // Create a new wallet or load an existing wallet
+            // named `BITCOIND_WALLET` with a 5 second timeout.
+            let deadline = Instant::now() + Duration::from_secs(5);
             let rpc_client = loop {
                 if Instant::now() > deadline {
                     let _ = process.kill();
-                    return Err(anyhow::anyhow!("timeout creating/loading wallet"));
+                    return Err(Error::WalletTimeout);
                 }
                 if client_base.create_wallet(BITCOIND_WALLET).is_ok()
                     || client_base.load_wallet(BITCOIND_WALLET).is_ok()
@@ -278,10 +285,8 @@ impl BitcoinD {
                 p2p_socket,
             });
         }
-        Err(anyhow::anyhow!(
-            "Failed to start bitcoind after {} attempts",
-            conf.max_retries
-        ))
+
+        Err(Error::ExhaustedNodeBuildingRetries)
     }
 
     /// Send `stop` via RPC and wait for the process to exit.
@@ -290,12 +295,16 @@ impl BitcoinD {
     /// kills the process automatically.  It is provided for cases where you
     /// need the exit status or want to ensure the node has fully shut down
     /// before proceeding.
-    pub fn stop(&mut self) -> anyhow::Result<ExitStatus> {
-        self.rpc_client.stop()?;
-        Ok(self.process.wait()?)
+    pub fn stop(&mut self) -> Result<ExitStatus, Error> {
+        // Send a `stop` over RPC.
+        let _ = self.rpc_client.stop().map_err(Error::FailedToStop)?;
+        // Wait for the process to terminate and get its exit status.
+        let exit_status = self.process.wait().map_err(Error::Io)?;
+
+        Ok(exit_status)
     }
 
-    /// Return the OS process ID of the running `bitcoind` process.
+    /// Get [`BitcoinD`]'s PID process.
     pub fn get_pid(&self) -> u32 {
         self.process.id()
     }
@@ -305,7 +314,7 @@ impl BitcoinD {
         self.working_directory.path()
     }
 
-    /// Return the P2P [`SocketAddr`] the node is listening on.
+    /// Get [`BitcoinD`]'s P2P [`SocketAddr`].
     ///
     /// Pass this to [`BitcoinD::add_peer`] on another node to connect the two.
     pub fn get_p2p_socket(&self) -> SocketAddr {
@@ -317,7 +326,7 @@ impl BitcoinD {
         &self.rpc_client
     }
 
-    /// Return the JSON-RPC [`SocketAddr`] the node is listening on.
+    /// Get [`BitcoinD`]'s JSON-RPC [`SocketAddr`].
     pub fn rpc_socket(&self) -> SocketAddr {
         self.rpc_socket
     }
@@ -330,8 +339,13 @@ impl BitcoinD {
     // ----> RPC CALL WRAPPERS
 
     /// Get the current chain height.
-    pub fn get_height(&self) -> anyhow::Result<u32> {
-        let height = self.rpc_client.get_blockchain_info()?.blocks as u32;
+    pub fn get_height(&self) -> Result<u32, Error> {
+        let response = self
+            .rpc_client
+            .get_blockchain_info()
+            .map_err(Error::JsonRpc)?;
+        let height = response.blocks as u32;
+
         Ok(height)
     }
 
@@ -339,16 +353,17 @@ impl BitcoinD {
     /// wait until the connection is established (up to 5 seconds with exponential back-off).
     ///
     /// Returns an error if the peer does not appear in `getpeerinfo` within the timeout.
-    pub fn add_peer(&self, socket: SocketAddr) -> anyhow::Result<()> {
+    pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
         self.rpc_client
-            .add_node(&socket.to_string(), AddNodeCommand::Add)?;
+            .add_node(&socket.to_string(), AddNodeCommand::Add)
+            .map_err(Error::JsonRpc)?;
 
         let mut delay = Duration::from_millis(100);
         let timeout = Duration::from_secs(5);
         let start = Instant::now();
 
         while start.elapsed() < timeout {
-            let peers = self.rpc_client.get_peer_info()?;
+            let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?;
             if peers
                 .0
                 .iter()
@@ -360,22 +375,28 @@ impl BitcoinD {
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
-        Err(anyhow::anyhow!(
-            "timeout waiting for peer {} to connect",
-            socket
-        ))
+        Err(Error::PeerConnectionTimeout((
+            self.get_p2p_socket(),
+            socket,
+        )))
     }
 
     /// Get [`BitcoinD`]'s peer count.
-    pub fn get_peer_count(&self) -> anyhow::Result<u32> {
-        let peer_count = self.rpc_client.get_peer_info()?.0.len() as u32;
+    pub fn get_peer_count(&self) -> Result<u32, Error> {
+        let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?.0;
+        let peer_count = peers.len() as u32;
+
         Ok(peer_count)
     }
 
     /// Generate `count` blocks.
-    pub fn generate(&self, count: usize) -> anyhow::Result<()> {
-        let address = self.rpc_client.new_address()?;
-        self.rpc_client.generate_to_address(count, &address)?;
+    pub fn generate(&self, count: usize) -> Result<(), Error> {
+        let address = self.rpc_client.new_address().map_err(Error::JsonRpc)?;
+        let _hashes = self
+            .rpc_client
+            .generate_to_address(count, &address)
+            .map_err(Error::JsonRpc)?;
+
         Ok(())
     }
 
@@ -386,40 +407,45 @@ impl BitcoinD {
     /// Precedence: `conf.tmpdir` → `TEMPDIR_ROOT` env var → system temp.
     /// If `conf.staticdir` is set the directory is created but never cleaned
     /// up automatically.
-    fn init_work_dir(conf: &BitcoinDConf) -> anyhow::Result<DataDir> {
+    fn init_work_dir(conf: &BitcoinDConf) -> Result<DataDir, Error> {
         let tmpdir = conf
             .tmpdir
             .clone()
             .or_else(|| env::var("TEMPDIR_ROOT").map(PathBuf::from).ok());
         let work_dir = match (&tmpdir, &conf.staticdir) {
-            (Some(_), Some(_)) => return Err(Error::BothDirsSpecified.into()),
-            (Some(tmpdir), None) => DataDir::Temporary(TempDir::new_in(tmpdir)?),
+            // Cannot specify both directories.
+            (Some(_), Some(_)) => return Err(Error::BothDirsSpecified),
+            // Create a persistent directory.
             (None, Some(workdir)) => {
-                fs::create_dir_all(workdir)?;
+                fs::create_dir_all(workdir).map_err(Error::Io)?;
                 DataDir::Persistent(workdir.to_owned())
             }
-            (None, None) => DataDir::Temporary(TempDir::new()?),
+            // Create a new temporary directory.
+            (Some(tmpdir), None) => DataDir::Temporary(TempDir::new_in(tmpdir).map_err(Error::Io)?),
+            (None, None) => DataDir::Temporary(TempDir::new().map_err(Error::Io)?),
         };
         Ok(work_dir)
     }
 
     /// Attempt to create a base (wallet-less) RPC client, retrying up to 10
     /// times with 200 millisecond gaps. Used during startup before the wallet exists.
-    fn create_base_rpc_client(rpc_url: &str, auth: &Auth) -> anyhow::Result<Client> {
+    fn create_base_rpc_client(rpc_url: &str, auth: &Auth) -> Result<Client, Error> {
         for _ in 0..10 {
             if let Ok(client) = Client::new_with_auth(rpc_url, auth.clone()) {
                 return Ok(client);
             }
             thread::sleep(Duration::from_millis(200));
         }
-        Client::new_with_auth(rpc_url, auth.clone())
-            .map_err(|e| Error::BitcoinDNotRunning(e.to_string()).into())
+        let client =
+            Client::new_with_auth(rpc_url, auth.clone()).map_err(Error::UnresponsiveBitcoinD)?;
+
+        Ok(client)
     }
 
     /// Poll for the cookie file's existence, sleeping 200 milliseconds between checks.
     ///
     /// Returns `Err` if the file does not appear within `timeout`.
-    fn wait_for_cookie_file(cookie_file: &Path, timeout: Duration) -> anyhow::Result<()> {
+    fn wait_for_cookie_file(cookie_file: &Path, timeout: Duration) -> Result<(), Error> {
         let start = Instant::now();
         while start.elapsed() < timeout {
             if cookie_file.exists() {
@@ -427,45 +453,40 @@ impl BitcoinD {
             }
             thread::sleep(Duration::from_millis(200));
         }
-        Err(anyhow::anyhow!(
-            "timeout waiting for cookie file: {}",
-            cookie_file.display()
-        ))
+        Err(Error::CookieFileTimeout(cookie_file.into()))
     }
 
     /// Poll `getblockchaininfo` until it succeeds, sleeping 200 milliseconds between attempts.
     ///
     /// Returns `Err` if the node is not responsive within `timeout`.
-    fn wait_for_client(client: &Client, timeout: Duration) -> anyhow::Result<()> {
+    fn wait_for_client(rpc_client: &Client, timeout: Duration) -> Result<(), Error> {
         let start = Instant::now();
         while start.elapsed() < timeout {
-            if client
-                .call::<serde_json::Value>("getblockchaininfo", &[])
-                .is_ok()
-            {
+            if rpc_client.get_blockchain_info().is_ok() {
                 return Ok(());
             }
             thread::sleep(Duration::from_millis(200));
         }
-        Err(anyhow::anyhow!("timeout waiting for bitcoind to be ready"))
+
+        Err(Error::RpcClientSetupTimeout)
     }
 }
 
 /// Return the path to the downloaded `bitcoind` binary.
-pub fn get_bitcoind_path() -> anyhow::Result<PathBuf> {
+pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
     use versions::BITCOIND_VERSION;
 
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let mut bin_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("bin");
 
-    path.push(format!("bitcoin-{}", BITCOIND_VERSION));
-    path.push("bitcoind");
+    bin_path.push(format!("bitcoin-{}", BITCOIND_VERSION));
+    bin_path.push("bitcoind");
 
-    if !path.exists() {
-        return Err(anyhow::anyhow!("bitcoind binary not found at {:?}", path));
+    match bin_path.exists() {
+        true => Ok(bin_path),
+        false => Err(Error::BinaryNotFound(bin_path)),
     }
-    Ok(path)
 }
 
 #[cfg(test)]
