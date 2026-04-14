@@ -35,8 +35,6 @@ use std::io;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::ExitStatus;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 use tempfile::TempDir;
 
 pub mod bitcoind;
@@ -45,25 +43,13 @@ pub mod utreexod;
 /// IPv4 Localhost address.
 const LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
+/// Ask the OS for an available port, immediately unbind and return it.
 pub fn get_available_port() -> u16 {
-    let mut prng = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .subsec_nanos();
-
-    loop {
-        // XOR-shift to get next pseudo-random number.
-        prng ^= prng << 13;
-        prng ^= prng >> 17;
-        prng ^= prng << 5;
-
-        // Pick a outside of the system/ well known range.
-        let port = (prng % (65535 - 1024) + 1024) as u16;
-
-        if TcpListener::bind((LOCALHOST, port)).is_ok() {
-            return port;
-        }
-    }
+    TcpListener::bind((LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
 }
 
 /// Owns a node's working directory, either as a temporary or a persistent path.

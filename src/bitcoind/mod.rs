@@ -227,6 +227,9 @@ impl BitcoinD {
                 .spawn()
                 .with_context(|| format!("Error while executing {:?}", bitcoind_bin.as_ref()))?;
 
+            // Add a small timeout to let `bitcoind` fail in the case of a port collision.
+            thread::sleep(Duration::from_millis(100));
+
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
                 Ok(Some(_)) | Err(_) => {
