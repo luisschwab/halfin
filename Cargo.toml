@@ -11,6 +11,29 @@ edition = "2024"
 rust-version = "1.85.0" # MSRV
 
 [dependencies]
+anyhow = { version = "1.0.66", default-features = false, features = ["std"] }
+corepc-client = { git = "https://github.com/rust-bitcoin/corepc", version = "0.11.0", features = ["client-sync"] }
+tempfile = { version = "3", default-features = false }
+log = { version = "0.4.8", default-features = false }
+serde_json = { version = "1.0.117", default-features = false }
+which = { version = "3", default-features = false }
+
+[build-dependencies]
+anyhow = { version = "1.0.66" }
+bitcoin_hashes = { version = "0.20", features = ["hex"] }
+flate2 = { version = "1.0.22" }
+bitreq = { version = "0.3", features = ["https"] }
+tar = { version = "0.4.42" }
+zip = { version = "0.6", default-features = false, features = ["bzip2", "deflate"] }
+
+[dev-dependencies]
+env_logger = { version = "0.9", default-features = false }
+
+[features]
+default = ["bitcoind_30_2", "utreexod_0_5_0"]
+
+bitcoind_30_2 = []
+utreexod_0_5_0 = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -20,7 +43,21 @@ rustdoc-args = ["--cfg", "docsrs"]
 stable = "1.85.0"
 nightly = "nightly-2026-03-18"
 
+[package.metadata.rbmt.test]
+exclude_features = ["bitcoind_30_2", "utreexod_0_5_0"]
+exact_features = [
+    ["bitcoind_30_2", "utreexod_0_5_0"],
+]
+
 # Allow packages of different versions in the dependency tree.
 [package.metadata.rbmt.lint]
 allowed_duplicates = [
+    "anyhow",
+    "base64",
+    "bitcoin-internals",
+    "bitcoin_hashes",
+    "bitreq",
+    "hex-conservative",
+    "rustix",
+    "windows-sys"
 ]
