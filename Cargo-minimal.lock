@@ -158,6 +158,16 @@ checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
 
 [[package]]
 name = "bitreq"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c84f27ed293cb5218ab015faad9fbb95cf7905865ce71df075c8805a0b33b71"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "bitreq"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cdd1a33e915c66e68c47ad80b5b351d3106894461878a58f4d34a16e4ed662d"
@@ -165,15 +175,6 @@ dependencies = [
  "rustls",
  "rustls-webpki 0.101.0",
  "webpki-roots",
-]
-
-[[package]]
-name = "bitreq"
-version = "0.3.4"
-source = "git+https://github.com/rust-bitcoin/corepc#530e5345e593da4fa76647a80afcb175a5341ece"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -229,8 +230,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "corepc-client"
-version = "0.11.0"
-source = "git+https://github.com/rust-bitcoin/corepc#530e5345e593da4fa76647a80afcb175a5341ece"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc0d0096927a820ea80d4a43a2355209d9a69ef5b420861bf413c7e667cbff0b"
 dependencies = [
  "bitcoin",
  "corepc-types",
@@ -242,8 +244,9 @@ dependencies = [
 
 [[package]]
 name = "corepc-types"
-version = "0.11.0"
-source = "git+https://github.com/rust-bitcoin/corepc#530e5345e593da4fa76647a80afcb175a5341ece"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1583872320eb2ac629c36753023fd072f1ca1b3b74b20cc62bab055b54278789"
 dependencies = [
  "bitcoin",
  "serde",
@@ -378,10 +381,11 @@ dependencies = [
 [[package]]
 name = "jsonrpc"
 version = "0.19.0"
-source = "git+https://github.com/rust-bitcoin/corepc#530e5345e593da4fa76647a80afcb175a5341ece"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "629d2b4ae586d04b6bae3c75879d7ddd39325c2b67a9c87634f4ec88a488dc65"
 dependencies = [
  "base64 0.22.1",
- "bitreq 0.3.4",
+ "bitreq 0.2.0",
  "serde",
  "serde_json",
 ]
