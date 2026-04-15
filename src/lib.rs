@@ -47,6 +47,9 @@ const LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 pub const MAX_RETRIES_NODE_BUILDING: u8 = 5;
 
 /// Ask the OS for an available port, immediately unbind and return it.
+///
+/// Inlining is needed to curb TOCTOU race conditions.
+#[inline]
 pub fn get_available_port() -> u16 {
     TcpListener::bind((LOCALHOST, 0))
         .unwrap()
