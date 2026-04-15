@@ -86,11 +86,9 @@ impl DataDir {
 pub enum Error {
     /// The binary was not found at the expected location.
     BinaryNotFound(PathBuf),
-    /// Failed to spawn a [process](std::process::Child) for [`BitcoinD`] or [`UtreexoD`].
+    /// Failed to spawn a [process](std::process::Child) for [`BitcoinD`]/[`UtreexoD`].
     FailedToSpawn(std::io::Error),
-    /// Timed out whilst creating or loading [`BitcoinD`]'s or [`UtreexoD`]'s wallet.
-    WalletTimeout,
-    /// Failed to instantiate [`BitcoinD`] or [`UtreexoD`] after [`MAX_RETRIES_NODE_BUILDING`] attempts.
+    /// Failed to instantiate a [`BitcoinD`]/[`UtreexoD`] after [`NODE_BUILDING_MAX_RETRIES`] attempts.
     ExhaustedNodeBuildingRetries,
     /// Failed to stop [`BitcoinD`] or [`UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
     FailedToStop(corepc_client::client_sync::Error),
@@ -121,8 +119,7 @@ impl fmt::Display for Error {
         match self {
             BinaryNotFound(path) => write!(f, "The `utreexod` binary was not found at the expected location: {}", path.display()),
             FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
-            WalletTimeout => write!(f, "Timed out whilst creating or loading a wallet"),
-            ExhaustedNodeBuildingRetries => write!(f, "Failed to instantiate the node after {} attempts", MAX_RETRIES_NODE_BUILDING),
+            ExhaustedNodeBuildingRetries => write!(f, "Failed to instantiate the node after {} attempts", NODE_BUILDING_MAX_RETRIES),
             FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
             Io(err) => write!(f, "I/O Error: {err:?}"),
             JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),

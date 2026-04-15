@@ -259,7 +259,7 @@ impl BitcoinD {
             let rpc_client = loop {
                 if Instant::now() > deadline {
                     let _ = process.kill();
-                    return Err(Error::WalletTimeout);
+                    continue;
                 }
                 if client_base.create_wallet(BITCOIND_WALLET).is_ok()
                     || client_base.load_wallet(BITCOIND_WALLET).is_ok()
