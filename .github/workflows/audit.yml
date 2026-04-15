@@ -1,6 +1,8 @@
 name: Security Audit
 
-on: [push, pull_request]
+on:
+    push:
+    pull_request:
 env:
     CARGO_TERM_COLOR: always
 permissions: {}
@@ -20,7 +22,7 @@ jobs:
                   persist-credentials: false
 
             - name: Install cargo-audit
-              run: cargo install cargo-audit@0.22.1 --locked
+              run: cargo install cargo-audit --locked
 
             - name: Check for audit warnings
               run: cargo audit -D warnings

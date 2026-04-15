@@ -109,9 +109,6 @@ mod bitcoind {
         let expected_hash = get_expected_sha256(&download_filename);
 
         if existing_filename.exists() {
-            println!(
-                "cargo:warning=Found cached `bitcoind` under `/target/bin/`, skipping download"
-            );
             return;
         } else {
             println!(
@@ -316,9 +313,6 @@ mod utreexod {
         let expected_hash = get_expected_sha256(&download_filename);
 
         if existing_filename.exists() {
-            println!(
-                "cargo:warning=Found cached `utreexod` under `/target/bin/`, skipping download"
-            );
             return;
         } else {
             println!(

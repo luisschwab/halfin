@@ -1,9 +1,10 @@
 [package]
-name = "halfin"
 version = "0.1.0"
+name = "halfin"
+description = "A (regtest) bitcoin node runner 🏃‍♂️"
 authors = ["Luis Schwab <dev@luisschwab.net"]
 repository = "https://github.com/luisschwab/halfin"
-description = "A (regtest) bitcoin node runner 🏃‍♂️"
+documentation = "https://docs.rs/halfin"
 keywords = ["bitcoin", "runner", "testing"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"

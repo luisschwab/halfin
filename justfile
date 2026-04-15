@@ -26,15 +26,7 @@ check:
 
 [doc: "Checks whether all commits in this branch are signed"]
 check-sigs:
-    #!/usr/bin/env bash
-    TOTAL=$(git log --pretty='tformat:%H' origin/master..HEAD | wc -l | tr -d ' ')
-    UNSIGNED=$(git log --pretty='tformat:%H %G?' origin/master..HEAD | grep " N$" | wc -l | tr -d ' ')
-    if [ "$UNSIGNED" -gt 0 ]; then
-        echo "⚠️ Unsigned commits in this branch [$UNSIGNED/$TOTAL]"
-        exit 1
-    else
-        echo "🔏 All commits in this branch are signed [$TOTAL/$TOTAL]"
-    fi
+    bash contrib/check-signatures.sh
 
 [doc: "Delete binaries under `target/bin/`"]
 delete-bins:
@@ -60,8 +52,7 @@ lock:
 
 [doc: "Run tests across all toolchains and lockfiles"]
 test:
-    cargo rbmt test --toolchain stable --lock-file recent
-    cargo rbmt test --toolchain stable --lock-file minimal
+    cargo rbmt test
 
 [doc: "Run pre-push suite: lock, fmt, check, and test"]
 pre-push: lock fmt check check-sigs test
