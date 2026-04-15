@@ -52,8 +52,7 @@ lock:
 
 [doc: "Run tests across all toolchains and lockfiles"]
 test:
-    cargo rbmt test --toolchain stable --lock-file recent
-    cargo rbmt test --toolchain stable --lock-file minimal
+    cargo rbmt test
 
 [doc: "Run pre-push suite: lock, fmt, check, and test"]
 pre-push: lock fmt check check-sigs test

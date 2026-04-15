@@ -52,12 +52,8 @@ use tempfile::TempDir;
 use crate::DataDir;
 use crate::Error;
 use crate::LOCALHOST;
-use crate::MAX_RETRIES_NODE_BUILDING;
+use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::get_available_port;
-
-pub use serde_json;
-pub use tempfile;
-pub use which;
 
 /// Name of the wallet created (or loaded) inside every [`BitcoinD`] instance.
 const BITCOIND_WALLET: &str = "wallet";
@@ -100,7 +96,7 @@ pub struct BitcoinDConf<'a> {
     /// How many times to retry spawning `bitcoind` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`MAX_RETRIES_NODE_BUILDING`].
+    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_MAX_RETRIES`].
     pub max_retries: u8,
 }
 
@@ -110,7 +106,7 @@ impl Default for BitcoinDConf<'_> {
             args: vec!["-regtest", "-fallbackfee=0.0001"],
             tmpdir: None,
             staticdir: None,
-            max_retries: MAX_RETRIES_NODE_BUILDING,
+            max_retries: NODE_BUILDING_MAX_RETRIES,
         }
     }
 }
@@ -390,14 +386,17 @@ impl BitcoinD {
     }
 
     /// Generate `count` blocks.
-    pub fn generate(&self, count: usize) -> Result<(), Error> {
+    ///
+    /// Returns a the block hashes as a [`Vec<String>`].
+    pub fn generate(&self, count: u32) -> Result<Vec<String>, Error> {
         let address = self.rpc_client.new_address().map_err(Error::JsonRpc)?;
-        let _hashes = self
+        let hashes = self
             .rpc_client
-            .generate_to_address(count, &address)
-            .map_err(Error::JsonRpc)?;
+            .generate_to_address(count as usize, &address)
+            .map_err(Error::JsonRpc)?
+            .0;
 
-        Ok(())
+        Ok(hashes)
     }
 
     // ----> INTERNAL
@@ -491,20 +490,9 @@ pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::wait_for_height;
 
-    /// Block the calling thread until `node` reaches at least `height`, or panic after 10 seconds.
-    fn wait_for_height(node: &BitcoinD, height: u32) {
-        let timeout = Duration::from_secs(10);
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            if node.get_height().unwrap() >= height {
-                return;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-        panic!("timeout waiting for node to reach height {}", height);
-    }
+    use super::*;
 
     /// Verify that [`BitcoinD`] starts successfully and exposes its PID, working directory, and P2P socket
     #[test]
@@ -564,11 +552,11 @@ mod test {
             .add_peer(bitcoind_beta.get_p2p_socket())
             .unwrap();
 
-        wait_for_height(&bitcoind_beta, 21);
+        wait_for_height(&bitcoind_beta, 21).unwrap();
         assert_eq!(bitcoind_beta.get_height().unwrap(), 21);
 
         bitcoind_beta.generate(21).unwrap();
-        wait_for_height(&bitcoind_alpha, 42);
+        wait_for_height(&bitcoind_alpha, 42).unwrap();
         assert_eq!(bitcoind_alpha.get_height().unwrap(), 42);
     }
 }

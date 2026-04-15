@@ -15,8 +15,6 @@
 //! let node = UtreexoD::download_new().unwrap();
 //! ```
 
-mod versions;
-
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
 use std::env;
@@ -39,13 +37,15 @@ use tempfile::TempDir;
 use crate::DataDir;
 use crate::Error;
 use crate::LOCALHOST;
-use crate::MAX_RETRIES_NODE_BUILDING;
+use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::get_available_port;
 
-/// Username used for RPC authentication with `utreexod`.
+mod versions;
+
+/// Username for RPC authentication.
 const RPC_USER: &str = "halfin";
 
-/// Password used for RPC authentication with `utreexod`.
+/// Password for RPC authentication.
 const RPC_PASS: &str = "halfin";
 
 /// Configuration for a [`UtreexoD`] instance.
@@ -86,7 +86,7 @@ pub struct UtreexoDConf<'a> {
     /// How many times to retry spawning `utreexod` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`MAX_RETRIES_NODE_BUILDING`].
+    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_MAX_RETRIES`].
     pub max_retries: u8,
 }
 
@@ -102,7 +102,7 @@ impl Default for UtreexoDConf<'_> {
             ],
             tmpdir: None,
             staticdir: None,
-            max_retries: MAX_RETRIES_NODE_BUILDING,
+            max_retries: NODE_BUILDING_MAX_RETRIES,
         }
     }
 }
@@ -356,7 +356,7 @@ impl UtreexoD {
     }
 
     /// Generate `count` blocks.
-    pub fn generate(&self, count: usize) -> Result<(), Error> {
+    pub fn generate(&self, count: u32) -> Result<(), Error> {
         self.rpc_client
             .call::<serde_json::Value>("generate", &[serde_json::to_value(count).unwrap()])
             .map_err(Error::JsonRpc)?;
@@ -434,22 +434,11 @@ pub fn get_utreexod_path() -> Result<PathBuf, Error> {
 
 #[cfg(test)]
 mod test {
+    use crate::wait_for_height;
+
     use super::*;
 
-    /// Block the calling thread until `node` reaches at least `height`, or panic after 10 seconds.
-    fn wait_for_height(node: &UtreexoD, height: u32) {
-        let timeout = Duration::from_secs(30);
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            if node.get_height().unwrap() >= height {
-                return;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-        panic!("timeout waiting for node to reach height {}", height);
-    }
-
-    /// Verify that [`UtreexoD`] starts successfully and exposes its PID, working directory, and P2P socket
+    /// Verify that [`UtreexoD`] starts successfully and exposes its PID, working directory, and P2P socket.
     #[test]
     fn test_utreexod_starts() {
         let bin = get_utreexod_path().unwrap();
@@ -474,8 +463,8 @@ mod test {
         assert_eq!(height, 10);
     }
 
-    /// Verify that two nodes can connect to each other via `add_peer` and
-    /// that the peer count reflects the new connection on both sides.
+    /// Verify that two nodes can connect to each other via `add_peer`,
+    /// and that the peer count reflects the new connection on both sides.
     #[test]
     fn test_utreexod_addnode() {
         let utreexod_alpha = UtreexoD::download_new().unwrap();
@@ -492,7 +481,7 @@ mod test {
         assert_eq!(utreexod_beta.get_peer_count().unwrap(), 1);
     }
 
-    /// Verify that blocks mined on one node propagate to a connected peer.
+    /// Verify that mined blocks propagate to a connected peer.
     #[test]
     fn test_utreexod_blocks_propagate() {
         let utreexod_alpha = UtreexoD::download_new().unwrap();
@@ -507,11 +496,11 @@ mod test {
             .add_peer(utreexod_beta.get_p2p_socket())
             .unwrap();
 
-        wait_for_height(&utreexod_beta, 21);
+        wait_for_height(&utreexod_beta, 21).unwrap();
         assert_eq!(utreexod_beta.get_height().unwrap(), 21);
 
         utreexod_beta.generate(21).unwrap();
-        wait_for_height(&utreexod_alpha, 42);
+        wait_for_height(&utreexod_alpha, 42).unwrap();
         assert_eq!(utreexod_alpha.get_height().unwrap(), 42);
     }
 }
