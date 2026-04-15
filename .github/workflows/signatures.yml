@@ -23,4 +23,4 @@ jobs:
               uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
 
             - name: Check commit signatures
-              run: just check-sigs
+              run: bash contrib/check-signatures.sh

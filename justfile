@@ -26,15 +26,7 @@ check:
 
 [doc: "Checks whether all commits in this branch are signed"]
 check-sigs:
-    #!/usr/bin/env bash
-    TOTAL=$(git log --pretty='tformat:%H' origin/master..HEAD | wc -l | tr -d ' ')
-    UNSIGNED=$(git log --pretty='tformat:%H %G?' origin/master..HEAD | grep " N$" | wc -l | tr -d ' ')
-    if [ "$UNSIGNED" -gt 0 ]; then
-        echo "⚠️ Unsigned commits in this branch [$UNSIGNED/$TOTAL]"
-        exit 1
-    else
-        echo "🔏 All commits in this branch are signed [$TOTAL/$TOTAL]"
-    fi
+    bash contrib/check-signatures.sh
 
 [doc: "Delete binaries under `target/bin/`"]
 delete-bins:
