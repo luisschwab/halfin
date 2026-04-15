@@ -177,7 +177,7 @@ impl DataDir {
 #[derive(Debug)]
 pub enum Error {
     /// The binary was not found at the expected location.
-    BinaryNotFound(PathBuf),
+    BinaryNotFound((String, PathBuf)),
     /// Failed to spawn a [process](std::process::Child) for [`BitcoinD`]/[`UtreexoD`].
     FailedToSpawn(std::io::Error),
     /// Failed to instantiate a [`BitcoinD`]/[`UtreexoD`] after [`NODE_BUILDING_MAX_RETRIES`] attempts.
@@ -211,7 +211,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Error::*;
         match self {
-            BinaryNotFound(path) => write!(f, "The `utreexod` binary was not found at the expected location: {}", path.display()),
+            BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
             FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
             ExhaustedNodeBuildingRetries => write!(f, "Failed to instantiate the node after {} attempts", NODE_BUILDING_MAX_RETRIES),
             FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),

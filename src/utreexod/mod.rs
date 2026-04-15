@@ -38,6 +38,7 @@ use crate::DataDir;
 use crate::Error;
 use crate::LOCALHOST;
 use crate::NODE_BUILDING_MAX_RETRIES;
+use crate::Node;
 use crate::get_available_port;
 
 mod versions;
@@ -413,22 +414,15 @@ impl UtreexoD {
 
 /// Return the path to the downloaded `utreexod` binary.
 ///
-/// Resolution order:
-/// 1. `UTREEXOD_DOWNLOAD_DIR` env var (joined with `utreexod-<VERSION>/utreexod`).
-/// 2. `<CARGO_MANIFEST_DIR>/target/bin/utreexod-<VERSION>/utreexod`.
+/// The path is resolved at compile time from the `HALFIN_UTREEXOD_PATH`
+/// environment variable, which is set by `build.rs` after downloading
+/// and extracting the binary.
 pub fn get_utreexod_path() -> Result<PathBuf, Error> {
-    use versions::UTREEXOD_VERSION;
-
-    let mut bin_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("bin");
-
-    bin_path.push(format!("utreexod-{}", UTREEXOD_VERSION));
-    bin_path.push("utreexod");
-
+    let bin_name = UtreexoD::get_name().to_string();
+    let bin_path = PathBuf::from(option_env!("HALFIN_UTREEXOD_PATH").unwrap_or(""));
     match bin_path.exists() {
         true => Ok(bin_path),
-        false => Err(Error::BinaryNotFound(bin_path)),
+        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
 }
 

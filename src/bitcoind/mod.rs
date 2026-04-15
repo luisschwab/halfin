@@ -53,6 +53,7 @@ use crate::DataDir;
 use crate::Error;
 use crate::LOCALHOST;
 use crate::NODE_BUILDING_MAX_RETRIES;
+use crate::Node;
 use crate::get_available_port;
 
 /// Name of the wallet created (or loaded) inside every [`BitcoinD`] instance.
@@ -472,19 +473,16 @@ impl BitcoinD {
 }
 
 /// Return the path to the downloaded `bitcoind` binary.
+///
+/// The path is resolved at compile time from the `HALFIN_BITCOIND_PATH`
+/// environment variable, which is set by `build.rs` after downloading
+/// and extracting the binary.
 pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
-    use versions::BITCOIND_VERSION;
-
-    let mut bin_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("bin");
-
-    bin_path.push(format!("bitcoin-{}", BITCOIND_VERSION));
-    bin_path.push("bitcoind");
-
+    let bin_name = BitcoinD::get_name().to_string();
+    let bin_path = PathBuf::from(option_env!("HALFIN_BITCOIND_PATH").unwrap_or(""));
     match bin_path.exists() {
         true => Ok(bin_path),
-        false => Err(Error::BinaryNotFound(bin_path)),
+        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
 }
 

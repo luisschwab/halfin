@@ -10,16 +10,20 @@
 
 > A (regtest) bitcoin node runner 🏃‍♂️
 
-This crate makes it simple to run regtest `bitcoind` and `utreexod` instances from Rust code
-in integration test contexts. Pretty much [`corepc_node`](https://crates.io/crates/corepc-node) 
+This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin)
+and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
+integration testing contexts.
+
+Pretty much [`corepc_node`](https://crates.io/crates/corepc-node)
 with [`utreexod`](https://github.com/utreexo/utreexod) support.
 
 ## Supported Implementations and Versions
 
 | Implementation | Version  | Feature Flag     |
 |----------------|----------|----------------- |
-| [`bitcoind`]   | `v30.2`  | `bitcoind_30_2`  |
-| [`utreexod`]   | `v0.5.0` | `utreexod_0_5_0` |
+| `bitcoind`     | `v30.2`  | `bitcoind_30_2`  |
+|                |          |                  |
+| `utreexod`     | `v0.5.0` | `utreexod_0_5_0` |
 
 By default, the `bitcoind_30_2` and `utreexod_0_5_0` features are enabled.
 

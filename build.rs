@@ -110,6 +110,13 @@ mod bitcoind {
             .join(format!("bitcoin-{}", BITCOIND_VERSION))
             .join("bitcoind");
 
+        // Emit the binary path an an environment variable
+        // so that `get_bitcoind_path` picks it up.
+        println!(
+            "cargo:rustc-env=HALFIN_BITCOIND_PATH={}",
+            existing_filename.display()
+        );
+
         let download_filename = get_download_filename();
         let expected_hash = get_expected_sha256(&download_filename);
 
@@ -313,6 +320,13 @@ mod utreexod {
         let existing_filename = download_directory
             .join(format!("utreexod-{}", UTREEXOD_VERSION))
             .join("utreexod");
+
+        // Emit the binary path an an environment variable
+        // so that `get_utreexod_path` picks it up.
+        println!(
+            "cargo:rustc-env=HALFIN_UTREEXOD_PATH={}",
+            existing_filename.display()
+        );
 
         let download_filename = get_download_filename();
         let expected_hash = get_expected_sha256(&download_filename);
