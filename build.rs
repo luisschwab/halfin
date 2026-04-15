@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 fn main() {
+    // Skip downloading when docs.rs is building documentation
+    if std::env::var("DOCS_RS").is_ok() {
+        return;
+    }
+
     // Check if `bitcoind` is cached and download it if not.
     bitcoind::download();
     // Check if `utreexod` is cached and download it if not.
