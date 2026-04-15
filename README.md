@@ -1,19 +1,29 @@
 # halfin
 
+<p>
+    <a href="https://crates.io/crates/halfin"><img src="https://img.shields.io/crates/v/halfin.svg"/></a>
+    <a href="https://docs.rs/halfin"><img src="https://img.shields.io/badge/docs.rs-halfin-green"/></a>
+    <a href="https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/"><img src="https://img.shields.io/badge/rustc-1.85.0%2B-orange.svg?label=MSRV"/></a>
+    <a href="https://github.com/luisschwab/halfin/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT%2FApache--2.0-red.svg"/></a>
+    <a href="https://github.com/luisschwab/halfin/actions/workflows/rust.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg"></a>
+</p>
+
 > A (regtest) bitcoin node runner 🏃‍♂️
 
 This crate makes it simple to run regtest `bitcoind` and `utreexod` instances from Rust code
 in integration test contexts. Pretty much [`corepc_node`](https://crates.io/crates/corepc-node) 
-with `utreexod` support.
+with [`utreexod`](https://github.com/utreexo/utreexod) support.
 
 ## Supported Implementations and Versions
 
-| Feature           | Implementation | Version(s) |
-|-------------------|----------------|------------|
-| `bitcoind_30_2`   | `bitcoind`     | v30.2      |
-| `utreexod_0_5_0`  | `utreexod`     | v0.5.0     |
+| Implementation | Version  | Feature Flag     |
+|----------------|----------|----------------- |
+| [`bitcoind`]   | `v30.2`  | `bitcoind_30_2`  |
+| [`utreexod`]   | `v0.5.0` | `utreexod_0_5_0` |
 
-Both features are enabled by default. Binaries are downloaded automatically at build time, see [`build.rs`](./build.rs).
+By default, the `bitcoind_30_2` and `utreexod_0_5_0` features are enabled.
+
+Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
 ## BitcoinD
 
