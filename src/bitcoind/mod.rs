@@ -11,7 +11,7 @@
 //! use halfin::bitcoind::BitcoinD;
 //!
 //! // Start a node with default configuration.
-//! let node = BitcoinD::download_new().unwrap();
+//! let node = BitcoinD::new().unwrap();
 //!
 //! // Mine some blocks
 //! node.generate(10).unwrap();
@@ -165,14 +165,14 @@ impl BitcoinD {
     /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with the default [`BitcoinDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
-    pub fn download_new() -> Result<BitcoinD, Error> {
+    pub fn new() -> Result<BitcoinD, Error> {
         BitcoinD::from_bin(get_bitcoind_path()?)
     }
 
     /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with a custom [`BitcoinDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
-    pub fn download_new_with_conf(conf: &BitcoinDConf) -> Result<BitcoinD, Error> {
+    pub fn new_with_conf(conf: &BitcoinDConf) -> Result<BitcoinD, Error> {
         BitcoinD::from_bin_with_conf(get_bitcoind_path()?, conf)
     }
 
@@ -506,7 +506,7 @@ mod test {
     /// Verify that `generate` mines the requested number of blocks.
     #[test]
     fn test_bitcoind_generate() {
-        let bitcoind = BitcoinD::download_new().unwrap();
+        let bitcoind = BitcoinD::new().unwrap();
 
         let height = bitcoind.get_height().unwrap();
         assert_eq!(height, 0);
@@ -521,8 +521,8 @@ mod test {
     /// that the peer count reflects the new connection on both sides.
     #[test]
     fn test_bitcoind_addnode() {
-        let bitcoind_alpha = BitcoinD::download_new().unwrap();
-        let bitcoind_beta = BitcoinD::download_new().unwrap();
+        let bitcoind_alpha = BitcoinD::new().unwrap();
+        let bitcoind_beta = BitcoinD::new().unwrap();
 
         assert_eq!(bitcoind_alpha.get_peer_count().unwrap(), 0);
         assert_eq!(bitcoind_beta.get_peer_count().unwrap(), 0);
@@ -538,8 +538,8 @@ mod test {
     /// Verify that blocks mined on one node propagate to a connected peer.
     #[test]
     fn test_bitcoind_blocks_propagate() {
-        let bitcoind_alpha = BitcoinD::download_new().unwrap();
-        let bitcoind_beta = BitcoinD::download_new().unwrap();
+        let bitcoind_alpha = BitcoinD::new().unwrap();
+        let bitcoind_beta = BitcoinD::new().unwrap();
 
         bitcoind_alpha.generate(21).unwrap();
 

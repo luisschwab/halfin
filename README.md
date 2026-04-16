@@ -14,7 +14,7 @@ This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoi
 and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
 integration testing contexts.
 
-Pretty much [`corepc_node`](https://crates.io/crates/corepc-node)
+Pretty much [`bitcoind`](https://crates.io/crates/bitcoind)
 with [`utreexod`](https://github.com/utreexo/utreexod) support.
 
 ## Supported Implementations and Versions
@@ -35,14 +35,21 @@ Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs
 use halfin::bitcoind::BitcoinD;
 
 // Use downloaded/cached binaries
-let bitcoind_alpha = BitcoinD::download_new().unwrap();
-let bitcoind_beta = BitcoinD::download_new().unwrap();
+let bitcoind_alpha = BitcoinD::new().unwrap();
+// Use a local binary
+let bin_path = PathBuf::from_str("/usr/local/bin/bitcoind").unwrap();
+let bitcoind_beta = BitcoinD::from_bin(&bin_path).unwrap();
 
+// Connect peers
 bitcoind_alpha.add_peer(bitcoind_beta.get_p2p_socket()).unwrap();
 
-bitcoind_alpha.generate(10).unwrap();
-assert_eq!(bitcoind_alpha.get_height().unwrap(), 10);
-assert_eq!(bitcoind_beta.get_height().unwrap(), 10);
+// Mine blocks
+bitcoind_alpha.generate(100).unwrap();
+// Wait for a node to catch up with the other
+wait_for_height(&bitcoind_beta, 100).unwrap();
+
+assert_eq!(bitcoind_alpha.get_height().unwrap(), 100);
+assert_eq!(bitcoind_beta.get_height().unwrap(), 100);
 ```
 
 ## UtreexoD
@@ -50,9 +57,7 @@ assert_eq!(bitcoind_beta.get_height().unwrap(), 10);
 ```rust
 use halfin::utreexod::UtreexoD;
 
-// Use a local binary by specifying its path
-let bin_path = PathBuf::from_str("/usr/local/bin/utreexod").unwrap();
-let utreexod = UtreexoD::from_bin(utreexod_bin: &bin_path).unwrap();
+let utreexod = UtreexoD::new().unwrap();
 
 utreexod.generate(10).unwrap();
 assert_eq!(utreexod.get_height().unwrap(), 10);

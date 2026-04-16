@@ -15,11 +15,11 @@
 //! use halfin::bitcoind::BitcoinD;
 //! use halfin::utreexod::UtreexoD;
 //!
-//! let bitcoind = BitcoinD::download_new().unwrap();
+//! let bitcoind = BitcoinD::new().unwrap();
 //! bitcoind.generate(10).unwrap();
 //! assert_eq!(bitcoind.get_height().unwrap(), 10);
 //!
-//! let utreexod = UtreexoD::download_new().unwrap();
+//! let utreexod = UtreexoD::new().unwrap();
 //! utreexod.generate(10).unwrap();
 //! assert_eq!(utreexod.get_height().unwrap(), 10);
 //! ```
