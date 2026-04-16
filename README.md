@@ -8,7 +8,7 @@
     <a href="https://github.com/luisschwab/halfin/actions/workflows/rust.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg"></a>
 </p>
 
-> A (regtest) bitcoin node runner 🏃‍♂️
+> A {regtest} bitcoin node runner 🏃‍♂️
 
 This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin)
 and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
@@ -28,6 +28,17 @@ with [`utreexod`](https://github.com/utreexo/utreexod) support.
 By default, the `bitcoind_30_2` and `utreexod_0_5_0` features are enabled.
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
+
+## Running on CI
+
+Since [`utreexod`](https://github.com/utreexo/utreexod) binaries are downloaded directly
+from its GitHub releases page, we can get 403'ed by GitHub itself. To curb this, you need
+to export the `GITHUB_TOKEN` environment variable in your CI workflow as such:
+
+```
+env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
 ## BitcoinD
 

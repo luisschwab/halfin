@@ -231,6 +231,7 @@ mod bitcoind {
 ///
 /// If the binary was previously dowloaded and exists under `target/bin/utreexod`, it won't download again.
 mod utreexod {
+    use std::env;
     use std::ffi::OsStr;
     use std::fs;
     use std::fs::File;
@@ -346,10 +347,22 @@ mod utreexod {
                 UTREEXOD_DOWNLOAD_URL, UTREEXOD_VERSION, download_filename
             );
 
-            let response = bitreq::get(&download_url)
-                .send()
-                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
-                .unwrap();
+            let response = {
+                let mut request = bitreq::get(&download_url);
+
+                // GitHub CI workflows should export the `GITHUB_TOKEN` environment
+                // variable so as to not get 403 Forbidden errors when downloading
+                // from GitHub (make it make sense).
+                //
+                // Attaches the `Authorization: Bearer <GITHUB_TOKEN>` to the request.
+                if let Ok(token) = env::var("GITHUB_TOKEN") {
+                    request = request.with_header("Authorization", format!("Bearer {}", token));
+                }
+                request
+                    .send()
+                    .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
+                    .unwrap()
+            };
 
             assert_eq!(
                 response.status_code, 200,
