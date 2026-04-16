@@ -9,8 +9,8 @@ use halfin::wait_for_height;
 /// Verify that [`BitcoinD`] and [`UtreexoD`] can connect to each other.
 #[test]
 fn test_bitcoind_utreexod_addnode() {
-    let bitcoind = BitcoinD::download_new().unwrap();
-    let utreexod = UtreexoD::download_new().unwrap();
+    let bitcoind = BitcoinD::new().unwrap();
+    let utreexod = UtreexoD::new().unwrap();
 
     assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
     assert_eq!(utreexod.get_peer_count().unwrap(), 0);
@@ -24,8 +24,8 @@ fn test_bitcoind_utreexod_addnode() {
 /// Verify that blocks mined on [`BitcoinD`] propagate to a connected [`UtreexoD`].
 #[test]
 fn test_bitcoind_blocks_propagate_to_utreexod() {
-    let bitcoind = BitcoinD::download_new().unwrap();
-    let utreexod = UtreexoD::download_new().unwrap();
+    let bitcoind = BitcoinD::new().unwrap();
+    let utreexod = UtreexoD::new().unwrap();
 
     // Mine blocks before connecting so utreexod syncs them on connect
     bitcoind.generate(21).unwrap();
@@ -43,8 +43,8 @@ fn test_bitcoind_blocks_propagate_to_utreexod() {
 #[test]
 #[ignore]
 fn test_bitcoind_utreexod_chain_sync() {
-    let bitcoind = BitcoinD::download_new().unwrap();
-    let utreexod = UtreexoD::download_new().unwrap();
+    let bitcoind = BitcoinD::new().unwrap();
+    let utreexod = UtreexoD::new().unwrap();
 
     bitcoind.add_peer(utreexod.get_p2p_socket()).unwrap();
 

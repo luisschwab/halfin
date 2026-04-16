@@ -12,7 +12,7 @@
 //! use halfin::utreexod::UtreexoD;
 //!
 //! // Start a node with default configuration
-//! let node = UtreexoD::download_new().unwrap();
+//! let node = UtreexoD::new().unwrap();
 //! ```
 
 use core::net::SocketAddr;
@@ -153,14 +153,14 @@ impl UtreexoD {
     /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with the default [`UtreexoDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
-    pub fn download_new() -> Result<UtreexoD, Error> {
+    pub fn new() -> Result<UtreexoD, Error> {
         UtreexoD::from_bin(get_utreexod_path()?)
     }
 
     /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with a custom [`UtreexoDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
-    pub fn from_downloaded_with_conf(conf: &UtreexoDConf) -> Result<UtreexoD, Error> {
+    pub fn new_with_conf(conf: &UtreexoDConf) -> Result<UtreexoD, Error> {
         UtreexoD::from_bin_with_conf(get_utreexod_path()?, conf)
     }
 
@@ -435,8 +435,8 @@ mod test {
     /// Verify that [`UtreexoD`] starts successfully and exposes its PID, working directory, and P2P socket.
     #[test]
     fn test_utreexod_starts() {
-        let bin = get_utreexod_path().unwrap();
-        let utreexod = UtreexoD::from_bin(bin).unwrap();
+        let bin_path = get_utreexod_path().unwrap();
+        let utreexod = UtreexoD::from_bin(bin_path).unwrap();
 
         println!("PID: {}", utreexod.get_pid());
         println!("Working Directory: {:?}", utreexod.get_working_directory());
@@ -446,7 +446,7 @@ mod test {
     /// Verify that `generate` mines the requested number of blocks.
     #[test]
     fn test_utreexod_generate() {
-        let utreexod = UtreexoD::download_new().unwrap();
+        let utreexod = UtreexoD::new().unwrap();
 
         let height = utreexod.get_height().unwrap();
         assert_eq!(height, 0);
@@ -461,8 +461,8 @@ mod test {
     /// and that the peer count reflects the new connection on both sides.
     #[test]
     fn test_utreexod_addnode() {
-        let utreexod_alpha = UtreexoD::download_new().unwrap();
-        let utreexod_beta = UtreexoD::download_new().unwrap();
+        let utreexod_alpha = UtreexoD::new().unwrap();
+        let utreexod_beta = UtreexoD::new().unwrap();
 
         assert_eq!(utreexod_alpha.get_peer_count().unwrap(), 0);
         assert_eq!(utreexod_beta.get_peer_count().unwrap(), 0);
@@ -478,8 +478,8 @@ mod test {
     /// Verify that mined blocks propagate to a connected peer.
     #[test]
     fn test_utreexod_blocks_propagate() {
-        let utreexod_alpha = UtreexoD::download_new().unwrap();
-        let utreexod_beta = UtreexoD::download_new().unwrap();
+        let utreexod_alpha = UtreexoD::new().unwrap();
+        let utreexod_beta = UtreexoD::new().unwrap();
 
         utreexod_alpha.generate(21).unwrap();
 
