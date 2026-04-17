@@ -30,7 +30,6 @@ use std::time::Duration;
 use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::hex::FromHex;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v17::AddNodeCommand;
 use corepc_client::client_sync::v17::Client;
@@ -319,6 +318,20 @@ impl UtreexoD {
             .parse::<BlockHash>()
             .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
         Ok(hash)
+    }
+
+    // TODO(@luisschwab): return a `rustreexo::proof::Proof`
+    /// Get the Utreexo proof for the block at height `height`.
+    pub fn get_block_uproof(&self, height: u32) -> Result<String, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        let proof_hex = self
+            .rpc_client
+            .call::<serde_json::Value>("getutreexoproof", &[block_hash.to_string().into()])
+            .map_err(Error::JsonRpc)?
+            .as_str()
+            .ok_or(Error::UnexpectedResponse("getutreexoproof returned a non-string value".to_string()))?
+            .to_string();
+        Ok(proof_hex)
     }
 
     /// Connect this [`UtreexoD`] to a peer at `socket` and wait until the
