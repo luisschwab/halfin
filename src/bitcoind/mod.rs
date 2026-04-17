@@ -347,6 +347,18 @@ impl BitcoinD {
         Ok(height)
     }
 
+    /// Get the [`BlockHash`] of the block at height `height`.
+    pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
+        let hash = self
+            .rpc_client
+            .get_block_hash(height as u64)
+            .map_err(Error::JsonRpc)?
+            .0
+            .parse::<BlockHash>()
+            .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
+        Ok(hash)
+    }
+
     /// Connect this [`BitcoinD`] to another [`BitcoinD`] at `socket` and
     /// wait until the connection is established (up to 5 seconds with exponential back-off).
     ///
@@ -521,6 +533,18 @@ mod test {
 
         let height = bitcoind.get_chain_tip().unwrap();
         assert_eq!(height, 10);
+    }
+
+    /// Verify that [`BitcoinD::get_block_hash`] returns the correct [`BlockHash`] for a given height.
+    #[test]
+    fn test_bitcoind_get_block_hash() {
+        let bitcoind = BitcoinD::new().unwrap();
+
+        let block_hashes = bitcoind.generate(10).unwrap();
+
+        let last_block_hash = bitcoind.get_block_hash(10).unwrap();
+
+        assert_eq!(last_block_hash, *block_hashes.last().unwrap());
     }
 
     /// Verify that two nodes can connect to each other via `add_peer` and

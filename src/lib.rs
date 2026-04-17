@@ -17,11 +17,11 @@
 //!
 //! let bitcoind = BitcoinD::new().unwrap();
 //! bitcoind.generate(10).unwrap();
-//! assert_eq!(bitcoind.get_height().unwrap(), 10);
+//! assert_eq!(bitcoind.get_chain_tip().unwrap(), 10);
 //!
 //! let utreexod = UtreexoD::new().unwrap();
 //! utreexod.generate(10).unwrap();
-//! assert_eq!(utreexod.get_height().unwrap(), 10);
+//! assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
@@ -31,6 +31,7 @@ use core::error;
 use core::fmt;
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
+use corepc_client::bitcoin::BlockHash;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::thread;
@@ -64,6 +65,9 @@ pub trait Node {
     /// Get the [`Node`]'s current chain height.
     fn get_chain_tip(&self) -> Result<u32, Error>;
 
+    // Get the [`BlockHash`] of the block at `height`.
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
+
     /// How long to sleep between `get_height` RPC calls.
     ///
     /// Defaults to [`POLL_INTERVAL`].
@@ -88,12 +92,14 @@ pub trait Node {
 impl Node for BitcoinD {
     fn get_name() -> &'static str { "bitcoind" }
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 }
 
 #[rustfmt::skip]
 impl Node for UtreexoD {
     fn get_name() -> &'static str { "utreexod" }
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
     fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
     fn wait_timeout() -> Duration { 2 * WAIT_TIMEOUT }
 }

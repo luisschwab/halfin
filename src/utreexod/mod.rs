@@ -29,6 +29,8 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use corepc_client::bitcoin::BlockHash;
+use corepc_client::bitcoin::hex::FromHex;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v17::AddNodeCommand;
 use corepc_client::client_sync::v17::Client;
@@ -303,6 +305,21 @@ impl UtreexoD {
         Ok(height)
     }
 
+    /// Get the [`BlockHash`] of the block at height `height`.
+    pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
+        let hash = self
+            .rpc_client
+            .call::<serde_json::Value>("getblockhash", &[height.into()])
+            .map_err(Error::JsonRpc)?
+            .as_str()
+            .ok_or(Error::UnexpectedResponse(
+                "getblockhash returned a non-string value".to_string(),
+            ))?
+            .parse::<BlockHash>()
+            .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
+        Ok(hash)
+    }
+
     /// Connect this [`UtreexoD`] to a peer at `socket` and wait until the
     /// connection is established (up to 5 seconds with exponential back-off).
     ///
@@ -477,6 +494,18 @@ mod test {
 
         let height = utreexod.get_chain_tip().unwrap();
         assert_eq!(height, 10);
+    }
+
+    /// Verify that [`UtreexoD::get_block_hash`] returns the correct hash for a given height.
+    #[test]
+    fn test_utreexod_get_block_hash() {
+        let utreexod = UtreexoD::new().unwrap();
+
+        let block_hashes = utreexod.generate(10).unwrap();
+
+        let last_block_hash = utreexod.get_block_hash(10).unwrap();
+
+        assert_eq!(last_block_hash, *block_hashes.last().unwrap());
     }
 
     /// Verify that two nodes can connect to each other via `add_peer`,
