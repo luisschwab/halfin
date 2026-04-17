@@ -291,7 +291,7 @@ impl UtreexoD {
     // ----> RPC CALL WRAPPERS
 
     /// Get the current chain height.
-    pub fn get_height(&self) -> Result<u32, Error> {
+    pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self
             .rpc_client
             .call::<serde_json::Value>("getblockchaininfo", &[])
@@ -482,18 +482,18 @@ mod test {
 
         utreexod_alpha.generate(21).unwrap();
 
-        assert_eq!(utreexod_alpha.get_height().unwrap(), 21);
-        assert_eq!(utreexod_beta.get_height().unwrap(), 0);
+        assert_eq!(utreexod_alpha.get_chain_tip().unwrap(), 21);
+        assert_eq!(utreexod_beta.get_chain_tip().unwrap(), 0);
 
         utreexod_alpha
             .add_peer(utreexod_beta.get_p2p_socket())
             .unwrap();
 
         wait_for_height(&utreexod_beta, 21).unwrap();
-        assert_eq!(utreexod_beta.get_height().unwrap(), 21);
+        assert_eq!(utreexod_beta.get_chain_tip().unwrap(), 21);
 
         utreexod_beta.generate(21).unwrap();
         wait_for_height(&utreexod_alpha, 42).unwrap();
-        assert_eq!(utreexod_alpha.get_height().unwrap(), 42);
+        assert_eq!(utreexod_alpha.get_chain_tip().unwrap(), 42);
     }
 }

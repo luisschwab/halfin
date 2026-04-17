@@ -62,7 +62,7 @@ pub trait Node {
     fn get_name() -> &'static str;
 
     /// Get the [`Node`]'s current chain height.
-    fn get_height(&self) -> Result<u32, Error>;
+    fn get_chain_tip(&self) -> Result<u32, Error>;
 
     /// How long to sleep between `get_height` RPC calls.
     ///
@@ -87,13 +87,13 @@ pub trait Node {
 #[rustfmt::skip]
 impl Node for BitcoinD {
     fn get_name() -> &'static str { "bitcoind" }
-    fn get_height(&self) -> Result<u32, Error> { self.get_height() }
+    fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
 }
 
 #[rustfmt::skip]
 impl Node for UtreexoD {
     fn get_name() -> &'static str { "utreexod" }
-    fn get_height(&self) -> Result<u32, Error> { self.get_height() }
+    fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
     fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
     fn wait_timeout() -> Duration { 2 * WAIT_TIMEOUT }
 }
@@ -104,13 +104,13 @@ impl Node for UtreexoD {
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
-        if node.get_height().unwrap() >= height {
+        if node.get_chain_tip().unwrap() >= height {
             return Ok(());
         }
         thread::sleep(N::poll_interval());
     }
 
-    let curr_height = node.get_height().unwrap();
+    let curr_height = node.get_chain_tip().unwrap();
     Err(Error::ChainSyncTimeOut((
         height,
         curr_height,
@@ -128,13 +128,13 @@ pub fn wait_for_height_with_timeout<N: Node>(
 ) -> Result<(), Error> {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if node.get_height().unwrap() >= height {
+        if node.get_chain_tip().unwrap() >= height {
             return Ok(());
         }
         thread::sleep(N::poll_interval());
     }
 
-    let curr_height = node.get_height().unwrap();
+    let curr_height = node.get_chain_tip().unwrap();
     Err(Error::ChainSyncTimeOut((height, curr_height, timeout)))
 }
 

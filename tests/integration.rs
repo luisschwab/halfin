@@ -29,12 +29,12 @@ fn test_bitcoind_blocks_propagate_to_utreexod() {
 
     // Mine blocks before connecting so utreexod syncs them on connect
     bitcoind.generate(21).unwrap();
-    assert_eq!(bitcoind.get_height().unwrap(), 21);
+    assert_eq!(bitcoind.get_chain_tip().unwrap(), 21);
 
     utreexod.add_peer(bitcoind.get_p2p_socket()).unwrap();
 
     wait_for_height(&utreexod, 21).unwrap();
-    assert_eq!(utreexod.get_height().unwrap(), 21);
+    assert_eq!(utreexod.get_chain_tip().unwrap(), 21);
 }
 
 // Doesn't work
@@ -62,9 +62,9 @@ fn test_bitcoind_utreexod_chain_sync() {
 
     bitcoind.generate(10).unwrap();
     wait_for_height(&utreexod, 10).unwrap();
-    assert_eq!(utreexod.get_height().unwrap(), 10);
+    assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
 
     bitcoind.generate(10).unwrap();
     wait_for_height(&utreexod, 20).unwrap();
-    assert_eq!(utreexod.get_height().unwrap(), 20);
+    assert_eq!(utreexod.get_chain_tip().unwrap(), 20);
 }
