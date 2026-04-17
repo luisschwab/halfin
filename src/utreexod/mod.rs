@@ -356,11 +356,28 @@ impl UtreexoD {
     }
 
     /// Generate `count` blocks.
-    pub fn generate(&self, count: u32) -> Result<(), Error> {
-        self.rpc_client
+    ///
+    /// Returns the block hashes as a [`Vec<BlockHash>`].
+    pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
+        let hashes = self
+            .rpc_client
             .call::<serde_json::Value>("generate", &[serde_json::to_value(count).unwrap()])
-            .map_err(Error::JsonRpc)?;
-        Ok(())
+            .map_err(Error::JsonRpc)?
+            .as_array()
+            .ok_or(Error::UnexpectedResponse(
+                "generate returned a non-array value".to_string(),
+            ))?
+            .iter()
+            .map(|h| {
+                h.as_str()
+                    .ok_or(Error::UnexpectedResponse(
+                        "generate returned a non-string hash".to_string(),
+                    ))?
+                    .parse::<BlockHash>()
+                    .map_err(|e| Error::UnexpectedResponse(e.to_string()))
+            })
+            .collect::<Result<Vec<BlockHash>, Error>>()?;
+        Ok(hashes)
     }
 
     // ----> INTERNAL

@@ -14,8 +14,8 @@
 //! let node = BitcoinD::new().unwrap();
 //!
 //! // Mine some blocks
-//! node.generate(10).unwrap();
-//! assert_eq!(node.get_height().unwrap(), 10);
+//! let _hashes = node.generate(10).unwrap();
+//! assert_eq!(node.get_chain_tip().unwrap(), 10);
 //! ```
 //!
 //! ## Directory Handling
@@ -43,6 +43,7 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v30::AddNodeCommand;
@@ -388,15 +389,20 @@ impl BitcoinD {
 
     /// Generate `count` blocks.
     ///
-    /// Returns a the block hashes as a [`Vec<String>`].
-    pub fn generate(&self, count: u32) -> Result<Vec<String>, Error> {
+    /// Returns the block hashes as a [`Vec<BlockHash>`].
+    pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
         let address = self.rpc_client.new_address().map_err(Error::JsonRpc)?;
         let hashes = self
             .rpc_client
             .generate_to_address(count as usize, &address)
             .map_err(Error::JsonRpc)?
-            .0;
-
+            .0
+            .iter()
+            .map(|h| {
+                h.parse::<BlockHash>()
+                    .map_err(|e| Error::UnexpectedResponse(e.to_string()))
+            })
+            .collect::<Result<Vec<BlockHash>, Error>>()?;
         Ok(hashes)
     }
 
