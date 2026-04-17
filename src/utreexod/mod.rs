@@ -207,6 +207,7 @@ impl UtreexoD {
                 .arg(&rpcuser_arg)
                 .arg(&rpcpass_arg)
                 .arg(&listen_arg)
+                .arg("--prune=0")
                 .arg("--flatutreexoproofindex")
                 .arg("--utreexoproofindexmaxmemory=512")
                 .arg("--v2transport")
