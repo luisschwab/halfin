@@ -17,11 +17,11 @@
 //!
 //! let bitcoind = BitcoinD::new().unwrap();
 //! bitcoind.generate(10).unwrap();
-//! assert_eq!(bitcoind.get_height().unwrap(), 10);
+//! assert_eq!(bitcoind.get_chain_tip().unwrap(), 10);
 //!
 //! let utreexod = UtreexoD::new().unwrap();
 //! utreexod.generate(10).unwrap();
-//! assert_eq!(utreexod.get_height().unwrap(), 10);
+//! assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
@@ -31,6 +31,7 @@ use core::error;
 use core::fmt;
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
+use corepc_client::bitcoin::BlockHash;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::thread;
@@ -62,7 +63,10 @@ pub trait Node {
     fn get_name() -> &'static str;
 
     /// Get the [`Node`]'s current chain height.
-    fn get_height(&self) -> Result<u32, Error>;
+    fn get_chain_tip(&self) -> Result<u32, Error>;
+
+    // Get the [`BlockHash`] of the block at `height`.
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
 
     /// How long to sleep between `get_height` RPC calls.
     ///
@@ -87,14 +91,31 @@ pub trait Node {
 #[rustfmt::skip]
 impl Node for BitcoinD {
     fn get_name() -> &'static str { "bitcoind" }
-    fn get_height(&self) -> Result<u32, Error> { self.get_height() }
+
+    fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 }
 
 #[rustfmt::skip]
 impl Node for UtreexoD {
     fn get_name() -> &'static str { "utreexod" }
-    fn get_height(&self) -> Result<u32, Error> { self.get_height() }
+
+    fn get_chain_tip(&self) -> Result<u32, Error> {
+        let height = self.get_chain_tip()?;
+        if height == 0 {
+            return Err(
+                Error::UnexpectedResponse("utreexod is at genesis, proof index not yet available".to_string())
+            );
+        }
+        self.get_block_uproof(height)?;
+        Ok(height)
+    }
+
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
+
     fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
+
     fn wait_timeout() -> Duration { 2 * WAIT_TIMEOUT }
 }
 
@@ -104,13 +125,13 @@ impl Node for UtreexoD {
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
-        if node.get_height().unwrap() >= height {
+        if node.get_chain_tip().unwrap() >= height {
             return Ok(());
         }
         thread::sleep(N::poll_interval());
     }
 
-    let curr_height = node.get_height().unwrap();
+    let curr_height = node.get_chain_tip().unwrap();
     Err(Error::ChainSyncTimeOut((
         height,
         curr_height,
@@ -128,13 +149,13 @@ pub fn wait_for_height_with_timeout<N: Node>(
 ) -> Result<(), Error> {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if node.get_height().unwrap() >= height {
+        if node.get_chain_tip().unwrap() >= height {
             return Ok(());
         }
         thread::sleep(N::poll_interval());
     }
 
-    let curr_height = node.get_height().unwrap();
+    let curr_height = node.get_chain_tip().unwrap();
     Err(Error::ChainSyncTimeOut((height, curr_height, timeout)))
 }
 
@@ -201,7 +222,7 @@ pub enum Error {
     /// Timed out whilst waiting for the JSON-RPC client to be ready.
     RpcClientSetupTimeout,
     /// Received an unexpected response from the JSON-RPC server
-    UnexpectedResponse,
+    UnexpectedResponse(String),
     /// Timed out whilst waiting for the [`Node`]'s chain to synchronize up to `height`
     ChainSyncTimeOut((u32, u32, Duration)), // (current_height, target_height, timeout)
 }
@@ -223,7 +244,7 @@ impl fmt::Display for Error {
             UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
             CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
-            UnexpectedResponse => write!(f, "Received an unexpected response from the JSON-RPC server"),
+            UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
             ChainSyncTimeOut((target_height, current_height, t)) => write!(
                 f,
                 "Timed out after {} seconds whilst waiting for the node's chain to synchronize to height={} (current height={})",

@@ -14,8 +14,8 @@
 //! let node = BitcoinD::new().unwrap();
 //!
 //! // Mine some blocks
-//! node.generate(10).unwrap();
-//! assert_eq!(node.get_height().unwrap(), 10);
+//! let _hashes = node.generate(10).unwrap();
+//! assert_eq!(node.get_chain_tip().unwrap(), 10);
 //! ```
 //!
 //! ## Directory Handling
@@ -43,6 +43,7 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v30::AddNodeCommand;
@@ -336,7 +337,7 @@ impl BitcoinD {
     // ----> RPC CALL WRAPPERS
 
     /// Get the current chain height.
-    pub fn get_height(&self) -> Result<u32, Error> {
+    pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let response = self
             .rpc_client
             .get_blockchain_info()
@@ -344,6 +345,18 @@ impl BitcoinD {
         let height = response.blocks as u32;
 
         Ok(height)
+    }
+
+    /// Get the [`BlockHash`] of the block at height `height`.
+    pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
+        let hash = self
+            .rpc_client
+            .get_block_hash(height as u64)
+            .map_err(Error::JsonRpc)?
+            .0
+            .parse::<BlockHash>()
+            .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
+        Ok(hash)
     }
 
     /// Connect this [`BitcoinD`] to another [`BitcoinD`] at `socket` and
@@ -388,15 +401,20 @@ impl BitcoinD {
 
     /// Generate `count` blocks.
     ///
-    /// Returns a the block hashes as a [`Vec<String>`].
-    pub fn generate(&self, count: u32) -> Result<Vec<String>, Error> {
+    /// Returns the block hashes as a [`Vec<BlockHash>`].
+    pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
         let address = self.rpc_client.new_address().map_err(Error::JsonRpc)?;
         let hashes = self
             .rpc_client
             .generate_to_address(count as usize, &address)
             .map_err(Error::JsonRpc)?
-            .0;
-
+            .0
+            .iter()
+            .map(|h| {
+                h.parse::<BlockHash>()
+                    .map_err(|e| Error::UnexpectedResponse(e.to_string()))
+            })
+            .collect::<Result<Vec<BlockHash>, Error>>()?;
         Ok(hashes)
     }
 
@@ -508,13 +526,25 @@ mod test {
     fn test_bitcoind_generate() {
         let bitcoind = BitcoinD::new().unwrap();
 
-        let height = bitcoind.get_height().unwrap();
+        let height = bitcoind.get_chain_tip().unwrap();
         assert_eq!(height, 0);
 
         bitcoind.generate(10).unwrap();
 
-        let height = bitcoind.get_height().unwrap();
+        let height = bitcoind.get_chain_tip().unwrap();
         assert_eq!(height, 10);
+    }
+
+    /// Verify that [`BitcoinD::get_block_hash`] returns the correct [`BlockHash`] for a given height.
+    #[test]
+    fn test_bitcoind_get_block_hash() {
+        let bitcoind = BitcoinD::new().unwrap();
+
+        let block_hashes = bitcoind.generate(10).unwrap();
+
+        let last_block_hash = bitcoind.get_block_hash(10).unwrap();
+
+        assert_eq!(last_block_hash, *block_hashes.last().unwrap());
     }
 
     /// Verify that two nodes can connect to each other via `add_peer` and
@@ -543,18 +573,18 @@ mod test {
 
         bitcoind_alpha.generate(21).unwrap();
 
-        assert_eq!(bitcoind_alpha.get_height().unwrap(), 21);
-        assert_eq!(bitcoind_beta.get_height().unwrap(), 0);
+        assert_eq!(bitcoind_alpha.get_chain_tip().unwrap(), 21);
+        assert_eq!(bitcoind_beta.get_chain_tip().unwrap(), 0);
 
         bitcoind_alpha
             .add_peer(bitcoind_beta.get_p2p_socket())
             .unwrap();
 
         wait_for_height(&bitcoind_beta, 21).unwrap();
-        assert_eq!(bitcoind_beta.get_height().unwrap(), 21);
+        assert_eq!(bitcoind_beta.get_chain_tip().unwrap(), 21);
 
         bitcoind_beta.generate(21).unwrap();
         wait_for_height(&bitcoind_alpha, 42).unwrap();
-        assert_eq!(bitcoind_alpha.get_height().unwrap(), 42);
+        assert_eq!(bitcoind_alpha.get_chain_tip().unwrap(), 42);
     }
 }

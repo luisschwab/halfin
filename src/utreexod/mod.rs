@@ -29,6 +29,7 @@ use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 
+use corepc_client::bitcoin::BlockHash;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v17::AddNodeCommand;
 use corepc_client::client_sync::v17::Client;
@@ -65,7 +66,6 @@ const RPC_PASS: &str = "halfin";
 /// | `Some`   | `None`      | Custom temp root (auto-cleaned on drop) |
 /// | `None`   | `Some`      | Persistent directory (not cleaned on drop) |
 /// | `Some`   | `Some`      | **Error** |
-#[non_exhaustive]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UtreexoDConf<'a> {
     /// Extra CLI arguments forwarded verbatim to the `utreexod` process.
@@ -206,6 +206,7 @@ impl UtreexoD {
                 .arg(&rpcuser_arg)
                 .arg(&rpcpass_arg)
                 .arg(&listen_arg)
+                .arg("--prune=0")
                 .arg("--flatutreexoproofindex")
                 .arg("--utreexoproofindexmaxmemory=512")
                 .arg("--v2transport")
@@ -292,14 +293,47 @@ impl UtreexoD {
     // ----> RPC CALL WRAPPERS
 
     /// Get the current chain height.
-    pub fn get_height(&self) -> Result<u32, Error> {
+    pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self
             .rpc_client
             .call::<serde_json::Value>("getblockchaininfo", &[])
             .map_err(Error::JsonRpc)?["blocks"]
             .as_u64()
-            .ok_or(Error::UnexpectedResponse)? as u32;
+            .ok_or(Error::UnexpectedResponse(
+                "getblockchaininfo returned no `blocks` field".to_string(),
+            ))? as u32;
         Ok(height)
+    }
+
+    /// Get the [`BlockHash`] of the block at height `height`.
+    pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
+        let hash = self
+            .rpc_client
+            .call::<serde_json::Value>("getblockhash", &[height.into()])
+            .map_err(Error::JsonRpc)?
+            .as_str()
+            .ok_or(Error::UnexpectedResponse(
+                "getblockhash returned a non-string value".to_string(),
+            ))?
+            .parse::<BlockHash>()
+            .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
+        Ok(hash)
+    }
+
+    // TODO(@luisschwab): return a `rustreexo::proof::Proof`
+    /// Get the Utreexo proof for the block at height `height`.
+    pub fn get_block_uproof(&self, height: u32) -> Result<String, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        let proof_hex = self
+            .rpc_client
+            .call::<serde_json::Value>("getutreexoproof", &[block_hash.to_string().into()])
+            .map_err(Error::JsonRpc)?
+            .as_str()
+            .ok_or(Error::UnexpectedResponse(
+                "getutreexoproof returned a non-string value".to_string(),
+            ))?
+            .to_string();
+        Ok(proof_hex)
     }
 
     /// Connect this [`UtreexoD`] to a peer at `socket` and wait until the
@@ -351,17 +385,38 @@ impl UtreexoD {
             .rpc_client
             .call::<serde_json::Value>("getpeerinfo", &[])
             .map_err(Error::JsonRpc)?;
-        let peer_count = peers.as_array().ok_or(Error::UnexpectedResponse)?.len() as u32;
-
+        let peer_count = peers
+            .as_array()
+            .ok_or(Error::UnexpectedResponse(
+                "getpeerinfo returned a non-array value".to_string(),
+            ))?
+            .len() as u32;
         Ok(peer_count)
     }
 
     /// Generate `count` blocks.
-    pub fn generate(&self, count: u32) -> Result<(), Error> {
-        self.rpc_client
+    ///
+    /// Returns the block hashes as a [`Vec<BlockHash>`].
+    pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
+        let hashes = self
+            .rpc_client
             .call::<serde_json::Value>("generate", &[serde_json::to_value(count).unwrap()])
-            .map_err(Error::JsonRpc)?;
-        Ok(())
+            .map_err(Error::JsonRpc)?
+            .as_array()
+            .ok_or(Error::UnexpectedResponse(
+                "generate returned a non-array value".to_string(),
+            ))?
+            .iter()
+            .map(|h| {
+                h.as_str()
+                    .ok_or(Error::UnexpectedResponse(
+                        "generate returned a non-string hash".to_string(),
+                    ))?
+                    .parse::<BlockHash>()
+                    .map_err(|e| Error::UnexpectedResponse(e.to_string()))
+            })
+            .collect::<Result<Vec<BlockHash>, Error>>()?;
+        Ok(hashes)
     }
 
     // ----> INTERNAL
@@ -448,13 +503,25 @@ mod test {
     fn test_utreexod_generate() {
         let utreexod = UtreexoD::new().unwrap();
 
-        let height = utreexod.get_height().unwrap();
+        let height = utreexod.get_chain_tip().unwrap();
         assert_eq!(height, 0);
 
         utreexod.generate(10).unwrap();
 
-        let height = utreexod.get_height().unwrap();
+        let height = utreexod.get_chain_tip().unwrap();
         assert_eq!(height, 10);
+    }
+
+    /// Verify that [`UtreexoD::get_block_hash`] returns the correct hash for a given height.
+    #[test]
+    fn test_utreexod_get_block_hash() {
+        let utreexod = UtreexoD::new().unwrap();
+
+        let block_hashes = utreexod.generate(10).unwrap();
+
+        let last_block_hash = utreexod.get_block_hash(10).unwrap();
+
+        assert_eq!(last_block_hash, *block_hashes.last().unwrap());
     }
 
     /// Verify that two nodes can connect to each other via `add_peer`,
@@ -483,18 +550,18 @@ mod test {
 
         utreexod_alpha.generate(21).unwrap();
 
-        assert_eq!(utreexod_alpha.get_height().unwrap(), 21);
-        assert_eq!(utreexod_beta.get_height().unwrap(), 0);
+        assert_eq!(utreexod_alpha.get_chain_tip().unwrap(), 21);
+        assert_eq!(utreexod_beta.get_chain_tip().unwrap(), 0);
 
         utreexod_alpha
             .add_peer(utreexod_beta.get_p2p_socket())
             .unwrap();
 
         wait_for_height(&utreexod_beta, 21).unwrap();
-        assert_eq!(utreexod_beta.get_height().unwrap(), 21);
+        assert_eq!(utreexod_beta.get_chain_tip().unwrap(), 21);
 
         utreexod_beta.generate(21).unwrap();
         wait_for_height(&utreexod_alpha, 42).unwrap();
-        assert_eq!(utreexod_alpha.get_height().unwrap(), 42);
+        assert_eq!(utreexod_alpha.get_chain_tip().unwrap(), 42);
     }
 }
