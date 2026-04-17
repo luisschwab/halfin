@@ -2,6 +2,9 @@
 
 //! Integration tests between [`BitcoinD`] and [`UtreexoD`].
 
+use std::thread::sleep;
+use std::time::Duration;
+
 use halfin::bitcoind::BitcoinD;
 use halfin::utreexod::UtreexoD;
 use halfin::wait_for_height;
@@ -10,6 +13,7 @@ use halfin::wait_for_height;
 #[test]
 fn test_bitcoind_utreexod_addnode() {
     let bitcoind = BitcoinD::new().unwrap();
+    sleep(Duration::from_millis(100));
     let utreexod = UtreexoD::new().unwrap();
 
     assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
@@ -25,6 +29,7 @@ fn test_bitcoind_utreexod_addnode() {
 #[test]
 fn test_bitcoind_blocks_propagate_to_utreexod() {
     let bitcoind = BitcoinD::new().unwrap();
+    sleep(Duration::from_millis(100));
     let utreexod = UtreexoD::new().unwrap();
 
     // Mine blocks before connecting so utreexod syncs them on connect
@@ -44,6 +49,7 @@ fn test_bitcoind_blocks_propagate_to_utreexod() {
 #[ignore]
 fn test_bitcoind_utreexod_chain_sync() {
     let bitcoind = BitcoinD::new().unwrap();
+    sleep(Duration::from_millis(100));
     let utreexod = UtreexoD::new().unwrap();
 
     bitcoind.add_peer(utreexod.get_p2p_socket()).unwrap();

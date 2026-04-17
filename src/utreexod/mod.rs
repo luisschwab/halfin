@@ -329,7 +329,9 @@ impl UtreexoD {
             .call::<serde_json::Value>("getutreexoproof", &[block_hash.to_string().into()])
             .map_err(Error::JsonRpc)?
             .as_str()
-            .ok_or(Error::UnexpectedResponse("getutreexoproof returned a non-string value".to_string()))?
+            .ok_or(Error::UnexpectedResponse(
+                "getutreexoproof returned a non-string value".to_string(),
+            ))?
             .to_string();
         Ok(proof_hex)
     }

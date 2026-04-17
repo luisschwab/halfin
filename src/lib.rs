@@ -91,16 +91,31 @@ pub trait Node {
 #[rustfmt::skip]
 impl Node for BitcoinD {
     fn get_name() -> &'static str { "bitcoind" }
+
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 }
 
 #[rustfmt::skip]
 impl Node for UtreexoD {
     fn get_name() -> &'static str { "utreexod" }
-    fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+
+    fn get_chain_tip(&self) -> Result<u32, Error> {
+        let height = self.get_chain_tip()?;
+        if height == 0 {
+            return Err(
+                Error::UnexpectedResponse("utreexod is at genesis, proof index not yet available".to_string())
+            );
+        }
+        self.get_block_uproof(height)?;
+        Ok(height)
+    }
+
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
+
     fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
+
     fn wait_timeout() -> Duration { 2 * WAIT_TIMEOUT }
 }
 
