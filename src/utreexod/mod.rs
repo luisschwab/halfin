@@ -65,7 +65,6 @@ const RPC_PASS: &str = "halfin";
 /// | `Some`   | `None`      | Custom temp root (auto-cleaned on drop) |
 /// | `None`   | `Some`      | Persistent directory (not cleaned on drop) |
 /// | `Some`   | `Some`      | **Error** |
-#[non_exhaustive]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UtreexoDConf<'a> {
     /// Extra CLI arguments forwarded verbatim to the `utreexod` process.
