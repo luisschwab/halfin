@@ -201,7 +201,7 @@ pub enum Error {
     /// Timed out whilst waiting for the JSON-RPC client to be ready.
     RpcClientSetupTimeout,
     /// Received an unexpected response from the JSON-RPC server
-    UnexpectedResponse,
+    UnexpectedResponse(String),
     /// Timed out whilst waiting for the [`Node`]'s chain to synchronize up to `height`
     ChainSyncTimeOut((u32, u32, Duration)), // (current_height, target_height, timeout)
 }
@@ -223,7 +223,7 @@ impl fmt::Display for Error {
             UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
             CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
-            UnexpectedResponse => write!(f, "Received an unexpected response from the JSON-RPC server"),
+            UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
             ChainSyncTimeOut((target_height, current_height, t)) => write!(
                 f,
                 "Timed out after {} seconds whilst waiting for the node's chain to synchronize to height={} (current height={})",

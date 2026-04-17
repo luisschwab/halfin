@@ -297,7 +297,9 @@ impl UtreexoD {
             .call::<serde_json::Value>("getblockchaininfo", &[])
             .map_err(Error::JsonRpc)?["blocks"]
             .as_u64()
-            .ok_or(Error::UnexpectedResponse)? as u32;
+            .ok_or(Error::UnexpectedResponse(
+                "getblockchaininfo returned no `blocks` field".to_string(),
+            ))? as u32;
         Ok(height)
     }
 
@@ -350,8 +352,12 @@ impl UtreexoD {
             .rpc_client
             .call::<serde_json::Value>("getpeerinfo", &[])
             .map_err(Error::JsonRpc)?;
-        let peer_count = peers.as_array().ok_or(Error::UnexpectedResponse)?.len() as u32;
-
+        let peer_count = peers
+            .as_array()
+            .ok_or(Error::UnexpectedResponse(
+                "getpeerinfo returned a non-array value".to_string(),
+            ))?
+            .len() as u32;
         Ok(peer_count)
     }
 
@@ -464,12 +470,12 @@ mod test {
     fn test_utreexod_generate() {
         let utreexod = UtreexoD::new().unwrap();
 
-        let height = utreexod.get_height().unwrap();
+        let height = utreexod.get_chain_tip().unwrap();
         assert_eq!(height, 0);
 
         utreexod.generate(10).unwrap();
 
-        let height = utreexod.get_height().unwrap();
+        let height = utreexod.get_chain_tip().unwrap();
         assert_eq!(height, 10);
     }
 
