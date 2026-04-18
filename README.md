@@ -8,6 +8,10 @@
     <a href="https://github.com/luisschwab/halfin/actions/workflows/rust.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg"></a>
 </p>
 
+<p align="center">
+    <img src="static/halfin.webp" width="35%" alt="Bitcoin Node Runner (Hal Finney)"></img>
+</p>
+
 > A {regtest} bitcoin node runner 🏃‍♂️
 
 This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin)
