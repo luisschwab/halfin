@@ -47,9 +47,9 @@ permissions:
     contents: read
 ```
 
-The [`build.rs`] script automatically reads this variable from the environment
-and adds it as an `Authorization: Bearer $GITHUB_TOKEN` header when making
-requests to `github.com`.
+The [`build.rs`](https://github.com/luisschwab/halfin/blob/master/build.rs) script
+automatically reads this variable from the environment and adds it as an
+`Authorization: Bearer $GITHUB_TOKEN` header when making requests to `github.com`.
 
 ```rs
 if let Ok(token) = env::var("GITHUB_TOKEN") {

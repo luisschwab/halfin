@@ -87,19 +87,24 @@ mod bitcoind {
     }
 
     /// Download, verify, and extract the `bitcoind` binary into
-    /// `<CARGO_MANIFEST_DIR>/target/bin/bitcoin-<VERSION>/bitcoind`.
+    /// `<OUT_DIR>/bin/bitcoin-<VERSION>/bitcoind`, or
+    /// `<HALFIN_BIN_DIR>/bitcoin-<VERSION>/bitcoind` if the
+    /// `HALFIN_BIN_DIR` environment variable is set.
     ///
     /// Skips the download if the binary is already cached from a previous build.
     pub(crate) fn download() {
         const BITCOIND_DOWNLOAD_URL: &str = "https://bitcoincore.org";
 
-        let manifest_directory = env::var("CARGO_MANIFEST_DIR").unwrap();
-        let download_directory = PathBuf::from(manifest_directory).join("target").join("bin");
+        let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
+            PathBuf::from(path)
+        } else {
+            PathBuf::from(env::var("OUT_DIR").unwrap()).join("bin")
+        };
 
         fs::create_dir_all(&download_directory)
             .map_err(|e| {
                 format!(
-                    "Cannot create download directory at={}: {:?}",
+                    "Cannot create `bitcoind` download directory at={}: {:?}",
                     download_directory.display(),
                     e
                 )
@@ -299,19 +304,24 @@ mod utreexod {
     }
 
     /// Download, verify, and extract the `utreexod` binary into
-    /// `<CARGO_MANIFEST_DIR>/target/bin/utreexod-<VERSION>/utreexod`.
+    /// `<OUT_DIR>/bin/utreexod-<VERSION>/utreexod`, or
+    /// `<HALFIN_BIN_DIR>/utreexod-<VERSION>/utreexod` if the
+    /// the `HALFIN_BIN_DIR` environment variable is set.
     ///
     /// Skips the download if the binary is already cached from a previous build.
     pub(crate) fn download() {
         const UTREEXOD_DOWNLOAD_URL: &str = "https://github.com/utreexo/utreexod/releases/download";
 
-        let manifest_directory = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let download_directory = PathBuf::from(manifest_directory).join("target").join("bin");
+        let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
+            PathBuf::from(path)
+        } else {
+            PathBuf::from(env::var("OUT_DIR").unwrap()).join("bin")
+        };
 
         fs::create_dir_all(&download_directory)
             .map_err(|e| {
                 format!(
-                    "Cannot create download directory at={}: {:?}",
+                    "Cannot create `utreexod` download directory at={}: {:?}",
                     download_directory.display(),
                     e
                 )
