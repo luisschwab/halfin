@@ -1,3 +1,3 @@
-/// Bitcoin Core v30.2
+/// Bitcoin Core v31.0
 #[allow(unused)]
-pub const BITCOIND_VERSION: &str = "30.2";
+pub const BITCOIND_VERSION: &str = "31.0";

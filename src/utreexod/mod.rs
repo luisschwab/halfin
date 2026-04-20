@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # UtreexoD
+//! # UtreexoD: spawn and interact with a `utreexod` process
 //!
 //! A utility for spinning up `utreexod` processes in **regtest**,
 //! useful for integration testing Bitcoin applications that rely on
@@ -37,7 +37,7 @@ use tempfile::TempDir;
 
 use crate::DataDir;
 use crate::Error;
-use crate::LOCALHOST;
+use crate::IPV4_LOCALHOST;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::get_available_port;
@@ -187,11 +187,11 @@ impl UtreexoD {
             let working_directory = Self::init_work_dir(conf)?;
 
             let rpc_port = get_available_port();
-            let rpc_socket = SocketAddr::V4(SocketAddrV4::new(LOCALHOST, rpc_port));
+            let rpc_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, rpc_port));
             let rpc_url = format!("http://{}", rpc_socket);
 
             let p2p_port = get_available_port();
-            let p2p_socket = SocketAddr::V4(SocketAddrV4::new(LOCALHOST, p2p_port));
+            let p2p_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, p2p_port));
 
             let datadir_arg = format!("--datadir={}", working_directory.path().display());
             let rpclisten_arg = format!("--rpclisten=127.0.0.1:{}", rpc_port);
@@ -487,7 +487,8 @@ mod test {
 
     use super::*;
 
-    /// Verify that [`UtreexoD`] starts successfully and exposes its PID, working directory, and P2P socket.
+    /// Verify that [`UtreexoD`] starts successfully and
+    /// exposes its PID, working directory, and P2P socket.
     #[test]
     fn test_utreexod_starts() {
         let bin_path = get_utreexod_path().unwrap();
@@ -542,7 +543,7 @@ mod test {
         assert_eq!(utreexod_beta.get_peer_count().unwrap(), 1);
     }
 
-    /// Verify that mined blocks propagate to a connected peer.
+    /// Verify that blocks mined on one node propagate to a peer.
     #[test]
     fn test_utreexod_blocks_propagate() {
         let utreexod_alpha = UtreexoD::new().unwrap();

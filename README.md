@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="static/halfin.webp" width="40%" alt="A Bitcoin Node Runner (Hal Finney)">
+</p>
+
 # halfin
 
 <p>
@@ -6,10 +10,6 @@
     <a href="https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/"><img src="https://img.shields.io/badge/rustc-1.85.0%2B-orange.svg?label=MSRV"/></a>
     <a href="https://github.com/luisschwab/halfin/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT%2FApache--2.0-red.svg"/></a>
     <a href="https://github.com/luisschwab/halfin/actions/workflows/rust.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg"></a>
-</p>
-
-<p align="center">
-    <img src="static/halfin.webp" width="35%" alt="Bitcoin Node Runner (Hal Finney)"></img>
 </p>
 
 > A {regtest} bitcoin node runner 🏃‍♂️
@@ -25,23 +25,36 @@ with [`utreexod`](https://github.com/utreexo/utreexod) support.
 
 | Implementation | Version  | Feature Flag     |
 |----------------|----------|----------------- |
-| `bitcoind`     | `v30.2`  | `bitcoind_30_2`  |
+| `bitcoind`     | `v31.0`  | `bitcoind_31_0`  |
 |                |          |                  |
 | `utreexod`     | `v0.5.0` | `utreexod_0_5_0` |
 
-By default, the `bitcoind_30_2` and `utreexod_0_5_0` features are enabled.
+By default, the `bitcoind_31_0` and `utreexod_0_5_0` features are enabled.
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
-## Running on CI
+## Running on CI environments
 
 Since [`utreexod`](https://github.com/utreexo/utreexod) binaries are downloaded directly
 from its GitHub releases page, we can get 403'ed by GitHub itself. To curb this, you need
-to export the `GITHUB_TOKEN` environment variable in your CI workflow as such:
+to export the `GITHUB_TOKEN` environment variable and give `read` permissions in your CI
+workflow, as such:
 
 ```
 env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+permissions:
+    contents: read
+```
+
+The [`build.rs`] script automatically reads this variable from the environment
+and adds it as an `Authorization: Bearer $GITHUB_TOKEN` header when making
+requests to `github.com`.
+
+```rs
+if let Ok(token) = env::var("GITHUB_TOKEN") {
+    request = request.with_header("Authorization", format!("Bearer {}", token));
+}
 ```
 
 ## BitcoinD

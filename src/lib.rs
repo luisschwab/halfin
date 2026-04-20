@@ -6,7 +6,8 @@
 //!
 //! | Implementation | Version  | Feature Flag     |
 //! |----------------|----------|----------------- |
-//! | [`bitcoind`]   | `v30.2`  | `bitcoind_30_2`  |
+//! | [`bitcoind`]   | `v31.0`  | `bitcoind_31_0`  |
+//! |                |          |                  |
 //! | [`utreexod`]   | `v0.5.0` | `utreexod_0_5_0` |
 //!
 //! ## Example
@@ -45,8 +46,8 @@ pub use utreexod::UtreexoD;
 pub mod bitcoind;
 pub mod utreexod;
 
-/// IPv4 Localhost address.
-const LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
+/// The IPv4 localhost address.
+const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
 /// The maximum number of attempts at instantiating a [`BitcoinD`]/[`UtreexoD`].
 pub const NODE_BUILDING_MAX_RETRIES: u8 = 5;
@@ -164,7 +165,7 @@ pub fn wait_for_height_with_timeout<N: Node>(
 /// Inlining is needed to curb TOCTOU race conditions.
 #[inline]
 pub fn get_available_port() -> u16 {
-    TcpListener::bind((LOCALHOST, 0))
+    TcpListener::bind((IPV4_LOCALHOST, 0))
         .unwrap()
         .local_addr()
         .unwrap()

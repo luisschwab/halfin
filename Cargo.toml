@@ -30,9 +30,8 @@ zip = { version = "0.6", default-features = false, features = ["bzip2", "deflate
 env_logger = { version = "0.9", default-features = false }
 
 [features]
-default = ["bitcoind_30_2", "utreexod_0_5_0"]
-
-bitcoind_30_2 = []
+default = ["bitcoind_31_0", "utreexod_0_5_0"]
+bitcoind_31_0 = []
 utreexod_0_5_0 = []
 
 [lints.clippy]
@@ -42,14 +41,13 @@ let-and-return = "allow"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[package.metadata.rbmt.toolchains]
-stable = "1.85.0"
-nightly = "nightly-2026-03-18"
-
 [package.metadata.rbmt.test]
-exclude_features = ["bitcoind_30_2", "utreexod_0_5_0"]
+exclude_features = [
+    "bitcoind_31_0",
+    "utreexod_0_5_0"
+]
 exact_features = [
-    ["bitcoind_30_2", "utreexod_0_5_0"],
+    ["bitcoind_31_0", "utreexod_0_5_0"],
 ]
 
 # Allow packages of different versions in the dependency tree.
@@ -64,3 +62,7 @@ allowed_duplicates = [
     "rustix",
     "windows-sys"
 ]
+
+[package.metadata.rbmt.toolchains]
+stable = "1.95.0"
+nightly = "nightly-2026-03-18"
