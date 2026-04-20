@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # BitcoinD
+//! # BitcoinD: spawn and interact with a `bitcoind` process
 //!
 //! A utility crate for spinning up `bitcoind` processes in
 //! **regtest**, useful for integration testing Bitcoin applications.
@@ -52,7 +52,7 @@ use tempfile::TempDir;
 
 use crate::DataDir;
 use crate::Error;
-use crate::LOCALHOST;
+use crate::IPV4_LOCALHOST;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::get_available_port;
@@ -205,11 +205,11 @@ impl BitcoinD {
                 .join(".cookie");
 
             let rpc_port = get_available_port();
-            let rpc_socket = SocketAddr::V4(SocketAddrV4::new(LOCALHOST, rpc_port));
+            let rpc_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, rpc_port));
             let rpc_url = format!("http://{}", rpc_socket);
 
             let p2p_port = get_available_port();
-            let p2p_socket = SocketAddr::V4(SocketAddrV4::new(LOCALHOST, p2p_port));
+            let p2p_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, p2p_port));
 
             let datadir_arg = format!("-datadir={}", working_directory.path().display());
             let rpc_arg = format!("-rpcport={}", rpc_port);
@@ -510,7 +510,8 @@ mod test {
 
     use super::*;
 
-    /// Verify that [`BitcoinD`] starts successfully and exposes its PID, working directory, and P2P socket
+    /// Verify that [`BitcoinD`] starts successfully and
+    /// exposes its PID, working directory, and P2P socket.
     #[test]
     fn test_bitcoind_starts() {
         let bin = get_bitcoind_path().unwrap();
@@ -535,7 +536,8 @@ mod test {
         assert_eq!(height, 10);
     }
 
-    /// Verify that [`BitcoinD::get_block_hash`] returns the correct [`BlockHash`] for a given height.
+    /// Verify that [`BitcoinD::get_block_hash`] returns
+    /// the correct [`BlockHash`] for a given height.
     #[test]
     fn test_bitcoind_get_block_hash() {
         let bitcoind = BitcoinD::new().unwrap();
@@ -547,8 +549,8 @@ mod test {
         assert_eq!(last_block_hash, *block_hashes.last().unwrap());
     }
 
-    /// Verify that two nodes can connect to each other via `add_peer` and
-    /// that the peer count reflects the new connection on both sides.
+    /// Verify that two nodes can connect to each other via `add_peer`
+    /// and that the peer count reflects the new connection on both sides.
     #[test]
     fn test_bitcoind_addnode() {
         let bitcoind_alpha = BitcoinD::new().unwrap();
@@ -565,7 +567,7 @@ mod test {
         assert_eq!(bitcoind_beta.get_peer_count().unwrap(), 1);
     }
 
-    /// Verify that blocks mined on one node propagate to a connected peer.
+    /// Verify that blocks mined on one node propagate to a peer.
     #[test]
     fn test_bitcoind_blocks_propagate() {
         let bitcoind_alpha = BitcoinD::new().unwrap();
