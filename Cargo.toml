@@ -41,10 +41,6 @@ let-and-return = "allow"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[package.metadata.rbmt.toolchains]
-stable = "1.85.0"
-nightly = "nightly-2026-03-18"
-
 [package.metadata.rbmt.test]
 exclude_features = [
     "bitcoind_31_0",
@@ -66,3 +62,7 @@ allowed_duplicates = [
     "rustix",
     "windows-sys"
 ]
+
+[package.metadata.rbmt.toolchains]
+stable = "1.95.0"
+nightly = "nightly-2026-03-18"
