@@ -25,11 +25,11 @@ with [`utreexod`](https://github.com/utreexo/utreexod) support.
 
 | Implementation | Version  | Feature Flag     |
 |----------------|----------|----------------- |
-| `bitcoind`     | `v30.2`  | `bitcoind_30_2`  |
+| `bitcoind`     | `v31.0`  | `bitcoind_31_0`  |
 |                |          |                  |
 | `utreexod`     | `v0.5.0` | `utreexod_0_5_0` |
 
-By default, the `bitcoind_30_2` and `utreexod_0_5_0` features are enabled.
+By default, the `bitcoind_31_0` and `utreexod_0_5_0` features are enabled.
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 

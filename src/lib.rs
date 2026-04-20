@@ -6,7 +6,8 @@
 //!
 //! | Implementation | Version  | Feature Flag     |
 //! |----------------|----------|----------------- |
-//! | [`bitcoind`]   | `v30.2`  | `bitcoind_30_2`  |
+//! | [`bitcoind`]   | `v31.0`  | `bitcoind_31_0`  |
+//! |                |          |                  |
 //! | [`utreexod`]   | `v0.5.0` | `utreexod_0_5_0` |
 //!
 //! ## Example

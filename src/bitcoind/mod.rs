@@ -369,7 +369,7 @@ impl BitcoinD {
             .map_err(Error::JsonRpc)?;
 
         let mut delay = Duration::from_millis(100);
-        let timeout = Duration::from_secs(5);
+        let timeout = Duration::from_secs(10);
         let start = Instant::now();
 
         while start.elapsed() < timeout {
