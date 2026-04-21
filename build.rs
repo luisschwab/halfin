@@ -5,11 +5,16 @@ fn main() {
     if std::env::var("DOCS_RS").is_ok() {
         return;
     }
-
-    // Check if `bitcoind` is cached and download it if not.
-    bitcoind::download();
-    // Check if `utreexod` is cached and download it if not.
-    utreexod::download();
+    // Skip if the `bitcoind_31_0` feature is not enabled.
+    if cfg!(feature = "bitcoind_31_0") {
+        // Check if `bitcoind` is cached and download it if not.
+        bitcoind::download();
+    }
+    // Skip if the `utreeoxd_0_5_0` feature is not enabled.
+    if cfg!(feature = "utreexod_0_5_0") {
+        // Check if `utreexod` is cached and download it if not.
+        utreexod::download();
+    }
 }
 
 /// Downloads  and verifies the `bitcoind` binary based on the enabled version feature.

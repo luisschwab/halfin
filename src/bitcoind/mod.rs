@@ -504,7 +504,7 @@ pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bitcoind_31_0"))]
 mod test {
     use crate::wait_for_height;
 

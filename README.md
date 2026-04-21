@@ -16,10 +16,10 @@
 
 This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin)
 and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
-integration testing contexts.
+integration test contexts.
 
-Pretty much [`bitcoind`](https://crates.io/crates/bitcoind)
-with [`utreexod`](https://github.com/utreexo/utreexod) support.
+Pretty much [`bitcoind`](https://crates.io/crates/bitcoind) with 
+[`utreexod`](https://github.com/utreexo/utreexod) support.
 
 ## Supported Implementations and Versions
 
@@ -33,31 +33,7 @@ By default, the `bitcoind_31_0` and `utreexod_0_5_0` features are enabled.
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
-## Running on CI environments
-
-Since [`utreexod`](https://github.com/utreexo/utreexod) binaries are downloaded directly
-from its GitHub releases page, we can get 403'ed by GitHub itself. To curb this, you need
-to export the `GITHUB_TOKEN` environment variable and give `read` permissions in your CI
-workflow, as such:
-
-```
-env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-permissions:
-    contents: read
-```
-
-The [`build.rs`](https://github.com/luisschwab/halfin/blob/master/build.rs) script
-automatically reads this variable from the environment and adds it as an
-`Authorization: Bearer $GITHUB_TOKEN` header when making requests to `github.com`.
-
-```rs
-if let Ok(token) = env::var("GITHUB_TOKEN") {
-    request = request.with_header("Authorization", format!("Bearer {}", token));
-}
-```
-
-## BitcoinD
+### BitcoinD
 
 ```rs
 use halfin::bitcoind::BitcoinD;
@@ -80,7 +56,7 @@ assert_eq!(bitcoind_alpha.get_height().unwrap(), 100);
 assert_eq!(bitcoind_beta.get_height().unwrap(), 100);
 ```
 
-## UtreexoD
+### UtreexoD
 
 ```rust
 use halfin::utreexod::UtreexoD;
@@ -89,6 +65,30 @@ let utreexod = UtreexoD::new().unwrap();
 
 utreexod.generate(10).unwrap();
 assert_eq!(utreexod.get_height().unwrap(), 10);
+```
+
+## Running on CI environments
+
+Since [`utreexod`](https://github.com/utreexo/utreexod) binaries are downloaded directly
+from its GitHub releases page, we can get 403'ed by GitHub itself. To curb this, you need
+to export the `GITHUB_TOKEN` environment variable and give `read` permissions in your CI
+workflow, as such:
+
+```
+env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+permissions:
+    contents: read
+```
+
+The [`build.rs`](./build.rs) script automatically reads this variable from the
+environment and adds it as an `Authorization: Bearer $GITHUB_TOKEN` header 
+when making requests to `github.com`.
+
+```rs
+if let Ok(token) = env::var("GITHUB_TOKEN") {
+    request = request.with_header("Authorization", format!("Bearer {}", token));
+}
 ```
 
 ## Developing
@@ -123,8 +123,7 @@ Available recipes:
     test        # Run tests across all toolchains and lockfiles [alias: t]
 ```
 
-
-## Minimum Supported Rust Version (MSRV)
+## Minimum Supported Rust Version
 
 This library should compile with any combination of features on Rust 1.85.0.
 

@@ -481,7 +481,7 @@ pub fn get_utreexod_path() -> Result<PathBuf, Error> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "utreexod_0_5_0"))]
 mod test {
     use crate::wait_for_height;
 
