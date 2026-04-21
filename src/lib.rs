@@ -2,6 +2,15 @@
 //!
 //! A bitcoin node running utility for integration testing.
 //!
+//! > A {regtest} bitcoin node runner 🏃‍♂️
+//!
+//! This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin)
+//! and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
+//! integration test contexts.
+//!
+//! Pretty much [`bitcoind`](https://crates.io/crates/bitcoind) with
+//! [`utreexod`](https://github.com/utreexo/utreexod) support.
+//!
 //! ## Supported Implementations and Versions
 //!
 //! | Implementation | Version  | Feature Flag     |
@@ -40,8 +49,8 @@ use std::time::Duration;
 use std::time::Instant;
 use tempfile::TempDir;
 
-pub use bitcoind::BitcoinD;
-pub use utreexod::UtreexoD;
+use crate::bitcoind::BitcoinD;
+use crate::utreexod::UtreexoD;
 
 pub mod bitcoind;
 pub mod utreexod;
@@ -91,7 +100,7 @@ pub trait Node {
 
 #[rustfmt::skip]
 impl Node for BitcoinD {
-    fn get_name() -> &'static str { "bitcoind" }
+    fn get_name() -> &'static str { "bitcoind_v_31_0" }
 
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
 
@@ -100,7 +109,7 @@ impl Node for BitcoinD {
 
 #[rustfmt::skip]
 impl Node for UtreexoD {
-    fn get_name() -> &'static str { "utreexod" }
+    fn get_name() -> &'static str { "utreexod_v_0_5_0" }
 
     fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self.get_chain_tip()?;

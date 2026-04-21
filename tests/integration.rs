@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_0"))]
+
 //! Integration tests between [`BitcoinD`] and [`UtreexoD`].
 
 use std::thread::sleep;
