@@ -68,6 +68,9 @@ const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 /// The maximum number of attempts at instantiating a [`BitcoinD`]/[`UtreexoD`].
 pub const NODE_BUILDING_MAX_RETRIES: u8 = 5;
 
+/// The [`Duration`] between attempts at instantiating a [`Node`].
+pub const NODE_BUILDING_INTERVAL: Duration = Duration::from_millis(500);
+
 /// The [`Duration`] between polls for `wait_for_height`.
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 

@@ -48,6 +48,7 @@ use corepc_client::client_sync::v30::AddNodeCommand;
 use corepc_client::client_sync::v30::Client;
 use tempfile::TempDir;
 
+use crate::NODE_BUILDING_INTERVAL;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
@@ -249,7 +250,7 @@ impl BitcoinD {
 
             // Add a small timeout to let `bitcoind` fail
             // and retry in the case of a port collision.
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(NODE_BUILDING_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {

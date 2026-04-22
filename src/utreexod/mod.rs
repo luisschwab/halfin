@@ -40,6 +40,7 @@ use crate::Error;
 use crate::IPV4_LOCALHOST;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
+use crate::NODE_BUILDING_INTERVAL;
 use crate::POLL_INTERVAL;
 use crate::WAIT_TIMEOUT;
 use crate::get_available_port;
@@ -261,7 +262,7 @@ impl UtreexoD {
 
             // Add a small timeout to let `bitcoind` fail
             // and retry in the case of a port collision.
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(NODE_BUILDING_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
