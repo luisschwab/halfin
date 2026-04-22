@@ -17,7 +17,7 @@ fn main() {
     }
 }
 
-/// Downloads  and verifies the `bitcoind` binary based on the enabled version feature.
+/// Downloads and verifies the `bitcoind` binary based on the enabled version feature.
 ///
 /// Binaries are verified agains the corresponding SHA256SUM under `sha256/bitcoind`.
 ///

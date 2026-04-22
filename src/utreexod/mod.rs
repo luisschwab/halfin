@@ -144,11 +144,15 @@ pub struct UtreexoD {
 impl Node for UtreexoD {
     fn get_name() -> &'static str { "utreexod_v_0_5_0" }
 
+    fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
+
+    fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> { self.add_peer(socket) }
+
     fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self.get_chain_tip()?;
         if height == 0 {
             return Err(
-                Error::UnexpectedResponse("utreexod is at genesis, proof index not yet available".to_string())
+                Error::UnexpectedResponse("utreexod is at genesis, the proof index not ready yet".to_string())
             );
         }
         self.get_block_uproof(height)?;
@@ -355,11 +359,10 @@ impl UtreexoD {
         Ok(proof_hex)
     }
 
-    /// Connect this [`UtreexoD`] to a peer at `socket` and wait until the
-    /// connection is established (up to 5 seconds with exponential back-off).
+    /// Connect this [`UtreexoD`] to a peer at [`socket`](SocketAddr) and
+    /// wait until the connection is established (up to 5 seconds with exponential back-off).
     ///
-    /// Returns an error if the peer does not appear in `getpeerinfo` within
-    /// the timeout.
+    /// Returns an error if the peer does not appear in `getpeerinfo` within the timeout.
     pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
         self.rpc_client
             .add_node(&socket.to_string(), AddNodeCommand::Add)

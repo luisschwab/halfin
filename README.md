@@ -36,23 +36,25 @@ Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs
 ### BitcoinD
 
 ```rs
+use halfin::connect;
 use halfin::bitcoind::BitcoinD;
 
-// Use downloaded/cached binaries
+// Use a downloaded binary
 let bitcoind_alpha = BitcoinD::new().unwrap();
+
 // Use a local binary
 let bin_path = PathBuf::from_str("/usr/local/bin/bitcoind").unwrap();
 let bitcoind_beta = BitcoinD::from_bin(&bin_path).unwrap();
 
 // Connect peers
-bitcoind_alpha.add_peer(bitcoind_beta.get_p2p_socket()).unwrap();
+connect(&bitcoind_alpha, &bitcoind_beta).unwrap()
 
 // Mine blocks
 bitcoind_alpha.generate(100).unwrap();
+assert_eq!(bitcoind_alpha.get_height().unwrap(), 100);
+
 // Wait for a node to catch up with the other
 wait_for_height(&bitcoind_beta, 100).unwrap();
-
-assert_eq!(bitcoind_alpha.get_height().unwrap(), 100);
 assert_eq!(bitcoind_beta.get_height().unwrap(), 100);
 ```
 
@@ -61,10 +63,15 @@ assert_eq!(bitcoind_beta.get_height().unwrap(), 100);
 ```rust
 use halfin::utreexod::UtreexoD;
 
+// Use a downloaded binary
 let utreexod = UtreexoD::new().unwrap();
 
-utreexod.generate(10).unwrap();
-assert_eq!(utreexod.get_height().unwrap(), 10);
+// Mine blocks
+utreexod.generate(100).unwrap();
+assert_eq!(utreexod.get_height().unwrap(), 100);
+
+// Raw call an unimplemented RPC
+let res = utreexod.call("uptime", &[]).unwrap();
 ```
 
 ## Running on CI environments
@@ -74,7 +81,7 @@ from its GitHub releases page, we can get 403'ed by GitHub itself. To curb this,
 to export the `GITHUB_TOKEN` environment variable and give `read` permissions in your CI
 workflow, as such:
 
-```
+```yml
 env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 permissions:

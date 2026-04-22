@@ -22,6 +22,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
+//! use halfin::connect;
 //! use halfin::bitcoind::BitcoinD;
 //! use halfin::utreexod::UtreexoD;
 //!
@@ -32,6 +33,8 @@
 //! let utreexod = UtreexoD::new().unwrap();
 //! utreexod.generate(10).unwrap();
 //! assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
+//!
+//! connect(&bitcoind, &utreexod).unwrap();
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
@@ -90,6 +93,12 @@ pub trait Node {
     /// [`Value`](serde_json::Value) into a meaningful type.
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
 
+    /// Get the [`Node`]'s P2P [`SocketAddr`].
+    fn get_p2p_socket(&self) -> SocketAddr;
+
+    /// Connect this [`Node`] to a peer at `socket` over P2P.
+    fn add_peer(&self, socket: SocketAddr) -> Result<(), Error>;
+
     /// How long to sleep between `get_height` RPC calls.
     ///
     /// Defaults to [`POLL_INTERVAL`].
@@ -110,9 +119,16 @@ pub trait Node {
     }
 }
 
-/// Poll a [`Node`] until its chain height reaches `height`, then return.
+/// Connect node [`a`](Node) to node [`b`](Node).
+pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
+    let socket_b = b.get_p2p_socket();
+
+    a.add_peer(socket_b)
+}
+
+/// Poll a [`Node`] until its chain reaches `height`.
 ///
-/// Panics if the node does not reach `height` within [`Node::wait_timeout`].
+/// Throws an error if the node does not reach `height` within [`Node::wait_timeout`].
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
@@ -130,9 +146,9 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     )))
 }
 
-/// Poll a [`Node`] until its chain height reaches `height`, then return.
+/// Poll a [`Node`] until its chain reaches `height` with a custom `timeout`.
 ///
-/// Panics if the node does not reach `height` within `timeout`.
+/// Throws an error if the node does not reach `height` within `timeout`.
 pub fn wait_for_height_with_timeout<N: Node>(
     node: &N,
     height: u32,

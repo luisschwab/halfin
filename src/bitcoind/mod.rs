@@ -148,6 +148,10 @@ pub struct BitcoinD {
 impl Node for BitcoinD {
     fn get_name() -> &'static str { "bitcoind_v_31_0" }
 
+    fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
+
+    fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> { self.add_peer(socket) }
+
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
@@ -356,7 +360,7 @@ impl BitcoinD {
         Ok(hash)
     }
 
-    /// Connect this [`BitcoinD`] to another [`BitcoinD`] at `socket` and
+    /// Connect this [`BitcoinD`] to a peer at [`socket`](SocketAddr) and
     /// wait until the connection is established (up to 5 seconds with exponential back-off).
     ///
     /// Returns an error if the peer does not appear in `getpeerinfo` within the timeout.
