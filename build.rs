@@ -30,6 +30,7 @@ mod bitcoind {
     use std::io;
     use std::io::BufRead;
     use std::io::BufReader;
+    use std::io::Cursor;
     use std::path::PathBuf;
 
     use bitcoin_hashes::hex::FromHex;
@@ -43,17 +44,20 @@ mod bitcoind {
     ///
     /// Panics if the current OS/architecture combination is not supported.
     fn get_download_filename() -> String {
-        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-            return format!("bitcoin-{}-x86_64-apple-darwin.tar.gz", BITCOIND_VERSION);
-        }
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             return format!("bitcoin-{}-arm64-apple-darwin.tar.gz", BITCOIND_VERSION);
+        }
+        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            return format!("bitcoin-{}-x86_64-apple-darwin.tar.gz", BITCOIND_VERSION);
         }
         if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
             return format!("bitcoin-{}-x86_64-linux-gnu.tar.gz", BITCOIND_VERSION);
         }
         if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
             return format!("bitcoin-{}-aarch64-linux-gnu.tar.gz", BITCOIND_VERSION);
+        }
+        if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+            return format!("bitcoin-{}-win64.zip", BITCOIND_VERSION);
         }
         panic!("No download file for this OS+Architecture combination");
     }
@@ -134,7 +138,7 @@ mod bitcoind {
             return;
         } else {
             println!(
-                "cargo:warning=Downloading `bitcoind` {} from `bitcoincore.org`",
+                "cargo:warning=Downloading `bitcoind` ({}) from `bitcoincore.org`",
                 download_filename
             );
         }
@@ -180,32 +184,61 @@ mod bitcoind {
             })
             .unwrap();
 
-        let gz_decoder = GzDecoder::new(&bitcoind_tarball_bytes[..]);
-        let mut archive = Archive::new(gz_decoder);
+        if download_filename.ends_with(".tar.gz") {
+            let gz_decoder = GzDecoder::new(&bitcoind_tarball_bytes[..]);
+            let mut archive = Archive::new(gz_decoder);
 
-        for mut entry in archive.entries().unwrap().flatten() {
-            if let Ok(path) = entry.path() {
-                if path.file_name() == Some(OsStr::new("bitcoind")) {
-                    let destination_path = destination_directory.join("bitcoind");
+            for mut entry in archive.entries().unwrap().flatten() {
+                if let Ok(path) = entry.path() {
+                    if path.file_name() == Some(OsStr::new("bitcoind")) {
+                        let destination_path = destination_directory.join("bitcoind");
+                        let mut output_file = File::create(&destination_path)
+                            .map_err(|e| {
+                                format!(
+                                    "Cannot create `bitcoind` at destination={}: {}",
+                                    destination_path.display(),
+                                    e
+                                )
+                            })
+                            .unwrap();
+
+                        io::copy(&mut entry, &mut output_file).unwrap();
+
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let mut perms = output_file.metadata().unwrap().permissions();
+                            perms.set_mode(0o755);
+                            output_file.set_permissions(perms).unwrap();
+                        }
+                        break;
+                    }
+                }
+            }
+        } else if download_filename.ends_with(".zip") {
+            let cursor = Cursor::new(bitcoind_tarball_bytes);
+            let mut archive = zip::ZipArchive::new(cursor).unwrap();
+
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).unwrap();
+                if file
+                    .enclosed_name()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n == "bitcoind.exe")
+                    == Some(true)
+                {
+                    let destination_path = destination_directory.join("bitcoind.exe");
                     let mut output_file = File::create(&destination_path)
                         .map_err(|e| {
                             format!(
-                                "Cannot create bitcoind file at destination path={}: {}",
+                                "Cannot create `bitcoind.exe` at destination={}: {}",
                                 destination_path.display(),
                                 e
                             )
                         })
                         .unwrap();
 
-                    io::copy(&mut entry, &mut output_file).unwrap();
-
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let mut perms = output_file.metadata().unwrap().permissions();
-                        perms.set_mode(0o755);
-                        output_file.set_permissions(perms).unwrap();
-                    }
+                    io::copy(&mut file, &mut output_file).unwrap();
                     break;
                 }
             }
@@ -248,6 +281,7 @@ mod utreexod {
     use std::io;
     use std::io::BufRead;
     use std::io::BufReader;
+    use std::io::Cursor;
     use std::path::PathBuf;
 
     use bitcoin_hashes::hex::FromHex;
@@ -261,17 +295,20 @@ mod utreexod {
     ///
     /// Panics if the current OS/architecture combination is not supported.
     fn get_download_filename() -> String {
-        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-            return format!("utreexod-darwin-amd64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
-        }
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             return format!("utreexod-darwin-arm64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
+        }
+        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            return format!("utreexod-darwin-amd64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
         }
         if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
             return format!("utreexod-linux-amd64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
         }
         if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
             return format!("utreexod-linux-arm64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
+        }
+        if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+            return format!("utreexod-windows-amd64-{}-01.zip", UTREEXOD_RELEASE_DATE);
         }
         panic!("No download file for this OS+Architecture combination");
     }
@@ -351,7 +388,7 @@ mod utreexod {
             return;
         } else {
             println!(
-                "cargo:warning=Downloading `utreexod` {} from `github.com`",
+                "cargo:warning=Downloading `utreexod` ({}) from `github.com`",
                 download_filename
             );
         }
@@ -409,32 +446,61 @@ mod utreexod {
             })
             .unwrap();
 
-        let gz_decoder = GzDecoder::new(&utreexod_tarball_bytes[..]);
-        let mut archive = Archive::new(gz_decoder);
+        if download_filename.ends_with(".tar.gz") {
+            let gz_decoder = GzDecoder::new(&utreexod_tarball_bytes[..]);
+            let mut archive = Archive::new(gz_decoder);
 
-        for mut entry in archive.entries().unwrap().flatten() {
-            if let Ok(path) = entry.path() {
-                if path.file_name() == Some(OsStr::new("utreexod")) {
-                    let destination_path = destination_directory.join("utreexod");
+            for mut entry in archive.entries().unwrap().flatten() {
+                if let Ok(path) = entry.path() {
+                    if path.file_name() == Some(OsStr::new("utreexod")) {
+                        let destination_path = destination_directory.join("utreexod");
+                        let mut outputfile = File::create(&destination_path)
+                            .map_err(|e| {
+                                format!(
+                                    "Cannot create `utreexod` at destination={}: {}",
+                                    destination_path.display(),
+                                    e
+                                )
+                            })
+                            .unwrap();
+
+                        io::copy(&mut entry, &mut outputfile).unwrap();
+
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let mut perms = outputfile.metadata().unwrap().permissions();
+                            perms.set_mode(0o755);
+                            outputfile.set_permissions(perms).unwrap();
+                        }
+                        break;
+                    }
+                }
+            }
+        } else if download_filename.ends_with(".zip") {
+            let cursor = Cursor::new(utreexod_tarball_bytes);
+            let mut archive = zip::ZipArchive::new(cursor).unwrap();
+
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).unwrap();
+                if file
+                    .enclosed_name()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n == "utreexod.exe")
+                    == Some(true)
+                {
+                    let destination_path = destination_directory.join("utreexod.exe");
                     let mut outputfile = File::create(&destination_path)
                         .map_err(|e| {
                             format!(
-                                "Cannot create utreexod file at destination path={}: {}",
+                                "Cannot create `utreexod.exe` at destination={}: {}",
                                 destination_path.display(),
                                 e
                             )
                         })
                         .unwrap();
 
-                    io::copy(&mut entry, &mut outputfile).unwrap();
-
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let mut perms = outputfile.metadata().unwrap().permissions();
-                        perms.set_mode(0o755);
-                        outputfile.set_permissions(perms).unwrap();
-                    }
+                    io::copy(&mut file, &mut outputfile).unwrap();
                     break;
                 }
             }

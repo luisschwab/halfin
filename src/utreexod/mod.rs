@@ -33,11 +33,13 @@ use corepc_client::bitcoin::BlockHash;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v17::AddNodeCommand;
 use corepc_client::client_sync::v17::Client;
-use tempfile::TempDir;
 
+use crate::CONNECTION_INTERVAL;
+use crate::CONNECTION_TIMEOUT;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
+use crate::NODE_BUILDING_INTERVAL;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::POLL_INTERVAL;
@@ -51,6 +53,28 @@ const RPC_USER: &str = "halfin";
 
 /// Password for RPC authentication.
 const RPC_PASS: &str = "halfin";
+
+/// Return the path to the downloaded `utreexod` binary.
+///
+/// The path is resolved at compile time from the `HALFIN_UTREEXOD_PATH`
+/// environment variable, which is set by `build.rs` after downloading
+/// and extracting the binary.
+pub fn get_utreexod_path() -> Result<PathBuf, Error> {
+    let bin_name = UtreexoD::get_name().to_string();
+    #[allow(unused_mut)]
+    let mut bin_path = PathBuf::from(option_env!("HALFIN_UTREEXOD_PATH").unwrap_or(""));
+
+    // Add the `.exe` suffix on Windows
+    #[cfg(target_os = "windows")]
+    if bin_path.extension().is_none() {
+        bin_path.set_extension("exe");
+    }
+
+    match bin_path.exists() {
+        true => Ok(bin_path),
+        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
+    }
+}
 
 /// Configuration for a [`UtreexoD`] instance.
 ///
@@ -239,7 +263,7 @@ impl UtreexoD {
 
             // Add a small timeout to let `bitcoind` fail
             // and retry in the case of a port collision.
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(NODE_BUILDING_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
@@ -368,11 +392,10 @@ impl UtreexoD {
             .add_node(&socket.to_string(), AddNodeCommand::Add)
             .map_err(Error::JsonRpc)?;
 
-        let mut delay = Duration::from_millis(100);
-        let timeout = Duration::from_secs(5);
-        let start = Instant::now();
+        let mut delay = CONNECTION_INTERVAL;
 
-        while start.elapsed() < timeout {
+        let start = Instant::now();
+        while start.elapsed() < CONNECTION_TIMEOUT {
             let peers = self
                 .rpc_client
                 .call::<serde_json::Value>("getpeerinfo", &[])
@@ -462,8 +485,18 @@ impl UtreexoD {
                 DataDir::Persistent(workdir.to_owned())
             }
             // Create a new temporary directory.
-            (Some(tmpdir), None) => DataDir::Temporary(TempDir::new_in(tmpdir).map_err(Error::Io)?),
-            (None, None) => DataDir::Temporary(TempDir::new().map_err(Error::Io)?),
+            (Some(tmpdir), None) => DataDir::Temporary(
+                tempfile::Builder::new()
+                    .prefix("halfin-utreexod-")
+                    .tempdir_in(tmpdir)
+                    .map_err(Error::Io)?,
+            ),
+            (None, None) => DataDir::Temporary(
+                tempfile::Builder::new()
+                    .prefix("halfin-utreexod-")
+                    .tempdir()
+                    .map_err(Error::Io)?,
+            ),
         };
         Ok(work_dir)
     }
@@ -486,20 +519,6 @@ impl UtreexoD {
             thread::sleep(Duration::from_millis(200));
         }
         Err(Error::RpcClientSetupTimeout)
-    }
-}
-
-/// Return the path to the downloaded `utreexod` binary.
-///
-/// The path is resolved at compile time from the `HALFIN_UTREEXOD_PATH`
-/// environment variable, which is set by `build.rs` after downloading
-/// and extracting the binary.
-pub fn get_utreexod_path() -> Result<PathBuf, Error> {
-    let bin_name = UtreexoD::get_name().to_string();
-    let bin_path = PathBuf::from(option_env!("HALFIN_UTREEXOD_PATH").unwrap_or(""));
-    match bin_path.exists() {
-        true => Ok(bin_path),
-        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
 }
 

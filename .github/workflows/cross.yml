@@ -1,0 +1,61 @@
+name: Cross-Testing
+
+on: [push, pull_request]
+
+permissions: {}
+env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: 1
+
+jobs:
+    build:
+        name: ${{ matrix.os }} + ${{ matrix.arch }}
+        runs-on: ${{ matrix.runner }}
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - runner: macos-latest
+                      target: aarch64-apple-darwin
+                      os: MacOS
+                      arch: Apple Silicon (ARM64)
+
+                    - runner: ubuntu-latest
+                      target: x86_64-unknown-linux-gnu
+                      os: Linux
+                      arch: x86_64
+
+                    - runner: ubuntu-24.04-arm
+                      target: aarch64-unknown-linux-gnu
+                      os: Linux
+                      arch: ARM64
+
+                    - runner: windows-2022
+                      target: x86_64-pc-windows-msvc
+                      os: Windows
+                      arch: x86_64
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.3.0
+              with:
+                  persist-credentials: false
+
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.94.1
+              with:
+                  toolchain: stable
+                  targets: ${{ matrix.target }}
+
+            - name: Setup build cache
+              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+              with:
+                  key: ${{ matrix.target }}
+
+            - name: Build
+              run: cargo build --target ${{ matrix.target }} --verbose
+
+            - name: Run tests
+              if: runner.os != 'Windows'
+              run: cargo test --target ${{ matrix.target }} --verbose --no-fail-fast
