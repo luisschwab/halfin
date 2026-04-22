@@ -49,8 +49,12 @@ use std::time::Duration;
 use std::time::Instant;
 use tempfile::TempDir;
 
-use crate::bitcoind::BitcoinD;
-use crate::utreexod::UtreexoD;
+pub use serde_json;
+
+#[allow(unused)]
+pub(crate) use bitcoind::BitcoinD;
+#[allow(unused)]
+pub(crate) use utreexod::UtreexoD;
 
 pub mod bitcoind;
 pub mod utreexod;
@@ -77,6 +81,14 @@ pub trait Node {
 
     // Get the [`BlockHash`] of the block at `height`.
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
+
+    /// Call a JSON-RPC `method` with the given `args` list.
+    ///
+    /// Response deserialization is not implemented for this method.
+    ///
+    /// It's up to the caller to parse the returned
+    /// [`Value`](serde_json::Value) into a meaningful type.
+    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
 
     /// How long to sleep between `get_height` RPC calls.
     ///

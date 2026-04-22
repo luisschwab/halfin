@@ -24,8 +24,6 @@
 //! cleaned up when the instance is dropped. Pass a `staticdir` in
 //! [`BitcoinDConf`] to keep data between runs.
 
-pub extern crate corepc_client as client;
-
 mod client_versions;
 mod versions;
 
@@ -146,17 +144,16 @@ pub struct BitcoinD {
     p2p_socket: SocketAddr,
 }
 
-impl Drop for BitcoinD {
-    /// Gracefully stops the node (if it was started with a persistent
-    /// directory) and kills the process.
-    ///
-    /// Errors from `stop` and `kill` are silently discarded so that `Drop`
-    /// never panics.
-    fn drop(&mut self) {
-        if let DataDir::Persistent(_) = self.working_directory {
-            let _ = self.stop();
-        }
-        let _ = self.process.kill();
+#[rustfmt::skip]
+impl Node for BitcoinD {
+    fn get_name() -> &'static str { "bitcoind_v_31_0" }
+
+    fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
+
+    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
+        self.rpc_client.call(method, args).map_err(Error::JsonRpc)
     }
 }
 
@@ -487,6 +484,20 @@ impl BitcoinD {
         }
 
         Err(Error::RpcClientSetupTimeout)
+    }
+}
+
+impl Drop for BitcoinD {
+    /// Gracefully stops the node (if it was started with a persistent
+    /// directory) and kills the process.
+    ///
+    /// Errors from `stop` and `kill` are silently discarded so that `Drop`
+    /// never panics.
+    fn drop(&mut self) {
+        if let DataDir::Persistent(_) = self.working_directory {
+            let _ = self.stop();
+        }
+        let _ = self.process.kill();
     }
 }
 

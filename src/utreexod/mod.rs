@@ -40,6 +40,8 @@ use crate::Error;
 use crate::IPV4_LOCALHOST;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
+use crate::POLL_INTERVAL;
+use crate::WAIT_TIMEOUT;
 use crate::get_available_port;
 
 mod versions;
@@ -138,13 +140,30 @@ pub struct UtreexoD {
     p2p_socket: SocketAddr,
 }
 
-impl Drop for UtreexoD {
-    /// Kills the `utreexod` process.
-    ///
-    /// Errors from `kill` are silently discarded so that `Drop` never panics.
-    fn drop(&mut self) {
-        let _ = self.process.kill();
+#[rustfmt::skip]
+impl Node for UtreexoD {
+    fn get_name() -> &'static str { "utreexod_v_0_5_0" }
+
+    fn get_chain_tip(&self) -> Result<u32, Error> {
+        let height = self.get_chain_tip()?;
+        if height == 0 {
+            return Err(
+                Error::UnexpectedResponse("utreexod is at genesis, proof index not yet available".to_string())
+            );
+        }
+        self.get_block_uproof(height)?;
+        Ok(height)
     }
+
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
+
+    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
+        self.rpc_client.call(method, args).map_err(Error::JsonRpc)
+    }
+
+    fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
+
+    fn wait_timeout() -> Duration { 2 * WAIT_TIMEOUT }
 }
 
 impl UtreexoD {
