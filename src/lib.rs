@@ -49,8 +49,12 @@ use std::time::Duration;
 use std::time::Instant;
 use tempfile::TempDir;
 
-use crate::bitcoind::BitcoinD;
-use crate::utreexod::UtreexoD;
+pub use serde_json;
+
+#[allow(unused)]
+pub(crate) use bitcoind::BitcoinD;
+#[allow(unused)]
+pub(crate) use utreexod::UtreexoD;
 
 pub mod bitcoind;
 pub mod utreexod;
@@ -78,6 +82,14 @@ pub trait Node {
     // Get the [`BlockHash`] of the block at `height`.
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
 
+    /// Call a JSON-RPC `method` with the given `args` list.
+    ///
+    /// Response deserialization is not implemented for this method.
+    ///
+    /// It's up to the caller to parse the returned
+    /// [`Value`](serde_json::Value) into a meaningful type.
+    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
+
     /// How long to sleep between `get_height` RPC calls.
     ///
     /// Defaults to [`POLL_INTERVAL`].
@@ -96,37 +108,6 @@ pub trait Node {
     fn wait_timeout() -> Duration {
         WAIT_TIMEOUT
     }
-}
-
-#[rustfmt::skip]
-impl Node for BitcoinD {
-    fn get_name() -> &'static str { "bitcoind_v_31_0" }
-
-    fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
-
-    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
-}
-
-#[rustfmt::skip]
-impl Node for UtreexoD {
-    fn get_name() -> &'static str { "utreexod_v_0_5_0" }
-
-    fn get_chain_tip(&self) -> Result<u32, Error> {
-        let height = self.get_chain_tip()?;
-        if height == 0 {
-            return Err(
-                Error::UnexpectedResponse("utreexod is at genesis, proof index not yet available".to_string())
-            );
-        }
-        self.get_block_uproof(height)?;
-        Ok(height)
-    }
-
-    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
-
-    fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
-
-    fn wait_timeout() -> Duration { 2 * WAIT_TIMEOUT }
 }
 
 /// Poll a [`Node`] until its chain height reaches `height`, then return.
