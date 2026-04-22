@@ -58,6 +58,28 @@ use crate::get_available_port;
 /// Name of the wallet created (or loaded) inside every [`BitcoinD`] instance.
 const BITCOIND_WALLET: &str = "wallet";
 
+/// Return the path to the downloaded `bitcoind` binary.
+///
+/// The path is resolved at compile time from the `HALFIN_BITCOIND_PATH`
+/// environment variable, which is set by `build.rs` after downloading
+/// and extracting the binary.
+pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
+    let bin_name = BitcoinD::get_name().to_string();
+    #[allow(unused_mut)]
+    let mut bin_path = PathBuf::from(option_env!("HALFIN_BITCOIND_PATH").unwrap_or(""));
+
+    // Add the `.exe` suffix on Windows
+    #[cfg(target_os = "windows")]
+    if bin_path.extension().is_none() {
+        bin_path.set_extension("exe");
+    }
+
+    match bin_path.exists() {
+        true => Ok(bin_path),
+        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
+    }
+}
+
 /// Configuration for a [`BitcoinD`] instance.
 ///
 /// Build one explicitly, or call [`BitcoinDConf::default`] for sensible regtest
@@ -502,19 +524,5 @@ impl Drop for BitcoinD {
             let _ = self.stop();
         }
         let _ = self.process.kill();
-    }
-}
-
-/// Return the path to the downloaded `bitcoind` binary.
-///
-/// The path is resolved at compile time from the `HALFIN_BITCOIND_PATH`
-/// environment variable, which is set by `build.rs` after downloading
-/// and extracting the binary.
-pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
-    let bin_name = BitcoinD::get_name().to_string();
-    let bin_path = PathBuf::from(option_env!("HALFIN_BITCOIND_PATH").unwrap_or(""));
-    match bin_path.exists() {
-        true => Ok(bin_path),
-        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
 }

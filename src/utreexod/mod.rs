@@ -52,6 +52,28 @@ const RPC_USER: &str = "halfin";
 /// Password for RPC authentication.
 const RPC_PASS: &str = "halfin";
 
+/// Return the path to the downloaded `utreexod` binary.
+///
+/// The path is resolved at compile time from the `HALFIN_UTREEXOD_PATH`
+/// environment variable, which is set by `build.rs` after downloading
+/// and extracting the binary.
+pub fn get_utreexod_path() -> Result<PathBuf, Error> {
+    let bin_name = UtreexoD::get_name().to_string();
+    #[allow(unused_mut)]
+    let mut bin_path = PathBuf::from(option_env!("HALFIN_UTREEXOD_PATH").unwrap_or(""));
+
+    // Add the `.exe` suffix on Windows
+    #[cfg(target_os = "windows")]
+    if bin_path.extension().is_none() {
+        bin_path.set_extension("exe");
+    }
+
+    match bin_path.exists() {
+        true => Ok(bin_path),
+        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
+    }
+}
+
 /// Configuration for a [`UtreexoD`] instance.
 ///
 /// Build one explicitly or call [`UtreexoDConf::default`] for sensible regtest
@@ -486,20 +508,6 @@ impl UtreexoD {
             thread::sleep(Duration::from_millis(200));
         }
         Err(Error::RpcClientSetupTimeout)
-    }
-}
-
-/// Return the path to the downloaded `utreexod` binary.
-///
-/// The path is resolved at compile time from the `HALFIN_UTREEXOD_PATH`
-/// environment variable, which is set by `build.rs` after downloading
-/// and extracting the binary.
-pub fn get_utreexod_path() -> Result<PathBuf, Error> {
-    let bin_name = UtreexoD::get_name().to_string();
-    let bin_path = PathBuf::from(option_env!("HALFIN_UTREEXOD_PATH").unwrap_or(""));
-    match bin_path.exists() {
-        true => Ok(bin_path),
-        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
 }
 
