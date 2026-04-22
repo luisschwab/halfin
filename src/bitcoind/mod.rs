@@ -46,12 +46,13 @@ use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v30::AddNodeCommand;
 use corepc_client::client_sync::v30::Client;
-use tempfile::TempDir;
 
-use crate::NODE_BUILDING_INTERVAL;
+use crate::CONNECTION_INTERVAL;
+use crate::CONNECTION_TIMEOUT;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
+use crate::NODE_BUILDING_INTERVAL;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::get_available_port;
@@ -383,8 +384,8 @@ impl BitcoinD {
         Ok(hash)
     }
 
-    /// Connect this [`BitcoinD`] to a peer at [`socket`](SocketAddr) and
-    /// wait until the connection is established (up to 5 seconds with exponential back-off).
+    /// Connect this [`BitcoinD`] to a peer at [`socket`](SocketAddr)
+    /// and wait until the connection is established.
     ///
     /// Returns an error if the peer does not appear in `getpeerinfo` within the timeout.
     pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
@@ -392,11 +393,10 @@ impl BitcoinD {
             .add_node(&socket.to_string(), AddNodeCommand::Add)
             .map_err(Error::JsonRpc)?;
 
-        let mut delay = Duration::from_millis(100);
-        let timeout = Duration::from_secs(10);
-        let start = Instant::now();
+        let mut delay = CONNECTION_INTERVAL;
 
-        while start.elapsed() < timeout {
+        let start = Instant::now();
+        while start.elapsed() < CONNECTION_TIMEOUT {
             let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?;
             if peers
                 .0
@@ -463,8 +463,18 @@ impl BitcoinD {
                 DataDir::Persistent(workdir.to_owned())
             }
             // Create a new temporary directory.
-            (Some(tmpdir), None) => DataDir::Temporary(TempDir::new_in(tmpdir).map_err(Error::Io)?),
-            (None, None) => DataDir::Temporary(TempDir::new().map_err(Error::Io)?),
+            (Some(tmpdir), None) => DataDir::Temporary(
+                tempfile::Builder::new()
+                    .prefix("halfin-bitcoind-")
+                    .tempdir_in(tmpdir)
+                    .map_err(Error::Io)?,
+            ),
+            (None, None) => DataDir::Temporary(
+                tempfile::Builder::new()
+                    .prefix("halfin-bitcoind-")
+                    .tempdir()
+                    .map_err(Error::Io)?,
+            ),
         };
         Ok(work_dir)
     }

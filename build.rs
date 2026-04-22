@@ -138,7 +138,7 @@ mod bitcoind {
             return;
         } else {
             println!(
-                "cargo:warning=Downloading `bitcoind` {} from `bitcoincore.org`",
+                "cargo:warning=Downloading `bitcoind` ({}) from `bitcoincore.org`",
                 download_filename
             );
         }
@@ -388,7 +388,7 @@ mod utreexod {
             return;
         } else {
             println!(
-                "cargo:warning=Downloading `utreexod` {} from `github.com`",
+                "cargo:warning=Downloading `utreexod` ({}) from `github.com`",
                 download_filename
             );
         }

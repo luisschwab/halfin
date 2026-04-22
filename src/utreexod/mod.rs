@@ -33,14 +33,15 @@ use corepc_client::bitcoin::BlockHash;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v17::AddNodeCommand;
 use corepc_client::client_sync::v17::Client;
-use tempfile::TempDir;
 
+use crate::CONNECTION_INTERVAL;
+use crate::CONNECTION_TIMEOUT;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
+use crate::NODE_BUILDING_INTERVAL;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
-use crate::NODE_BUILDING_INTERVAL;
 use crate::POLL_INTERVAL;
 use crate::WAIT_TIMEOUT;
 use crate::get_available_port;
@@ -391,11 +392,10 @@ impl UtreexoD {
             .add_node(&socket.to_string(), AddNodeCommand::Add)
             .map_err(Error::JsonRpc)?;
 
-        let mut delay = Duration::from_millis(100);
-        let timeout = Duration::from_secs(5);
-        let start = Instant::now();
+        let mut delay = CONNECTION_INTERVAL;
 
-        while start.elapsed() < timeout {
+        let start = Instant::now();
+        while start.elapsed() < CONNECTION_TIMEOUT {
             let peers = self
                 .rpc_client
                 .call::<serde_json::Value>("getpeerinfo", &[])
@@ -485,8 +485,18 @@ impl UtreexoD {
                 DataDir::Persistent(workdir.to_owned())
             }
             // Create a new temporary directory.
-            (Some(tmpdir), None) => DataDir::Temporary(TempDir::new_in(tmpdir).map_err(Error::Io)?),
-            (None, None) => DataDir::Temporary(TempDir::new().map_err(Error::Io)?),
+            (Some(tmpdir), None) => DataDir::Temporary(
+                tempfile::Builder::new()
+                    .prefix("halfin-utreexod-")
+                    .tempdir_in(tmpdir)
+                    .map_err(Error::Io)?,
+            ),
+            (None, None) => DataDir::Temporary(
+                tempfile::Builder::new()
+                    .prefix("halfin-utreexod-")
+                    .tempdir()
+                    .map_err(Error::Io)?,
+            ),
         };
         Ok(work_dir)
     }
