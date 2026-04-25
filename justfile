@@ -1,3 +1,4 @@
+alias a := audit
 alias b := build
 alias c := check
 alias cs := check-sigs
@@ -7,12 +8,17 @@ alias do := doc-open
 alias f := fmt
 alias l := lock
 alias t := test
+alias z := zizmor
 alias p := pre-push
 
 _default:
     @echo "> halfin"
     @echo "> A regtest runner for \`bitcoind\` and \`utreexod\`\n"
     @just --list
+
+[doc: "Run `cargo audit`"]
+audit:
+    cargo audit
 
 [doc: "Build `halfin`"]
 build:
@@ -54,5 +60,15 @@ lock:
 test:
     cargo rbmt test
 
-[doc: "Run pre-push suite: lock, fmt, check, and test"]
-pre-push: lock fmt check check-sigs test
+[doc: "Run Zizmor"]
+zizmor:
+    uvx zizmor .
+
+[doc: "Run pre-push checks"]
+pre-push:
+    @just check
+    @just doc
+    @just test
+    @just zizmor
+    @just audit
+    @just check-sigs
