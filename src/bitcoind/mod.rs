@@ -127,7 +127,7 @@ pub struct BitcoinDConf<'a> {
 impl Default for BitcoinDConf<'_> {
     fn default() -> Self {
         BitcoinDConf {
-            args: vec!["-regtest", "-fallbackfee=0.0001"],
+            args: vec!["-regtest", "-fallbackfee=0.0001", "-blockfilterindex=1"],
             tmpdir: None,
             staticdir: None,
             max_retries: NODE_BUILDING_MAX_RETRIES,

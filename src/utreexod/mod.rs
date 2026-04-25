@@ -123,7 +123,7 @@ impl Default for UtreexoDConf<'_> {
             args: vec![
                 "--regtest",
                 "--notls",
-                "--nodnsseed",
+                "--cfilters",
                 "--noassumeutreexo",
                 "--miningaddr=bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4yak",
             ],
