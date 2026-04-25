@@ -1,6 +1,9 @@
 name: Cross-Testing
 
-on: [push, pull_request]
+on:
+    push:
+      branches: [ master ]
+    pull_request:
 
 permissions: {}
 env:
@@ -11,7 +14,6 @@ jobs:
     build:
         name: ${{ matrix.os }} + ${{ matrix.arch }}
         runs-on: ${{ matrix.runner }}
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
         strategy:
             fail-fast: false
             matrix:
