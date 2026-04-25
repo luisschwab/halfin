@@ -26,6 +26,7 @@ use std::process::Command;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::thread;
+use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -123,7 +124,7 @@ impl Default for UtreexoDConf<'_> {
             args: vec![
                 "--regtest",
                 "--notls",
-                "--nodnsseed",
+                "--cfilters",
                 "--noassumeutreexo",
                 "--miningaddr=bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4yak",
             ],
@@ -170,7 +171,11 @@ impl Node for UtreexoD {
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
+    fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> { self.has_peer(socket) }
+
     fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> { self.add_peer(socket) }
+
+    fn get_peer_count(&self) -> Result<u32, Error> { self.get_peer_count() }
 
     fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self.get_chain_tip()?;
@@ -277,6 +282,8 @@ impl UtreexoD {
             let auth = Auth::UserPass(RPC_USER.to_string(), RPC_PASS.to_string());
             match Self::wait_for_client(&rpc_url, &auth, Duration::from_secs(10)) {
                 Ok(rpc_client) => {
+                    sleep(Duration::from_millis(200));
+
                     return Ok(UtreexoD {
                         process,
                         rpc_client,
@@ -381,6 +388,41 @@ impl UtreexoD {
             ))?
             .to_string();
         Ok(proof_hex)
+    }
+
+    // Check whether this [`UtreexoD`] has a peer with a specific [`SocketAddr`].
+    pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
+        let peers = self
+            .rpc_client
+            .call::<serde_json::Value>("getpeerinfo", &[])
+            .map_err(Error::JsonRpc)?;
+        let has_peer = peers
+            .as_array()
+            .map(|v| {
+                v.iter().any(|p| {
+                    let inbound = p["inbound"].as_bool().unwrap_or(false);
+                    if inbound {
+                        // For inbound connections, `addr` is the peer's ephemeral port
+                        // and `addrlocal` is our own listening port — neither gives us
+                        // the peer's listening port, so we can't match on socket directly.
+                        // Instead, match on `addrlocal` == our own socket as a proxy
+                        // for confirming the connection is established.
+                        p["addrlocal"]
+                            .as_str()
+                            .map(|a| a.contains(&self.p2p_socket.to_string()))
+                            .unwrap_or(false)
+                    } else {
+                        // For outbound connections, `addr` is the peer's listening port.
+                        p["addr"]
+                            .as_str()
+                            .map(|a| a.contains(&socket.to_string()))
+                            .unwrap_or(false)
+                    }
+                })
+            })
+            .unwrap_or(false);
+
+        Ok(has_peer)
     }
 
     /// Connect this [`UtreexoD`] to a peer at [`socket`](SocketAddr) and

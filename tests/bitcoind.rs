@@ -4,6 +4,7 @@
 
 use halfin::bitcoind::BitcoinD;
 use halfin::bitcoind::get_bitcoind_path;
+use halfin::connect;
 use halfin::wait_for_height;
 
 /// Verify that [`BitcoinD`] starts successfully and
@@ -45,7 +46,7 @@ fn test_bitcoind_get_block_hash() {
     assert_eq!(last_block_hash, *block_hashes.last().unwrap());
 }
 
-/// Verify that two nodes can connect to each other via `add_peer`
+/// Verify that two nodes can connect to each other via `connect`
 /// and that the peer count reflects the new connection on both sides.
 #[test]
 fn test_bitcoind_addnode() {
@@ -55,9 +56,7 @@ fn test_bitcoind_addnode() {
     assert_eq!(bitcoind_alpha.get_peer_count().unwrap(), 0);
     assert_eq!(bitcoind_beta.get_peer_count().unwrap(), 0);
 
-    bitcoind_beta
-        .add_peer(bitcoind_alpha.get_p2p_socket())
-        .unwrap();
+    connect(&bitcoind_alpha, &bitcoind_beta).unwrap();
 
     assert_eq!(bitcoind_alpha.get_peer_count().unwrap(), 1);
     assert_eq!(bitcoind_beta.get_peer_count().unwrap(), 1);
@@ -74,9 +73,7 @@ fn test_bitcoind_blocks_propagate() {
     assert_eq!(bitcoind_alpha.get_chain_tip().unwrap(), 21);
     assert_eq!(bitcoind_beta.get_chain_tip().unwrap(), 0);
 
-    bitcoind_alpha
-        .add_peer(bitcoind_beta.get_p2p_socket())
-        .unwrap();
+    connect(&bitcoind_alpha, &bitcoind_beta).unwrap();
 
     wait_for_height(&bitcoind_beta, 21).unwrap();
     assert_eq!(bitcoind_beta.get_chain_tip().unwrap(), 21);
