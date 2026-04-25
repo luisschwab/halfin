@@ -1,6 +1,9 @@
 name: Security Audit
 
-on: [push, pull_request]
+on:
+    push:
+        branches: [ master ]
+    pull_request:
 
 permissions: {}
 env:
@@ -10,7 +13,6 @@ jobs:
     audit:
         name: Audit Dependencies
         runs-on: ubuntu-latest
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
         permissions:
             contents: read
 
