@@ -38,6 +38,7 @@ use std::process::Command;
 use std::process::ExitStatus;
 use std::process::Stdio;
 use std::thread;
+use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -174,7 +175,11 @@ impl Node for BitcoinD {
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
+    fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> { self.has_peer(socket) }
+
     fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> { self.add_peer(socket) }
+
+    fn get_peer_count(&self) -> Result<u32, Error> { self.get_peer_count() }
 
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
 
@@ -299,6 +304,8 @@ impl BitcoinD {
                 continue;
             }
 
+            sleep(Duration::from_millis(200));
+
             return Ok(BitcoinD {
                 process,
                 rpc_client,
@@ -382,6 +389,17 @@ impl BitcoinD {
             .parse::<BlockHash>()
             .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
         Ok(hash)
+    }
+
+    /// Check whether this [`BitcoinD`] has a peer with a specific [`SocketAddr`].
+    pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
+        let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?;
+        let has_peer = peers
+            .0
+            .iter()
+            .any(|p| p.address.contains(&socket.to_string()));
+
+        Ok(has_peer)
     }
 
     /// Connect this [`BitcoinD`] to a peer at [`socket`](SocketAddr)

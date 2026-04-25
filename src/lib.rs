@@ -71,10 +71,10 @@ pub const NODE_BUILDING_MAX_RETRIES: u8 = 5;
 /// The [`Duration`] between attempts at instantiating a [`Node`].
 pub const NODE_BUILDING_INTERVAL: Duration = Duration::from_millis(500);
 
-/// The [`Duration`] interval between polls for `wait_for_height`.
+/// The [`Duration`] interval between polls for [`connect`] and [`wait_for_height`].
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// The timeout [`Duration`] for `wait_for_height`.
+/// The timeout [`Duration`] for [`connect`] and [`wait_for_height`].
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The interval [`Duration`] between successive attempts of node connection.
@@ -105,8 +105,14 @@ pub trait Node {
     /// Get the [`Node`]'s P2P [`SocketAddr`].
     fn get_p2p_socket(&self) -> SocketAddr;
 
+    /// Check whether the [`Node`] is connected to a peer with a specific [`SocketAddr`].
+    fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error>;
+
     /// Connect this [`Node`] to a peer at `socket` over P2P.
     fn add_peer(&self, socket: SocketAddr) -> Result<(), Error>;
+
+    /// Get this [`Node`]' s peer count.
+    fn get_peer_count(&self) -> Result<u32, Error>;
 
     /// How long to sleep between `get_height` RPC calls.
     ///
@@ -130,9 +136,32 @@ pub trait Node {
 
 /// Connect node [`a`](Node) to node [`b`](Node).
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
+    let socket_a = a.get_p2p_socket();
     let socket_b = b.get_p2p_socket();
 
-    a.add_peer(socket_b)
+    a.add_peer(socket_b)?;
+
+    let is_connected =
+        || -> Result<bool, Error> { Ok(a.has_peer(socket_b)? || b.has_peer(socket_a)?) };
+
+    // Wait for either side to confirm the connection by listening port.
+    // We check both because `utreexod` does not expose the peer's listening
+    // port in `getpeerinfo` for inbound connections, so only one side may
+    // be able to verify by socket address.
+    let start = Instant::now();
+    while start.elapsed() < CONNECTION_TIMEOUT {
+        if is_connected()? {
+            // Allow time for v2 transport negotiation to settle,
+            // or for v1 fallback to complete if v2 fails, then re-verify.
+            thread::sleep(CONNECTION_INTERVAL * 4);
+            if is_connected()? {
+                return Ok(());
+            }
+        }
+        thread::sleep(CONNECTION_INTERVAL);
+    }
+
+    Err(Error::ConnectionTimeout(CONNECTION_TIMEOUT))
 }
 
 /// Poll a [`Node`] until its chain reaches `height`.
@@ -241,6 +270,8 @@ pub enum Error {
     UnexpectedResponse(String),
     /// Timed out whilst waiting for the [`Node`]'s chain to synchronize up to `height`
     ChainSyncTimeOut((u32, u32, Duration)), // (current_height, target_height, timeout)
+    /// Timed out whilst waiting for the [`Node`]'s to connect to each other.
+    ConnectionTimeout(Duration),
 }
 
 #[rustfmt::skip]
@@ -261,10 +292,15 @@ impl fmt::Display for Error {
             CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
             UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
-            ChainSyncTimeOut((target_height, current_height, t)) => write!(
+            ChainSyncTimeOut((target_height, current_height, timeout)) => write!(
                 f,
                 "Timed out after {} seconds whilst waiting for the node's chain to synchronize to height={} (current height={})",
-                target_height, current_height, t.as_secs()
+                target_height, current_height, timeout.as_secs()
+            ),
+            ConnectionTimeout(timeout) => write!(
+                f,
+                "Timed out after {} seconds whilst waiting for the nodes to connect to each other",
+                timeout.as_secs()
             ),
         }
     }

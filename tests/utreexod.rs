@@ -2,6 +2,7 @@
 
 #![cfg(feature = "utreexod_0_5_0")]
 
+use halfin::connect;
 use halfin::utreexod::UtreexoD;
 use halfin::utreexod::get_utreexod_path;
 use halfin::wait_for_height;
@@ -44,7 +45,7 @@ fn test_utreexod_get_block_hash() {
     assert_eq!(last_block_hash, *block_hashes.last().unwrap());
 }
 
-/// Verify that two nodes can connect to each other via `add_peer`,
+/// Verify that two nodes can connect to each other via `connect`,
 /// and that the peer count reflects the new connection on both sides.
 #[test]
 fn test_utreexod_addnode() {
@@ -54,9 +55,7 @@ fn test_utreexod_addnode() {
     assert_eq!(utreexod_alpha.get_peer_count().unwrap(), 0);
     assert_eq!(utreexod_beta.get_peer_count().unwrap(), 0);
 
-    utreexod_beta
-        .add_peer(utreexod_alpha.get_p2p_socket())
-        .unwrap();
+    connect(&utreexod_alpha, &utreexod_beta).unwrap();
 
     assert_eq!(utreexod_alpha.get_peer_count().unwrap(), 1);
     assert_eq!(utreexod_beta.get_peer_count().unwrap(), 1);
@@ -73,9 +72,7 @@ fn test_utreexod_blocks_propagate() {
     assert_eq!(utreexod_alpha.get_chain_tip().unwrap(), 21);
     assert_eq!(utreexod_beta.get_chain_tip().unwrap(), 0);
 
-    utreexod_alpha
-        .add_peer(utreexod_beta.get_p2p_socket())
-        .unwrap();
+    connect(&utreexod_alpha, &utreexod_beta).unwrap();
 
     wait_for_height(&utreexod_beta, 21).unwrap();
     assert_eq!(utreexod_beta.get_chain_tip().unwrap(), 21);
