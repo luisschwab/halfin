@@ -323,7 +323,7 @@ checksum = "069def9a0e5feb7e9120635f6ebad24d853a6affbb077fec84d0888316cf9ae6"
 
 [[package]]
 name = "halfin"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "bitcoin_hashes 0.20.0",
