@@ -1,4 +1,4 @@
-name: Signed Commits
+name: Commits
 
 on:
     push:
@@ -11,7 +11,7 @@ env:
 
 jobs:
     commit-signatures:
-        name: Assert all commits are PGP-signed
+        name: Assert PGP-Signed Commits
         runs-on: ubuntu-latest
 
         steps:

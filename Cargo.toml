@@ -30,9 +30,9 @@ zip = { version = "0.6", default-features = false, features = ["bzip2", "deflate
 env_logger = { version = "0.9", default-features = false }
 
 [features]
-default = ["bitcoind_31_0", "utreexod_0_5_0"]
+default = ["bitcoind_31_0", "utreexod_0_5_1"]
 bitcoind_31_0 = []
-utreexod_0_5_0 = []
+utreexod_0_5_1 = []
 
 [lints.clippy]
 let-and-return = "allow"
@@ -44,10 +44,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 [package.metadata.rbmt.test]
 exclude_features = [
     "bitcoind_31_0",
-    "utreexod_0_5_0"
+    "utreexod_0_5_1"
 ]
 exact_features = [
-    ["bitcoind_31_0", "utreexod_0_5_0"],
+    ["bitcoind_31_0", "utreexod_0_5_1"],
 ]
 
 # Allow packages of different versions in the dependency tree.

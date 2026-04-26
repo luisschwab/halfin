@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-#![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_0"))]
+#![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_1"))]
 
 use halfin::Node;
 use halfin::bitcoind::BitcoinD;
