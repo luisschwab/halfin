@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "halfin"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "bitcoin_hashes 0.20.0",
