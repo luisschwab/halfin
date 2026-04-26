@@ -10,8 +10,8 @@ fn main() {
         // Check if `bitcoind` is cached and download it if not.
         bitcoind::download();
     }
-    // Skip if the `utreeoxd_0_5_0` feature is not enabled.
-    if cfg!(feature = "utreexod_0_5_0") {
+    // Skip if the `utreeoxd_0_5_1` feature is not enabled.
+    if cfg!(feature = "utreexod_0_5_1") {
         // Check if `utreexod` is cached and download it if not.
         utreexod::download();
     }
@@ -138,8 +138,8 @@ mod bitcoind {
             return;
         } else {
             println!(
-                "cargo:warning=Downloading `bitcoind` ({}) from `bitcoincore.org`",
-                download_filename
+                "cargo:warning=Downloading `bitcoind` @ v{} ({}) from `bitcoincore.org`",
+                BITCOIND_VERSION, download_filename,
             );
         }
 
@@ -388,8 +388,8 @@ mod utreexod {
             return;
         } else {
             println!(
-                "cargo:warning=Downloading `utreexod` ({}) from `github.com`",
-                download_filename
+                "cargo:warning=Downloading `utreexod` @ v{} ({}) from `github.com`",
+                UTREEXOD_VERSION, download_filename,
             );
         }
 
