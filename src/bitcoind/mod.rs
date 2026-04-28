@@ -67,7 +67,7 @@ const BITCOIND_WALLET: &str = "wallet";
 /// environment variable, which is set by `build.rs` after downloading
 /// and extracting the binary.
 pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
-    let bin_name = BitcoinD::get_name().to_string();
+    let bin_name = BitcoinD::get_bin_name().to_string();
     #[allow(unused_mut)]
     let mut bin_path = PathBuf::from(option_env!("HALFIN_BITCOIND_PATH").unwrap_or(""));
 
@@ -171,7 +171,7 @@ pub struct BitcoinD {
 
 #[rustfmt::skip]
 impl Node for BitcoinD {
-    fn get_name() -> &'static str { "bitcoind_v_31_0" }
+    fn get_bin_name() -> &'static str { "bitcoind_v_31_0" }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
@@ -227,6 +227,23 @@ impl BitcoinD {
         bitcoind_bin: P,
         conf: &BitcoinDConf,
     ) -> Result<BitcoinD, Error> {
+        // Validate the `bitcoind_bin` path
+        let bitcoind_bin = bitcoind_bin.as_ref();
+        // The path must be absolute
+        if !bitcoind_bin.is_absolute() {
+            return Err(Error::BinaryPathNotAbsolute {
+                bin_name: BitcoinD::get_bin_name().to_string(),
+                path: bitcoind_bin.display().to_string(),
+            });
+        }
+        // The path must be a file
+        if !bitcoind_bin.is_file() {
+            return Err(Error::BinaryPathNotFile {
+                bin_name: BitcoinD::get_bin_name().to_string(),
+                path: bitcoind_bin.display().to_string(),
+            });
+        }
+
         for _ in 0..=conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
             let cookie_file = working_directory
@@ -245,7 +262,7 @@ impl BitcoinD {
             let rpc_arg = format!("-rpcport={}", rpc_port);
             let p2p_arg = format!("-bind={}", p2p_socket);
 
-            let mut process = Command::new(bitcoind_bin.as_ref())
+            let mut process = Command::new(bitcoind_bin)
                 .args(&conf.args)
                 .arg(&datadir_arg)
                 .arg(&rpc_arg)
@@ -316,7 +333,7 @@ impl BitcoinD {
             });
         }
 
-        Err(Error::ExhaustedNodeBuildingRetries)
+        Err(Error::ExhaustedNodeBuildingRetries(conf.max_retries))
     }
 
     /// Send `stop` via RPC and wait for the process to exit.

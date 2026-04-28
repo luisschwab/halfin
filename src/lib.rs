@@ -11,13 +11,13 @@
 //! Pretty much [`bitcoind`](https://crates.io/crates/bitcoind) with
 //! [`utreexod`](https://github.com/utreexo/utreexod) support.
 //!
-//! ## Supported Implementations and Versions
+//! ## Supported Implementations
 //!
-//! | Implementation | Version  | Feature Flag     |
-//! |----------------|----------|----------------- |
-//! | [`bitcoind`]   | `v31.0`  | `bitcoind_31_0`  |
-//! |                |          |                  |
-//! | [`utreexod`]   | `v0.5.1` | `utreexod_0_5_1` |
+//! | Implementation | Version  | Feature Flag     | Default Feature |
+//! |----------------|----------|----------------- | --------------- |
+//! | `bitcoind`     | `v31.0`  | `bitcoind_31_0`  | Yes             |
+//! |                |          |                  |                 |
+//! | `utreexod`     | `v0.5.1` | `utreexod_0_5_1` | Yes             |
 //!
 //! ## Example
 //!
@@ -85,8 +85,8 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Common interface across all node implementations ([`BitcoinD`]/[`UtreexoD`]).
 pub trait Node {
-    /// A human-readable name for the [`Node`].
-    fn get_name() -> &'static str;
+    /// A human-readable name for the [`Node`]'s binary.
+    fn get_bin_name() -> &'static str;
 
     /// Get the [`Node`]'s current chain height.
     fn get_chain_tip(&self) -> Result<u32, Error>;
@@ -242,12 +242,16 @@ impl DataDir {
 
 #[derive(Debug)]
 pub enum Error {
+    /// The binary path is not absolute.
+    BinaryPathNotAbsolute { bin_name: String, path: String },
+    /// The binary path is not a file.
+    BinaryPathNotFile { bin_name: String, path: String },
     /// The binary was not found at the expected location.
     BinaryNotFound((String, PathBuf)),
     /// Failed to spawn a [process](std::process::Child) for [`BitcoinD`]/[`UtreexoD`].
     FailedToSpawn(std::io::Error),
     /// Failed to instantiate a [`BitcoinD`]/[`UtreexoD`] after [`NODE_BUILDING_MAX_RETRIES`] attempts.
-    ExhaustedNodeBuildingRetries,
+    ExhaustedNodeBuildingRetries(u8),
     /// Failed to stop [`BitcoinD`] or [`UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
     FailedToStop(corepc_client::client_sync::Error),
     /// I/O errors.
@@ -279,9 +283,11 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Error::*;
         match self {
+            BinaryPathNotAbsolute { bin_name, path } => write!(f, "The `{}` binary path is not absolute (path={})", bin_name, path),
+            BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
             BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
             FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
-            ExhaustedNodeBuildingRetries => write!(f, "Failed to instantiate the node after {} attempts", NODE_BUILDING_MAX_RETRIES),
+            ExhaustedNodeBuildingRetries(retries) => write!(f, "Failed to instantiate the node after {} attempts", retries),
             FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
             Io(err) => write!(f, "I/O Error: {err:?}"),
             JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
