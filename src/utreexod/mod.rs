@@ -61,7 +61,7 @@ const RPC_PASS: &str = "halfin";
 /// environment variable, which is set by `build.rs` after downloading
 /// and extracting the binary.
 pub fn get_utreexod_path() -> Result<PathBuf, Error> {
-    let bin_name = UtreexoD::get_name().to_string();
+    let bin_name = UtreexoD::get_bin_name().to_string();
     #[allow(unused_mut)]
     let mut bin_path = PathBuf::from(option_env!("HALFIN_UTREEXOD_PATH").unwrap_or(""));
 
@@ -167,7 +167,7 @@ pub struct UtreexoD {
 
 #[rustfmt::skip]
 impl Node for UtreexoD {
-    fn get_name() -> &'static str { "utreexod_v_0_5_0" }
+    fn get_bin_name() -> &'static str { "utreexod_v_0_5_0" }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
@@ -235,7 +235,24 @@ impl UtreexoD {
         utreexod_bin: P,
         conf: &UtreexoDConf,
     ) -> Result<UtreexoD, Error> {
-        for _attempt in 0..conf.max_retries {
+        // Validate the `bitcoind_bin` path
+        let utreexod_bin = utreexod_bin.as_ref();
+        // The path must be absolute
+        if !utreexod_bin.is_absolute() {
+            return Err(Error::BinaryPathNotAbsolute {
+                bin_name: UtreexoD::get_bin_name().to_string(),
+                path: utreexod_bin.display().to_string(),
+            });
+        }
+        // The path must be a file
+        if !utreexod_bin.is_file() {
+            return Err(Error::BinaryPathNotFile {
+                bin_name: UtreexoD::get_bin_name().to_string(),
+                path: utreexod_bin.display().to_string(),
+            });
+        }
+
+        for _attempt in 0..=conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
 
             let rpc_port = get_available_port();
@@ -251,7 +268,7 @@ impl UtreexoD {
             let rpcpass_arg = format!("--rpcpass={}", RPC_PASS);
             let listen_arg = format!("--listen=127.0.0.1:{}", p2p_port);
 
-            let mut process = Command::new(utreexod_bin.as_ref())
+            let mut process = Command::new(utreexod_bin)
                 .args(&conf.args)
                 .arg(&datadir_arg)
                 .arg(&rpclisten_arg)
@@ -299,7 +316,7 @@ impl UtreexoD {
             }
         }
 
-        Err(Error::ExhaustedNodeBuildingRetries)
+        Err(Error::ExhaustedNodeBuildingRetries(conf.max_retries))
     }
 
     /// Send `stop` via RPC and wait for the process to exit.

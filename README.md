@@ -19,16 +19,15 @@ This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoi
 and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
 integration test contexts.
 
-Pretty much [`bitcoind`](https://crates.io/crates/bitcoind) with 
-[`utreexod`](https://github.com/utreexo/utreexod) support.
+_Heavily_ inspired by the [`bitcoind`](https://crates.io/crates/bitcoind) crate.
 
-## Supported Implementations and Versions
+## Supported Implementations
 
-| Implementation | Version  | Feature Flag     |
-|----------------|----------|----------------- |
-| `bitcoind`     | `v31.0`  | `bitcoind_31_0`  |
-|                |          |                  |
-| `utreexod`     | `v0.5.1` | `utreexod_0_5_1` |
+| Implementation | Version  | Feature Flag     | Default Feature |
+|----------------|----------|----------------- | --------------- |
+| `bitcoind`     | `v31.0`  | `bitcoind_31_0`  | Yes             |
+|                |          |                  |                 |
+| `utreexod`     | `v0.5.1` | `utreexod_0_5_1` | Yes             |
 
 By default, the `bitcoind_31_0` and `utreexod_0_5_1` features are enabled.
 

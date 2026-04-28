@@ -14,7 +14,7 @@ env:
 
 jobs:
     zizmor:
-        name: Action Static Analysis
+        name: Run Static Analysis
         runs-on: ubuntu-latest
 
         steps:
