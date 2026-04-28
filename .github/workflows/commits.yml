@@ -11,7 +11,7 @@ env:
 
 jobs:
     commit-signatures:
-        name: Assert PGP-Signed Commits
+        name: Check Commit Signatures
         runs-on: ubuntu-latest
 
         steps:
