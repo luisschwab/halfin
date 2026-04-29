@@ -66,6 +66,7 @@ zizmor:
 
 [doc: "Run pre-push checks"]
 pre-push:
+    @just lock
     @just check
     @just doc
     @just test
