@@ -24,7 +24,7 @@ bitcoin_hashes = { version = "0.20", features = ["hex"] }
 flate2 = { version = "1.0.22" }
 bitreq = { version = "0.3.5", features = ["https"] }
 tar = { version = "0.4.42" }
-zip = { version = "0.6", default-features = false, features = ["bzip2", "deflate"] }
+zip = { version = "8.5", default-features = false, features = ["bzip2", "deflate"] }
 
 [dev-dependencies]
 env_logger = { version = "0.9", default-features = false }
