@@ -3,7 +3,6 @@ alias b := build
 alias c := check
 alias cs := check-sigs
 alias d := doc
-alias db := delete-bins
 alias do := doc-open
 alias f := fmt
 alias l := lock
@@ -34,10 +33,6 @@ check:
 check-sigs:
     bash contrib/check-signatures.sh
 
-[doc: "Delete binaries under `target/bin/`"]
-delete-bins:
-    rm -rf target/bin
-
 [doc: "Generate documentation"]
 doc:
     RBMT_LOG_LEVEL=progress cargo rbmt docs
@@ -54,13 +49,13 @@ fmt:
 
 [doc: "Regenerate Cargo-recent.lock and Cargo-minimal.lock"]
 lock:
-    RBMT_LOG_LEVEL=progress cargo rbmt lock
+    RBMT_LOG_LEVEL=verbose cargo rbmt lock
 
 [doc: "Run tests across all toolchains and lockfiles"]
 test:
     RBMT_LOG_LEVEL=verbose cargo rbmt test
 
-[doc: "Run Zizmor"]
+[doc: "Run Zizmor Static Analysis"]
 zizmor:
     uvx zizmor .
 

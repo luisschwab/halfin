@@ -223,9 +223,7 @@ mod bitcoind {
                 let mut file = archive.by_index(i).unwrap();
                 if file
                     .enclosed_name()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n == "bitcoind.exe")
-                    == Some(true)
+                    .is_some_and(|p| p.file_name() == Some(OsStr::new("bitcoind.exe")))
                 {
                     let destination_path = destination_directory.join("bitcoind.exe");
                     let mut output_file = File::create(&destination_path)
@@ -485,9 +483,7 @@ mod utreexod {
                 let mut file = archive.by_index(i).unwrap();
                 if file
                     .enclosed_name()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n == "utreexod.exe")
-                    == Some(true)
+                    .is_some_and(|p| p.file_name() == Some(OsStr::new("utreexod.exe")))
                 {
                     let destination_path = destination_directory.join("utreexod.exe");
                     let mut outputfile = File::create(&destination_path)
