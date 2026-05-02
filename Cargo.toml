@@ -14,20 +14,19 @@ rust-version = "1.85.0" # MSRV
 [dependencies]
 corepc-client = { version = "0.12.0", features = ["client-sync"] }
 tempfile = { version = "3", default-features = false }
-log = { version = "0.4.8", default-features = false }
 serde_json = { version = "1.0.117", default-features = false }
-which = { version = "3", default-features = false }
+which = { version = "8", default-features = false }
 
 [build-dependencies]
 anyhow = { version = "1.0.66" }
 bitcoin_hashes = { version = "0.20", features = ["hex"] }
-flate2 = { version = "1.0.22" }
+flate2 = { version = "1.1" }
 bitreq = { version = "0.3.5", features = ["https"] }
 tar = { version = "0.4.42" }
-zip = { version = "0.6", default-features = false, features = ["bzip2", "deflate"] }
+zip = { version = "7.2", default-features = false, features = ["bzip2", "deflate"] }
 
 [dev-dependencies]
-env_logger = { version = "0.9", default-features = false }
+env_logger = { version = "0.11", default-features = false }
 
 [features]
 default = ["bitcoind_31_0", "utreexod_0_5_1"]
@@ -59,6 +58,8 @@ allowed_duplicates = [
     "bitcoin_hashes",
     "bitreq",
     "hex-conservative",
+    "libc",
+    "memchr",
     "rustix",
     "windows-sys"
 ]
