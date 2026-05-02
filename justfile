@@ -22,13 +22,13 @@ audit:
 
 [doc: "Build `halfin`"]
 build:
-    cargo build
+    RBMT_LOG_LEVEL=progress cargo rbmt run build
 
 [doc: "Check code formatting, compilation, and linting"]
 check:
-    cargo rbmt fmt --check
-    cargo rbmt lint
-    cargo rbmt docs
+    RBMT_LOG_LEVEL=progress cargo rbmt fmt --check
+    RBMT_LOG_LEVEL=progress cargo rbmt lint
+    RBMT_LOG_LEVEL=progress cargo rbmt docs
 
 [doc: "Checks whether all commits in this branch are signed"]
 check-sigs:
@@ -40,25 +40,25 @@ delete-bins:
 
 [doc: "Generate documentation"]
 doc:
-    cargo rbmt docs
-    cargo doc --no-deps
+    RBMT_LOG_LEVEL=progress cargo rbmt docs
+    RBMT_LOG_LEVEL=progress cargo rbmt run doc --no-deps
 
 [doc: "Generate and open documentation"]
 doc-open:
-    cargo rbmt docs
-    cargo doc --no-deps --open
+    RBMT_LOG_LEVEL=progress cargo rbmt docs
+    RBMT_LOG_LEVEL=progress cargo rbmt run doc --no-deps --open
 
 [doc: "Format code"]
 fmt:
-    cargo rbmt fmt
+    RBMT_LOG_LEVEL=progress cargo rbmt fmt
 
 [doc: "Regenerate Cargo-recent.lock and Cargo-minimal.lock"]
 lock:
-    cargo rbmt lock
+    RBMT_LOG_LEVEL=progress cargo rbmt lock
 
 [doc: "Run tests across all toolchains and lockfiles"]
 test:
-    cargo rbmt test
+    RBMT_LOG_LEVEL=verbose cargo rbmt test
 
 [doc: "Run Zizmor"]
 zizmor:
