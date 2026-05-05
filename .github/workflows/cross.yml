@@ -12,7 +12,7 @@ env:
 
 jobs:
     build:
-        name: Build ${{ matrix.os }} + ${{ matrix.arch }}
+        name: Build on ${{ matrix.os }} + ${{ matrix.arch }}
         runs-on: ${{ matrix.runner }}
         strategy:
             fail-fast: false
@@ -39,7 +39,7 @@ jobs:
                       arch: x86_64
 
         steps:
-            - name: Checkout repository
+            - name: Checkout Repository
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.3.0
               with:
                   persist-credentials: false
@@ -50,14 +50,14 @@ jobs:
                   toolchain: stable
                   targets: ${{ matrix.target }}
 
-            - name: Setup build cache
+            - name: Setup Build Cache
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
               with:
                   key: ${{ matrix.target }}
 
-            - name: Build
+            - name: Build Code
               run: cargo build --target ${{ matrix.target }} --verbose
 
-            - name: Run tests
-              if: runner.os != 'Windows'
+            - name: Run Tests
+              if: runner.os != 'Windows' # Skip running tests on Windows
               run: cargo test --target ${{ matrix.target }} --verbose --no-fail-fast
