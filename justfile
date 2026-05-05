@@ -35,13 +35,11 @@ check-sigs:
 
 [doc: "Generate documentation"]
 doc:
-    RBMT_LOG_LEVEL=progress cargo rbmt docs
-    RBMT_LOG_LEVEL=progress cargo rbmt run doc --no-deps
+    RBMT_LOG_LEVEL=progress cargo rbmt docsrs
 
 [doc: "Generate and open documentation"]
 doc-open:
-    RBMT_LOG_LEVEL=progress cargo rbmt docs
-    RBMT_LOG_LEVEL=progress cargo rbmt run doc --no-deps --open
+    RBMT_LOG_LEVEL=progress cargo rbmt docsrs --open
 
 [doc: "Format code"]
 fmt:
