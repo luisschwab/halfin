@@ -1,9 +1,10 @@
-name: Rust CI
+name: Rust
 
 on:
     push:
       branches: [ master ]
     pull_request:
+    workflow_dispatch:
 
 permissions: {}
 env:
@@ -52,9 +53,6 @@ jobs:
                     - name: Stable Toolchain + Recent Lockfile
                       toolchain: stable
                       lockfile: recent
-                    - name: Nightly Toolchain + Minimal Lockfile
-                      toolchain: nightly
-                      lockfile: minimal
                     - name: Nightly Toolchain + Recent Lockfile
                       toolchain: nightly
                       lockfile: recent
