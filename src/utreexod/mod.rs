@@ -376,6 +376,22 @@ impl UtreexoD {
         Ok(height)
     }
 
+    /// Get the current filter height.
+    pub fn get_filter_tip(&self) -> Result<u32, Error> {
+        let height = self.get_chain_tip()?;
+        let hash = self.get_block_hash(height)?;
+        self.rpc_client
+            .call::<serde_json::Value>(
+                "getcfilterheader",
+                &[
+                    serde_json::to_value(hash.to_string()).unwrap(),
+                    serde_json::Value::Number(0.into()),
+                ],
+            )
+            .map_err(Error::JsonRpc)?;
+        Ok(height)
+    }
+
     /// Get the [`BlockHash`] of the block at height `height`.
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self

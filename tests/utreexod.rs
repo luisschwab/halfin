@@ -35,6 +35,17 @@ fn test_utreexod_generate() {
     assert_eq!(height, 10);
 }
 
+#[test]
+fn test_bitcoind_get_filter_height() {
+    const BLOCK_COUNT: u32 = 21;
+
+    let utreexod = UtreexoD::new().unwrap();
+
+    utreexod.generate(BLOCK_COUNT).unwrap();
+
+    assert_eq!(BLOCK_COUNT, utreexod.get_filter_tip().unwrap());
+}
+
 /// Verify that [`UtreexoD::get_block_hash`] returns the correct hash for a given height.
 #[test]
 fn test_utreexod_get_block_hash() {

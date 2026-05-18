@@ -397,6 +397,22 @@ impl BitcoinD {
         Ok(height)
     }
 
+    /// Get the current filter height.
+    pub fn get_filter_tip(&self) -> Result<u32, Error> {
+        let response = self.rpc_client.get_index_info().map_err(Error::JsonRpc)?;
+        let filter_height = response
+            .0
+            .get("basic block filter index")
+            .map(|i| i.best_block_height)
+            .ok_or_else(|| {
+                Error::UnexpectedResponse(
+                    "BitcoinD does not have `blockfilterindex=1` enabled".to_string(),
+                )
+            })?;
+
+        Ok(filter_height)
+    }
+
     /// Get the [`BlockHash`] of the block at height `height`.
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self

@@ -67,6 +67,17 @@ fn test_bitcoind_generate_to_address() {
     );
 }
 
+#[test]
+fn test_bitcoind_get_filter_height() {
+    const BLOCK_COUNT: u32 = 21;
+
+    let bitcoind = BitcoinD::new().unwrap();
+
+    bitcoind.generate(BLOCK_COUNT).unwrap();
+
+    assert_eq!(BLOCK_COUNT, bitcoind.get_filter_tip().unwrap());
+}
+
 /// Verify that [`BitcoinD::get_block_hash`] returns
 /// the correct [`BlockHash`] for a given height.
 #[test]
