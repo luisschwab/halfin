@@ -128,6 +128,7 @@ Available recipes:
     lock       # Regenerate Cargo-recent.lock and Cargo-minimal.lock [alias: l]
     pre-push   # Run pre-push checks [alias: p]
     test       # Run tests across all toolchains and lockfiles [alias: t]
+    toolchains # Update Stable and Nightly toolchains
     zizmor     # Run Zizmor Static Analysis [alias: z]
 ```
 

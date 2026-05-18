@@ -21,13 +21,13 @@ audit:
 
 [doc: "Build `halfin`"]
 build:
-    RBMT_LOG_LEVEL=progress cargo rbmt run build
+    RBMT_LOG_LEVEL=verbose cargo rbmt run build
 
 [doc: "Check code formatting, compilation, and linting"]
 check:
-    RBMT_LOG_LEVEL=progress cargo rbmt fmt --check
-    RBMT_LOG_LEVEL=progress cargo rbmt lint
-    RBMT_LOG_LEVEL=progress cargo rbmt docsrs
+    RBMT_LOG_LEVEL=verbose cargo rbmt fmt --check
+    RBMT_LOG_LEVEL=verbose cargo rbmt lint
+    RBMT_LOG_LEVEL=verbose cargo rbmt docsrs
 
 [doc: "Checks whether all commits in this branch are signed"]
 check-sigs:
@@ -35,15 +35,15 @@ check-sigs:
 
 [doc: "Generate documentation"]
 doc:
-    RBMT_LOG_LEVEL=progress cargo rbmt docsrs
+    RBMT_LOG_LEVEL=verbose cargo rbmt docsrs
 
 [doc: "Generate and open documentation"]
 doc-open:
-    RBMT_LOG_LEVEL=progress cargo rbmt docsrs --open
+    RBMT_LOG_LEVEL=verbose cargo rbmt docsrs --open
 
 [doc: "Format code"]
 fmt:
-    RBMT_LOG_LEVEL=progress cargo rbmt fmt
+    RBMT_LOG_LEVEL=verbose cargo rbmt fmt
 
 [doc: "Regenerate Cargo-recent.lock and Cargo-minimal.lock"]
 lock:
@@ -52,6 +52,11 @@ lock:
 [doc: "Run tests across all toolchains and lockfiles"]
 test:
     RBMT_LOG_LEVEL=verbose cargo rbmt test
+
+[doc: "Update Stable and Nightly toolchains"]
+toolchains:
+    RBMT_LOG_LEVEL=verbose cargo rbmt toolchains --update-stable
+    RBMT_LOG_LEVEL=verbose cargo rbmt toolchains --update-nightly
 
 [doc: "Run Zizmor Static Analysis"]
 zizmor:
