@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+//! # Integration Tests for [`BitcoinD`].
+
 #![cfg(feature = "bitcoind_31_0")]
 
+use corepc_client::bitcoin::Amount;
 use halfin::bitcoind::BitcoinD;
 use halfin::bitcoind::get_bitcoind_path;
 use halfin::connect;
@@ -31,6 +34,37 @@ fn test_bitcoind_generate() {
 
     let height = bitcoind.get_chain_tip().unwrap();
     assert_eq!(height, 10);
+}
+
+/// Verify that `generatetoaddress` mines the
+/// requested number of blocks to the specified [`Address`].
+#[test]
+fn test_bitcoind_generate_to_address() {
+    const BLOCK_COUNT: u32 = 21;
+
+    let bitcoind = BitcoinD::new().unwrap();
+
+    let address = bitcoind
+        .get_rpc_client()
+        .get_new_address(None, None)
+        .unwrap()
+        .address()
+        .unwrap()
+        .assume_checked();
+
+    bitcoind.generate_to_address(BLOCK_COUNT, &address).unwrap();
+
+    let address_desc = format!("addr({})", address);
+    let address_balance = bitcoind
+        .get_rpc_client()
+        .scan_tx_out_set_start(&[&address_desc])
+        .unwrap()
+        .total_amount;
+
+    assert_eq!(
+        Amount::from_btc(address_balance).unwrap(),
+        Amount::from_int_btc(BLOCK_COUNT as u64 * 50)
+    );
 }
 
 /// Verify that [`BitcoinD::get_block_hash`] returns

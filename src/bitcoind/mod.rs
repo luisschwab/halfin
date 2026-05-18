@@ -42,6 +42,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
+use corepc_client::bitcoin::Address;
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
@@ -463,6 +464,29 @@ impl BitcoinD {
     /// Returns the block hashes as a [`Vec<BlockHash>`].
     pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
         let address = self.rpc_client.new_address().map_err(Error::JsonRpc)?;
+        let hashes = self
+            .rpc_client
+            .generate_to_address(count as usize, &address)
+            .map_err(Error::JsonRpc)?
+            .0
+            .iter()
+            .map(|h| {
+                h.parse::<BlockHash>()
+                    .map_err(|e| Error::UnexpectedResponse(e.to_string()))
+            })
+            .collect::<Result<Vec<BlockHash>, Error>>()?;
+        Ok(hashes)
+    }
+
+    /// Generate `count` blocks using the provided
+    /// [`Address`] as the coinbase output [`Address`].
+    ///
+    /// Returns the block hashes as a [`Vec<BlockHash>`].
+    pub fn generate_to_address(
+        &self,
+        count: u32,
+        address: &Address,
+    ) -> Result<Vec<BlockHash>, Error> {
         let hashes = self
             .rpc_client
             .generate_to_address(count as usize, &address)
