@@ -137,7 +137,7 @@ pub trait Node {
     }
 }
 
-/// Connect node [`a`](Node) to node [`b`](Node).
+/// Connect [`Node`] A to [`Node`] B.
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     let socket_a = a.get_p2p_socket();
     let socket_b = b.get_p2p_socket();
@@ -165,6 +165,20 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     }
 
     Err(Error::ConnectionTimeout(CONNECTION_TIMEOUT))
+}
+
+/// Connect [`Node`] A to [`Node`] B and wait for them to synchronize chains.
+pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
+    connect(a, b)?;
+
+    let height_a = a.get_chain_tip()?;
+    let height_b = b.get_chain_tip()?;
+
+    let max_height = std::cmp::max(height_a, height_b);
+    wait_for_height(a, max_height)?;
+    wait_for_height(b, max_height)?;
+
+    Ok(())
 }
 
 /// Poll a [`Node`] until its chain reaches `height`.
