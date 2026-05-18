@@ -8,6 +8,7 @@ use corepc_client::bitcoin::Amount;
 use halfin::bitcoind::BitcoinD;
 use halfin::bitcoind::get_bitcoind_path;
 use halfin::connect;
+use halfin::wait_for_filter_height;
 use halfin::wait_for_height;
 
 /// Verify that [`BitcoinD`] starts successfully and
@@ -74,6 +75,7 @@ fn test_bitcoind_get_filter_height() {
     let bitcoind = BitcoinD::new().unwrap();
 
     bitcoind.generate(BLOCK_COUNT).unwrap();
+    wait_for_filter_height(&bitcoind, BLOCK_COUNT).unwrap();
 
     assert_eq!(BLOCK_COUNT, bitcoind.get_filter_tip().unwrap());
 }

@@ -27,7 +27,7 @@ build:
 check:
     RBMT_LOG_LEVEL=progress cargo rbmt fmt --check
     RBMT_LOG_LEVEL=progress cargo rbmt lint
-    RBMT_LOG_LEVEL=progress cargo rbmt docs
+    RBMT_LOG_LEVEL=progress cargo rbmt docsrs
 
 [doc: "Checks whether all commits in this branch are signed"]
 check-sigs:
@@ -63,6 +63,6 @@ pre-push:
     @just check
     @just doc
     @just test
-    @just zizmor
     @just audit
+    @just zizmor
     @just check-sigs

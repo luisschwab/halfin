@@ -104,9 +104,9 @@ pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
 pub struct BitcoinDConf<'a> {
     /// Extra CLI arguments forwarded verbatim to the `bitcoind` process.
     ///
-    /// The defaults (`-regtest`, `-fallbackfee=0.0001`) are always present when
-    /// using [`BitcoinDConf::default`]. Replace or extend this vec to
-    /// customise the node (e.g. add `-txindex=1`).
+    /// The defaults (`-regtest`, `-fallbackfee=0.0001`, `-blockfilterindex=1`)
+    /// are always present when using [`BitcoinDConf::default`].
+    /// Replace or extend this vec to customise the node (e.g. add `-txindex=1`).
     pub args: Vec<&'a str>,
 
     /// Root directory under which a fresh temporary working directory is
@@ -183,6 +183,8 @@ impl Node for BitcoinD {
     fn get_peer_count(&self) -> Result<u32, Error> { self.get_peer_count() }
 
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+
+    fn get_filter_tip(&self) -> Result<u32, Error> { self.get_filter_tip() }
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
@@ -505,7 +507,7 @@ impl BitcoinD {
     ) -> Result<Vec<BlockHash>, Error> {
         let hashes = self
             .rpc_client
-            .generate_to_address(count as usize, &address)
+            .generate_to_address(count as usize, address)
             .map_err(Error::JsonRpc)?
             .0
             .iter()

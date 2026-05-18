@@ -97,7 +97,7 @@ pub fn get_utreexod_path() -> Result<PathBuf, Error> {
 pub struct UtreexoDConf<'a> {
     /// Extra CLI arguments forwarded verbatim to the `utreexod` process.
     ///
-    /// The defaults (`--regtest`, `--notls`, `--nodnsseed`, `--noassumeutreexo`)
+    /// The defaults (`--regtest`, `--notls`, `--nodnsseed`, `--noassumeutreexo`, `--prune=0`)
     /// are always present when using [`UtreexoDConf::default`].
     pub args: Vec<&'a str>,
 
@@ -124,7 +124,9 @@ impl Default for UtreexoDConf<'_> {
             args: vec![
                 "--regtest",
                 "--notls",
+                "--nodnsseed",
                 "--cfilters",
+                "--prune=0",
                 "--noassumeutreexo",
                 "--miningaddr=bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4yak",
             ],
@@ -187,6 +189,8 @@ impl Node for UtreexoD {
         self.get_block_uproof(height)?;
         Ok(height)
     }
+
+    fn get_filter_tip(&self) -> Result<u32, Error> { self.get_filter_tip() }
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 

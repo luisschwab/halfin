@@ -91,6 +91,9 @@ pub trait Node {
     /// Get the [`Node`]'s current chain height.
     fn get_chain_tip(&self) -> Result<u32, Error>;
 
+    /// Get the [`Node`]'s current CBF height.
+    fn get_filter_tip(&self) -> Result<u32, Error>;
+
     // Get the [`BlockHash`] of the block at `height`.
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
 
@@ -204,6 +207,26 @@ pub fn wait_for_height_with_timeout<N: Node>(
     Err(Error::ChainSyncTimeOut((height, curr_height, timeout)))
 }
 
+/// Poll a [`Node`] until its Compact Block Filters reach `height`.
+///
+/// Throws an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
+pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
+    let start = Instant::now();
+    while start.elapsed() < N::wait_timeout() {
+        if node.get_filter_tip().unwrap() >= filter_height {
+            return Ok(());
+        }
+        thread::sleep(N::poll_interval());
+    }
+
+    let curr_filter_height = node.get_filter_tip().unwrap();
+    Err(Error::ChainSyncTimeOut((
+        filter_height,
+        curr_filter_height,
+        N::wait_timeout(),
+    )))
+}
+
 /// Ask the OS for an available port, immediately unbind and return it.
 ///
 /// Inlining is needed to curb TOCTOU race conditions.
@@ -244,36 +267,52 @@ impl DataDir {
 pub enum Error {
     /// The binary path is not absolute.
     BinaryPathNotAbsolute { bin_name: String, path: String },
+
     /// The binary path is not a file.
     BinaryPathNotFile { bin_name: String, path: String },
+
     /// The binary was not found at the expected location.
     BinaryNotFound((String, PathBuf)),
+
     /// Failed to spawn a [process](std::process::Child) for [`BitcoinD`]/[`UtreexoD`].
     FailedToSpawn(std::io::Error),
+
     /// Failed to instantiate a [`BitcoinD`]/[`UtreexoD`] after [`NODE_BUILDING_MAX_RETRIES`] attempts.
     ExhaustedNodeBuildingRetries(u8),
+
     /// Failed to stop [`BitcoinD`] or [`UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
     FailedToStop(corepc_client::client_sync::Error),
+
     /// I/O errors.
     Io(std::io::Error),
+
     /// JSON-RPC Errors.
     JsonRpc(corepc_client::client_sync::Error),
+
     /// Timed out whilst waiting for peer connection to succeed.
     PeerConnectionTimeout((SocketAddr, SocketAddr)),
+
     /// Both `tmpdir` and `workdir` were specified.
     BothDirsSpecified,
+
     /// [`BitcoinD`] is unresponsive (it's probably not running).
     UnresponsiveBitcoinD(corepc_client::client_sync::Error),
+
     /// [`UtreexoD`] is unresponsive (it's probably not running).
     UnresponsiveUtreexoD(corepc_client::client_sync::Error),
+
     /// Timed out whilst waiting for the cookie file to be generated.
     CookieFileTimeout(PathBuf),
+
     /// Timed out whilst waiting for the JSON-RPC client to be ready.
     RpcClientSetupTimeout,
+
     /// Received an unexpected response from the JSON-RPC server
     UnexpectedResponse(String),
+
     /// Timed out whilst waiting for the [`Node`]'s chain to synchronize up to `height`
     ChainSyncTimeOut((u32, u32, Duration)), // (current_height, target_height, timeout)
+
     /// Timed out whilst waiting for the [`Node`]'s to connect to each other.
     ConnectionTimeout(Duration),
 }
@@ -282,6 +321,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Error::*;
+
         match self {
             BinaryPathNotAbsolute { bin_name, path } => write!(f, "The `{}` binary path is not absolute (path={})", bin_name, path),
             BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
