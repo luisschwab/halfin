@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+//! Integration tests for [`UtreexoD`].
+
 #![cfg(feature = "utreexod_0_5_1")]
 
 use halfin::connect;
