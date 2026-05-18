@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+//! Integration tests for [`Node`] trait.
+
 #![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_1"))]
 
 use halfin::Node;

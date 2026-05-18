@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+//! Integration tests for [`UtreexoD`].
+
 #![cfg(feature = "utreexod_0_5_1")]
 
 use halfin::connect;
 use halfin::utreexod::UtreexoD;
 use halfin::utreexod::get_utreexod_path;
+use halfin::wait_for_filter_height;
 use halfin::wait_for_height;
 
 /// Verify that [`UtreexoD`] starts successfully and
@@ -31,6 +34,18 @@ fn test_utreexod_generate() {
 
     let height = utreexod.get_chain_tip().unwrap();
     assert_eq!(height, 10);
+}
+
+#[test]
+fn test_bitcoind_get_filter_height() {
+    const BLOCK_COUNT: u32 = 21;
+
+    let utreexod = UtreexoD::new().unwrap();
+
+    utreexod.generate(BLOCK_COUNT).unwrap();
+    wait_for_filter_height(&utreexod, BLOCK_COUNT).unwrap();
+
+    assert_eq!(BLOCK_COUNT, utreexod.get_filter_tip().unwrap());
 }
 
 /// Verify that [`UtreexoD::get_block_hash`] returns the correct hash for a given height.

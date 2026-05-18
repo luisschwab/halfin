@@ -42,6 +42,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
+use corepc_client::bitcoin::Address;
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
@@ -103,9 +104,9 @@ pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
 pub struct BitcoinDConf<'a> {
     /// Extra CLI arguments forwarded verbatim to the `bitcoind` process.
     ///
-    /// The defaults (`-regtest`, `-fallbackfee=0.0001`) are always present when
-    /// using [`BitcoinDConf::default`]. Replace or extend this vec to
-    /// customise the node (e.g. add `-txindex=1`).
+    /// The defaults (`-regtest`, `-fallbackfee=0.0001`, `-blockfilterindex=1`)
+    /// are always present when using [`BitcoinDConf::default`].
+    /// Replace or extend this vec to customise the node (e.g. add `-txindex=1`).
     pub args: Vec<&'a str>,
 
     /// Root directory under which a fresh temporary working directory is
@@ -182,6 +183,8 @@ impl Node for BitcoinD {
     fn get_peer_count(&self) -> Result<u32, Error> { self.get_peer_count() }
 
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+
+    fn get_filter_tip(&self) -> Result<u32, Error> { self.get_filter_tip() }
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
@@ -396,6 +399,22 @@ impl BitcoinD {
         Ok(height)
     }
 
+    /// Get the current filter height.
+    pub fn get_filter_tip(&self) -> Result<u32, Error> {
+        let response = self.rpc_client.get_index_info().map_err(Error::JsonRpc)?;
+        let filter_height = response
+            .0
+            .get("basic block filter index")
+            .map(|i| i.best_block_height)
+            .ok_or_else(|| {
+                Error::UnexpectedResponse(
+                    "BitcoinD does not have `blockfilterindex=1` enabled".to_string(),
+                )
+            })?;
+
+        Ok(filter_height)
+    }
+
     /// Get the [`BlockHash`] of the block at height `height`.
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self
@@ -466,6 +485,29 @@ impl BitcoinD {
         let hashes = self
             .rpc_client
             .generate_to_address(count as usize, &address)
+            .map_err(Error::JsonRpc)?
+            .0
+            .iter()
+            .map(|h| {
+                h.parse::<BlockHash>()
+                    .map_err(|e| Error::UnexpectedResponse(e.to_string()))
+            })
+            .collect::<Result<Vec<BlockHash>, Error>>()?;
+        Ok(hashes)
+    }
+
+    /// Generate `count` blocks using the provided
+    /// [`Address`] as the coinbase output [`Address`].
+    ///
+    /// Returns the block hashes as a [`Vec<BlockHash>`].
+    pub fn generate_to_address(
+        &self,
+        count: u32,
+        address: &Address,
+    ) -> Result<Vec<BlockHash>, Error> {
+        let hashes = self
+            .rpc_client
+            .generate_to_address(count as usize, address)
             .map_err(Error::JsonRpc)?
             .0
             .iter()

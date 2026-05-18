@@ -118,16 +118,17 @@ A `justfile` is provided for convenience. Run `just` to see available commands:
 > A regtest runner for `bitcoind` and `utreexod`
 
 Available recipes:
-    build       # Build `halfin` [alias: b]
-    check       # Check code formatting, compilation, and linting [alias: c]
-    check-sigs  # Checks whether all commits in this branch are signed [alias: cs]
-    delete-bins # Delete binaries under `target/bin/` [alias: db]
-    doc         # Generate documentation [alias: d]
-    doc-open    # Generate and open documentation [alias: do]
-    fmt         # Format code [alias: f]
-    lock        # Regenerate Cargo-recent.lock and Cargo-minimal.lock [alias: l]
-    pre-push    # Run pre-push suite: lock, fmt, check, and test [alias: p]
-    test        # Run tests across all toolchains and lockfiles [alias: t]
+    audit      # Run `cargo audit` [alias: a]
+    build      # Build `halfin` [alias: b]
+    check      # Check code formatting, compilation, and linting [alias: c]
+    check-sigs # Checks whether all commits in this branch are signed [alias: cs]
+    doc        # Generate documentation [alias: d]
+    doc-open   # Generate and open documentation [alias: do]
+    fmt        # Format code [alias: f]
+    lock       # Regenerate Cargo-recent.lock and Cargo-minimal.lock [alias: l]
+    pre-push   # Run pre-push checks [alias: p]
+    test       # Run tests across all toolchains and lockfiles [alias: t]
+    zizmor     # Run Zizmor Static Analysis [alias: z]
 ```
 
 ## Minimum Supported Rust Version
