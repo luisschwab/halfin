@@ -2,7 +2,7 @@
 
 //! Integration tests for [`UtreexoD`].
 
-#![cfg(feature = "utreexod_0_5_1")]
+#![cfg(feature = "utreexod_0_5_2")]
 
 use halfin::connect;
 use halfin::utreexod::UtreexoD;

@@ -10,8 +10,8 @@ fn main() {
         // Check if `bitcoind` is cached and download it if not.
         bitcoind::download();
     }
-    // Skip if the `utreeoxd_0_5_1` feature is not enabled.
-    if cfg!(feature = "utreexod_0_5_1") {
+    // Skip if the `utreeoxd_0_5_2` feature is not enabled.
+    if cfg!(feature = "utreexod_0_5_2") {
         // Check if `utreexod` is cached and download it if not.
         utreexod::download();
     }
