@@ -53,10 +53,11 @@ lock:
 test:
     RBMT_LOG_LEVEL=verbose cargo rbmt test
 
-[doc: "Update Stable and Nightly toolchains"]
+[doc: "Install and/or Update `cargo-rbmt` and Stable and Nightly toolchains"]
 toolchains:
-    RBMT_LOG_LEVEL=verbose cargo rbmt toolchains --update-stable
-    RBMT_LOG_LEVEL=verbose cargo rbmt toolchains --update-nightly
+    bash contrib/install-cargo-rbmt.sh
+    RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-stable
+    RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-nightly
 
 [doc: "Run Zizmor Static Analysis"]
 zizmor:
