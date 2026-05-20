@@ -11,7 +11,7 @@ env:
     CARGO_TERM_COLOR: always
 
 jobs:
-    audit:
+    cargo-audit:
         name: Cargo Audit
         runs-on: ubuntu-latest
         permissions:

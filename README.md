@@ -104,7 +104,7 @@ This project uses [`just`](https://github.com/casey/just) for command running, a
 [`cargo-rbmt`](https://github.com/rust-bitcoin/rust-bitcoin-maintainer-tools/tree/master/cargo-rbmt)
 to manage everything related to `cargo`, such as formatting, linting, testing and CI. To install them, run:
 
-```console
+```shell
 ~$ cargo install just
 
 ~$ cargo install cargo-rbmt
@@ -112,7 +112,7 @@ to manage everything related to `cargo`, such as formatting, linting, testing an
 
 A `justfile` is provided for convenience. Run `just` to see available commands:
 
-```console
+```shell
 ~$ just
 > halfin
 > A regtest runner for `bitcoind` and `utreexod`
