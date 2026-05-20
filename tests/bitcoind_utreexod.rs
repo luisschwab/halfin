@@ -2,7 +2,7 @@
 
 //! Integration tests between [`BitcoinD`] and [`UtreexoD`].
 
-#![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_1"))]
+#![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_2"))]
 
 //! Integration tests between [`BitcoinD`] and [`UtreexoD`].
 
