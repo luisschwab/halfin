@@ -1,6 +1,8 @@
 name: Automated Toolchain Update
 
 on:
+    push:
+        branches: [ ci/automated-toolchain-update ]
     schedule:
         - cron: '0 12 * * 3' # Wednesday, 12:00:00 UTC
     workflow_dispatch:
