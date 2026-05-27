@@ -7,6 +7,7 @@ alias do := doc-open
 alias f := fmt
 alias l := lock
 alias t := test
+alias sc := shellcheck
 alias z := zizmor
 alias p := pre-push
 
@@ -58,6 +59,11 @@ toolchains:
     bash contrib/install-cargo-rbmt.sh
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-stable
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-nightly
+
+[doc: "Run ShellCheck"]
+shellcheck:
+    @command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck was not found on \$PATH" && exit 1; }
+    find . -name '*.sh' -print -exec shellcheck {} +
 
 [doc: "Run Zizmor Static Analysis"]
 zizmor:
