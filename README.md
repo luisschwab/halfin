@@ -118,7 +118,7 @@ A `justfile` is provided for convenience. Run `just` to see available commands:
 > A regtest runner for `bitcoind` and `utreexod`
 
 Available recipes:
-    audit      # Run `cargo audit` [alias: a]
+    audit      # Run `cargo audit` on all lockfiles and prune ignored advisories [alias: a]
     build      # Build `halfin` [alias: b]
     check      # Check code formatting, compilation, and linting [alias: c]
     check-sigs # Checks whether all commits in this branch are signed [alias: cs]
@@ -127,7 +127,8 @@ Available recipes:
     fmt        # Format code [alias: f]
     lock       # Regenerate Cargo-recent.lock and Cargo-minimal.lock [alias: l]
     pre-push   # Run pre-push checks [alias: p]
-    test       # Run tests across all toolchains and lockfiles [alias: t]
+    shellcheck # Run ShellCheck [alias: sc]
+    test       # Run tests with relevant toolchain and lockfile combinations [alias: t]
     toolchains # Install and/or Update `cargo-rbmt` and Stable and Nightly toolchains
     zizmor     # Run Zizmor Static Analysis [alias: z]
 ```

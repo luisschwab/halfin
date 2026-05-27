@@ -20,4 +20,4 @@ jobs:
                   fetch-depth: 0
 
             - name: Assert Commits are Signed
-              run: bash contrib/check-signatures.sh
+              run: bash contrib/check-commit-signatures.sh
