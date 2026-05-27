@@ -1,7 +1,7 @@
 alias a := audit
 alias b := build
 alias c := check
-alias cs := check-sigs
+alias cs := check-commit-signatures
 alias d := doc
 alias do := doc-open
 alias f := fmt
@@ -32,7 +32,7 @@ check:
     RBMT_LOG_LEVEL=verbose cargo rbmt docsrs
 
 [doc: "Checks whether all commits in this branch are signed"]
-check-sigs:
+check-commit-signatures:
     bash contrib/check-signatures.sh
 
 [doc: "Generate documentation"]
@@ -82,4 +82,4 @@ pre-push:
     @just shellcheck
     @just audit
     @just zizmor
-    @just check-sigs
+    @just check-commit-signatures
