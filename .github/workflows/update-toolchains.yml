@@ -1,0 +1,108 @@
+name: Automated Toolchain Update
+
+on:
+    schedule:
+        - cron: '0 12 * * 3' # Wednesday, 12:00:00 UTC
+    workflow_dispatch:
+
+permissions: {}
+
+jobs:
+    update:
+        name: Update Rust Toolchains
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            pull-requests: write
+
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  persist-credentials: false
+
+            - name: Setup Build Cache
+              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+            - name: Setup cargo-rbmt
+              uses: ./.github/actions/setup-rbmt
+
+            - name: Configure Git for the Reduction-Oxidation Clanker
+              run: |
+                  echo "${{ secrets.REDOX_CLANKER_PGP_SECKEY }}" | gpg --import
+                  git config user.name "Reduction-Oxidation Clanker"
+                  git config user.email "redox-clanker@luisschwab.net"
+                  git config user.signingkey "${{ secrets.REDOX_CLANKER_PGP_FINGERPRINT }}"
+                  git config commit.gpgsign true
+                  git remote set-url origin https://x-access-token:${{ secrets.REDOX_CLANKER_CREATE_PR_TOKEN }}@github.com/${{ github.repository }}.git
+                  random_id="$(openssl rand -hex 2)"
+                  echo "random_id=$random_id" >> $GITHUB_ENV
+                  branch_name="bot/automated-toolchain-update-$(date +%Y-%m-%d)-$random_id"
+                  echo "branch_name=$branch_name" >> $GITHUB_ENV
+                  git checkout -b "$branch_name"
+
+            - name: Update and Commit Stable Toolchain
+              run: |
+                  stable_before=$(cargo rbmt toolchains --stable)
+                  echo "stable_before=$stable_before" >> $GITHUB_ENV
+                  cargo rbmt toolchains --update-stable
+                  stable_after=$(cargo rbmt toolchains --stable)
+                  echo "stable_version=$stable_after" >> $GITHUB_ENV
+                  if [ "$stable_before" != "$stable_after" ]; then
+                      echo "Updated stable toolchain from $stable_before to $stable_after"
+                      RBMT_LOG_LEVEL=progress cargo rbmt fmt
+                      git add -A
+                      git commit -m "chore(cargo): update stable toolchain to $stable_after"
+                      echo "stable_toolchain_updated=true" >> $GITHUB_ENV
+                  else
+                      echo "Stable toolchain at $stable_after is up to date"
+                  fi
+
+            - name: Update and Commit Nightly Toolchain
+              run: |
+                  nightly_before=$(cargo rbmt toolchains --nightly)
+                  echo "nightly_before=$nightly_before" >> $GITHUB_ENV
+                  cargo rbmt toolchains --update-nightly
+                  nightly_after=$(cargo rbmt toolchains --nightly)
+                  echo "nightly_version=$nightly_after" >> $GITHUB_ENV
+                  if [ "$nightly_before" != "$nightly_after" ]; then
+                      echo "Updated nightly toolchain from $nightly_before to $nightly_after"
+                      RBMT_LOG_LEVEL=progress cargo rbmt fmt
+                      git add -A
+                      git commit -m "chore(cargo): update nightly toolchain to $nightly_after"
+                      echo "nightly_toolchain_updated=true" >> $GITHUB_ENV
+                  else
+                      echo "Nightly toolchain at $nightly_after is up to date"
+                  fi
+
+            - name: Build Pull Request Title and Body
+              if: env.stable_toolchain_updated == 'true' || env.nightly_toolchain_updated == 'true'
+              run: |
+                  echo "pull_request_title=Automated Rust Toolchain Update $(date +%Y-%m-%d)-$random_id" >> $GITHUB_ENV
+                  {
+                      echo "pull_request_body<<EOF"
+                      echo "## Changelog"
+                      echo '```'
+                      [ "$stable_toolchain_updated" = "true" ] && echo "- Update Stable toolchain from $stable_before to $stable_version"
+                      [ "$nightly_toolchain_updated" = "true" ] && echo "- Update Nightly toolchain from $nightly_before to $nightly_version"
+                      echo '```'
+                      echo "EOF"
+                  } >> $GITHUB_ENV
+
+            - name: Push PR Branch
+              if: env.stable_toolchain_updated == 'true' || env.nightly_toolchain_updated == 'true'
+              run: git push origin $branch_name --force
+
+            - name: Create Pull Request
+              if: env.stable_toolchain_updated == 'true' || env.nightly_toolchain_updated == 'true'
+              run: |
+                  gh pr create \
+                      --title "$pull_request_title" \
+                      --body "$pull_request_body" \
+                      --base master \
+                      --head $branch_name \
+                  || gh pr edit $branch_name \
+                      --title "$pull_request_title" \
+                      --body "$pull_request_body"
+              env:
+                  GH_TOKEN: ${{ secrets.REDOX_CLANKER_CREATE_PR_TOKEN }}
