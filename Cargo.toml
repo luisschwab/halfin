@@ -22,7 +22,7 @@ anyhow = { version = "1.0.66" }
 bitcoin_hashes = { version = "0.20", features = ["hex"] }
 flate2 = { version = "1.1" }
 bitreq = { version = "0.3.5", features = ["https"] }
-tar = { version = "0.4.42" }
+tar = { version = "0.4.45" }
 zip = { version = "7.2", default-features = false, features = ["bzip2", "deflate"] }
 
 [dev-dependencies]

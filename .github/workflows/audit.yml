@@ -13,11 +13,22 @@ env:
     CARGO_TERM_COLOR: always
 
 jobs:
-    cargo-audit:
-        name: Cargo Audit
+    audit:
+        name: Cargo Audit - ${{ matrix.name }}
         runs-on: ubuntu-latest
         permissions:
             contents: read
+            issues: write
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - name: Fresh Lockfile
+                      lockfile: Cargo.lock
+                    - name: Recent Lockfile
+                      lockfile: Cargo-recent.lock
+                    - name: Minimal Lockfile
+                      lockfile: Cargo-minimal.lock
 
         steps:
             - name: Checkout Repository
@@ -25,15 +36,20 @@ jobs:
               with:
                   persist-credentials: false
 
-            - name: Install cargo-audit
-              run: cargo install cargo-audit --locked
+            - name: Setup Build Cache
+              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-            - name: Check for Audit Warnings
-              run: cargo audit -D warnings
-              continue-on-error: true
+            - name: Generate Fresh Lockfile
+              if: ${{ matrix.lockfile == 'Cargo.lock' }}
+              run: cargo generate-lockfile
 
-            - name: Check for Audit Vulnerabilities
-              run: cargo audit
+            - name: Select Lockfile
+              if: ${{ matrix.lockfile != 'Cargo.lock' }}
+              run: cp ${{ matrix.lockfile }} Cargo.lock
+
+            - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
 
     shellcheck:
         name: ShellCheck
