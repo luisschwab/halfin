@@ -1,0 +1,90 @@
+name: Automated Toolchain Update
+
+on:
+    schedule:
+        - cron: '0 12 * * 3' # Wednesday, 12:00:00 UTC
+    workflow_dispatch:
+
+permissions: {}
+
+jobs:
+    update:
+        name: Update Rust Toolchains
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            id-token: write
+            pull-requests: write
+
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  persist-credentials: false
+
+            - name: Setup Build Cache
+              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+            - name: Setup cargo-rbmt
+              uses: ./.github/actions/setup-rbmt
+
+            - name: Configure Git
+              run: |
+                  echo "${{ secrets.REDOX_CLANKER_PGP_SECKEY }}" | gpg --import
+                  git config user.name "Reduction-Oxidation Clanker"
+                  git config user.email "redox-clanker@luisschwab.net"
+                  git config user.signingkey "${{ secrets.REDOX_CLANKER_PGP_FINGERPRINT }}"
+                  git config commit.gpgsign true
+                  git remote set-url origin https://x-access-token:${{ secrets.REDOX_CLANKER_CREATE_PR_TOKEN }}@github.com/${{ github.repository }}.git
+                  branch="bot/automated-toolchain-update-$(openssl rand -hex 2)"
+                  echo "branch=$branch" >> $GITHUB_ENV
+                  git checkout -b "$branch"
+
+            - name: Update and Commit Stable Toolchain
+              run: |
+                  eval "$(cargo rbmt toolchains --update-stable)"
+                  echo "stable_version=$RBMT_STABLE" >> $GITHUB_ENV
+                  RBMT_LOG_LEVEL=progress cargo rbmt fmt
+                  if git add -A && git commit -m "chore(cargo): update stable toolchain to v$RBMT_STABLE"; then
+                      echo "stable_updated=true" >> $GITHUB_ENV
+                  fi
+
+            - name: Update and Commit Nightly Toolchain
+              run: |
+                  eval "$(cargo rbmt toolchains --update-nightly)"
+                  echo "nightly_version=$RBMT_NIGHTLY" >> $GITHUB_ENV
+                  RBMT_LOG_LEVEL=progress cargo rbmt fmt
+                  if git add -A && git commit -m "chore(cargo): update nightly toolchain to v$RBMT_NIGHTLY"; then
+                      echo "nightly_updated=true" >> $GITHUB_ENV
+                  fi
+
+            - name: Build Pull Request Title
+              if: env.stable_updated == 'true' || env.nightly_updated == 'true'
+              run: |
+                  if [ "$stable_updated" = "true" ] && [ "$nightly_updated" = "true" ]; then
+                      title="Update Stable Toolchain to v$stable_version and Nightly Toolchain to v$nightly_version"
+                  elif [ "$stable_updated" = "true" ]; then
+                      title="Update Stable Toolchain to v$stable_version"
+                  elif [ "$nightly_updated" = "true" ]; then
+                      title="Update Nightly Toolchain to v$nightly_version"
+                  else
+                      exit 0
+                  fi
+                  echo "pr_title=$title" >> $GITHUB_ENV
+
+            - name: Push Branch to github.com/luisschwab/halfin
+              if: env.stable_updated == 'true' || env.nightly_updated == 'true'
+              run: git push origin $branch --force
+
+            - name: Create Pull Request
+              if: env.stable_updated == 'true' || env.nightly_updated == 'true'
+              run: |
+                  gh pr create \
+                      --title "$pr_title" \
+                      --body "Automated update to Cargo.toml workspace metadata" \
+                      --base master \
+                      --head $branch \
+                  || gh pr edit $branch \
+                      --title "$pr_title"
+              env:
+                  GH_TOKEN: ${{ secrets.REDOX_CLANKER_CREATE_PR_TOKEN }}
