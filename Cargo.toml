@@ -66,4 +66,4 @@ allowed_duplicates = [
 
 [package.metadata.rbmt.toolchains]
 stable = "1.95.0"
-nightly = "nightly-2026-05-19"
+nightly = "nightly-2026-05-26"
