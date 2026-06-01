@@ -12,7 +12,7 @@ edition = "2024"
 rust-version = "1.85.0" # MSRV
 
 [dependencies]
-corepc-client = { version = "0.13.0", features = ["client-sync"] }
+corepc-client = { version = "0.14.0", features = ["client-sync"] }
 tempfile = { version = "3.27.0", default-features = false }
 serde_json = { version = "1.0.117", default-features = false }
 which = { version = "8", default-features = false }
