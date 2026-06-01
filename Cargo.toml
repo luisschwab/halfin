@@ -25,9 +25,6 @@ bitreq = { version = "0.3.7", features = ["https"] }
 tar = { version = "0.4.45" }
 zip = { version = "7.2", default-features = false, features = ["bzip2", "deflate"] }
 
-[dev-dependencies]
-env_logger = { version = "0.11", default-features = false }
-
 [features]
 default = ["bitcoind_31_0", "utreexod_0_5_2"]
 bitcoind_31_0 = []

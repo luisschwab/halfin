@@ -214,25 +214,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_filter"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32e90c2accc4b07a8456ea0debdc2e7587bdd890680d71173a15d4ae604f6eef"
-dependencies = [
- "log",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0621c04f2196ac3f488dd583365b9c09be011a4ab8b9f37248ffcc8f6198b56a"
-dependencies = [
- "env_filter",
- "log",
-]
-
-[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -301,7 +282,6 @@ dependencies = [
  "bitcoin_hashes 0.20.0",
  "bitreq",
  "corepc-client",
- "env_logger",
  "flate2",
  "serde_json",
  "tar",
