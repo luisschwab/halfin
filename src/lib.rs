@@ -200,13 +200,13 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
 
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
-        if node.get_chain_tip().unwrap() >= height {
+        if node.get_chain_tip().unwrap_or(0) >= height {
             return Ok(());
         }
         thread::sleep(N::poll_interval());
     }
 
-    let curr_height = node.get_chain_tip().unwrap();
+    let curr_height = node.get_chain_tip().unwrap_or(0);
     Err(Error::ChainSyncTimeOut((
         height,
         curr_height,
@@ -231,13 +231,13 @@ pub fn wait_for_height_with_timeout<N: Node>(
 
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if node.get_chain_tip().unwrap() >= height {
+        if node.get_chain_tip().unwrap_or(0) >= height {
             return Ok(());
         }
         thread::sleep(N::poll_interval());
     }
 
-    let curr_height = node.get_chain_tip().unwrap();
+    let curr_height = node.get_chain_tip().unwrap_or(0);
     Err(Error::ChainSyncTimeOut((height, curr_height, timeout)))
 }
 
@@ -253,13 +253,13 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
 
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
-        if node.get_filter_tip().unwrap() >= filter_height {
+        if node.get_filter_tip().unwrap_or(0) >= filter_height {
             return Ok(());
         }
         thread::sleep(N::poll_interval());
     }
 
-    let curr_filter_height = node.get_filter_tip().unwrap();
+    let curr_filter_height = node.get_filter_tip().unwrap_or(0);
     Err(Error::ChainSyncTimeOut((
         filter_height,
         curr_filter_height,
