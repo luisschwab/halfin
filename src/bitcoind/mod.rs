@@ -48,6 +48,7 @@ use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v30::AddNodeCommand;
 use corepc_client::client_sync::v30::Client;
+use tracing::debug;
 
 use crate::CONNECTION_INTERVAL;
 use crate::CONNECTION_TIMEOUT;
@@ -58,6 +59,7 @@ use crate::NODE_BUILDING_INTERVAL;
 use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::get_available_port;
+use crate::pipe_to_tracing;
 
 /// Name of the wallet created (or loaded) inside every [`BitcoinD`] instance.
 const BITCOIND_WALLET: &str = "wallet";
@@ -267,12 +269,21 @@ impl BitcoinD {
             let rpc_arg = format!("-rpcport={}", rpc_port);
             let p2p_arg = format!("-bind={}", p2p_socket);
 
+            debug!(
+                "Spawning {} [RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
+                BitcoinD::get_name(),
+                rpc_socket,
+                p2p_socket,
+                working_directory.path().display()
+            );
+
             let mut process = Command::new(bitcoind_bin)
                 .args(&conf.args)
                 .arg(&datadir_arg)
                 .arg(&rpc_arg)
                 .arg(&p2p_arg)
-                .stdout(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
                 .spawn()
                 .map_err(Error::FailedToSpawn)?;
 
@@ -283,10 +294,24 @@ impl BitcoinD {
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
                 Ok(Some(_)) | Err(_) => {
+                    debug!(
+                        "{} exited immediately, retrying with fresh ports",
+                        BitcoinD::get_name()
+                    );
                     let _ = process.kill();
                     continue;
                 }
                 Ok(None) => {}
+            }
+
+            // Pipe the node's stdout/stderr into `tracing` so its logs are
+            // visible alongside halfin's own. The reader threads exit on EOF
+            // when the process dies.
+            if let Some(stdout) = process.stdout.take() {
+                pipe_to_tracing(stdout, "bitcoind");
+            }
+            if let Some(stderr) = process.stderr.take() {
+                pipe_to_tracing(stderr, "bitcoind");
             }
 
             // Wait up to 5 seconds for the cookie file. Kills
@@ -328,6 +353,15 @@ impl BitcoinD {
 
             sleep(Duration::from_millis(200));
 
+            debug!(
+                "Started {} [PID={}, RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
+                BitcoinD::get_name(),
+                process.id(),
+                rpc_socket,
+                p2p_socket,
+                working_directory.path().display()
+            );
+
             return Ok(BitcoinD {
                 process,
                 rpc_client,
@@ -348,6 +382,11 @@ impl BitcoinD {
     /// need the exit status or want to ensure the node has fully shut down
     /// before proceeding.
     pub fn stop(&mut self) -> Result<ExitStatus, Error> {
+        debug!(
+            "Stopping {} [PID={}]",
+            BitcoinD::get_name(),
+            self.process.id()
+        );
         // Send a `stop` over RPC.
         let _ = self.rpc_client.stop().map_err(Error::FailedToStop)?;
         // Wait for the process to terminate and get its exit status.
@@ -398,6 +437,8 @@ impl BitcoinD {
             .map_err(Error::JsonRpc)?;
         let height = response.blocks as u32;
 
+        debug!("{}: chain tip height={}", BitcoinD::get_name(), height);
+
         Ok(height)
     }
 
@@ -414,6 +455,12 @@ impl BitcoinD {
                 )
             })?;
 
+        debug!(
+            "{}: filter tip height={}",
+            BitcoinD::get_name(),
+            filter_height
+        );
+
         Ok(filter_height)
     }
 
@@ -426,6 +473,14 @@ impl BitcoinD {
             .0
             .parse::<BlockHash>()
             .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
+
+        debug!(
+            "{}: block at height={} hash={}",
+            BitcoinD::get_name(),
+            height,
+            hash
+        );
+
         Ok(hash)
     }
 
@@ -445,6 +500,12 @@ impl BitcoinD {
     ///
     /// Returns an error if the peer does not appear in `getpeerinfo` within the timeout.
     pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
+        debug!(
+            "{}: adding peer with socket={}",
+            BitcoinD::get_name(),
+            socket
+        );
+
         self.rpc_client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
             .map_err(Error::JsonRpc)?;
@@ -459,6 +520,11 @@ impl BitcoinD {
                 .iter()
                 .any(|p| p.address.contains(&socket.to_string()))
             {
+                debug!(
+                    "{}: peer connected with socket={}",
+                    BitcoinD::get_name(),
+                    socket
+                );
                 return Ok(());
             }
             thread::sleep(delay);
@@ -476,6 +542,8 @@ impl BitcoinD {
         let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?.0;
         let peer_count = peers.len() as u32;
 
+        debug!("{}: peer count={}", BitcoinD::get_name(), peer_count);
+
         Ok(peer_count)
     }
 
@@ -483,6 +551,12 @@ impl BitcoinD {
     ///
     /// Returns the block hashes as a [`Vec<BlockHash>`].
     pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
+        debug!(
+            "{}: generating count={} block(s)",
+            BitcoinD::get_name(),
+            count
+        );
+
         let address = self.rpc_client.new_address().map_err(Error::JsonRpc)?;
         let hashes = self
             .rpc_client
@@ -507,6 +581,13 @@ impl BitcoinD {
         count: u32,
         address: &Address,
     ) -> Result<Vec<BlockHash>, Error> {
+        debug!(
+            "{}: generating count={} block(s) to address={}",
+            BitcoinD::get_name(),
+            count,
+            address
+        );
+
         let hashes = self
             .rpc_client
             .generate_to_address(count as usize, address)
@@ -610,6 +691,11 @@ impl Drop for BitcoinD {
     /// Errors from `stop` and `kill` are silently discarded so that `Drop`
     /// never panics.
     fn drop(&mut self) {
+        debug!(
+            "Dropping {} [PID={}]",
+            BitcoinD::get_name(),
+            self.process.id()
+        );
         if let DataDir::Persistent(_) = self.working_directory {
             let _ = self.stop();
         }

@@ -45,12 +45,17 @@ use core::fmt;
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
 use corepc_client::bitcoin::BlockHash;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Read;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use tempfile::TempDir;
+use tracing::debug;
+use tracing::trace;
 
 pub use serde_json;
 
@@ -145,6 +150,8 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     let socket_a = a.get_p2p_socket();
     let socket_b = b.get_p2p_socket();
 
+    debug!("Connecting socket={} to socket={}", socket_a, socket_b);
+
     a.add_peer(socket_b)?;
 
     let is_connected =
@@ -161,6 +168,7 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
             // or for v1 fallback to complete if v2 fails, then re-verify.
             thread::sleep(CONNECTION_INTERVAL * 4);
             if is_connected()? {
+                debug!("Connected socket={} to socket={}", socket_a, socket_b);
                 return Ok(());
             }
         }
@@ -188,6 +196,8 @@ pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 ///
 /// Throws an error if the node does not reach `height` within [`Node::wait_timeout`].
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
+    debug!("Waiting for {} to reach height={}", N::get_name(), height);
+
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
         if node.get_chain_tip().unwrap() >= height {
@@ -212,6 +222,13 @@ pub fn wait_for_height_with_timeout<N: Node>(
     height: u32,
     timeout: Duration,
 ) -> Result<(), Error> {
+    debug!(
+        "Waiting for {} to reach height={} (timeout={:?})",
+        N::get_name(),
+        height,
+        timeout
+    );
+
     let start = Instant::now();
     while start.elapsed() < timeout {
         if node.get_chain_tip().unwrap() >= height {
@@ -228,6 +245,12 @@ pub fn wait_for_height_with_timeout<N: Node>(
 ///
 /// Throws an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
 pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
+    debug!(
+        "Waiting for {} to reach filter height={}",
+        N::get_name(),
+        filter_height
+    );
+
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
         if node.get_filter_tip().unwrap() >= filter_height {
@@ -242,6 +265,24 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
         curr_filter_height,
         N::wait_timeout(),
     )))
+}
+
+/// Spawn a background thread that reads `reader` line by line and re-emits
+/// each line as a [`trace!`] event, prefixed with `source`.
+///
+/// Used to pipe a child [`BitcoinD`]/[`UtreexoD`] process's `stdout`/`stderr`
+/// into [`tracing`]. The thread exits on EOF, which happens when the process
+/// dies and its pipe is closed.
+pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
+    thread::spawn(move || {
+        let mut lines = BufReader::new(reader).lines();
+        while let Some(Ok(line)) = lines.next() {
+            // Skip blank lines so the trace stream mirrors the node's output.
+            if !line.trim().is_empty() {
+                trace!("{source}: {line}");
+            }
+        }
+    });
 }
 
 /// Ask the OS for an available port, immediately unbind and return it.

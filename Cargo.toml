@@ -15,6 +15,7 @@ rust-version = "1.85.0" # MSRV
 corepc-client = { version = "0.15.0", features = ["client-sync"] }
 tempfile = { version = "3.27.0", default-features = false }
 serde_json = { version = "1.0.117", default-features = false }
+tracing = { version = "0.1.41", default-features = false, features = ["std"] }
 which = { version = "8", default-features = false }
 
 [build-dependencies]
@@ -32,6 +33,10 @@ utreexod_0_5_2 = []
 
 [lints.clippy]
 let-and-return = "allow"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3.23", features = ["fmt"] }
+lazy_static = { version = "=1.4.0" } # blame: tracing-subscriber
 
 [package.metadata.docs.rs]
 all-features = true
@@ -57,6 +62,7 @@ allowed_duplicates = [
     "hex-conservative",
     "libc",
     "memchr",
+    "once_cell",
     "rustix",
     "windows-sys"
 ]
