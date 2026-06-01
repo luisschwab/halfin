@@ -85,7 +85,10 @@ pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Common interface across all node implementations ([`BitcoinD`]/[`UtreexoD`]).
 pub trait Node {
-    /// A human-readable name for the [`Node`]'s binary.
+    /// The [`Node`]'s human-readable name.
+    fn get_name() -> &'static str;
+
+    /// The [`Node`]'s binary name.
     fn get_bin_name() -> &'static str;
 
     /// Get the [`Node`]'s current chain height.

@@ -172,6 +172,8 @@ pub struct BitcoinD {
 
 #[rustfmt::skip]
 impl Node for BitcoinD {
+    fn get_name() -> &'static str { "BitcoinD" }
+
     fn get_bin_name() -> &'static str { "bitcoind_v_31_0" }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
