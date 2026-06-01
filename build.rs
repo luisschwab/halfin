@@ -33,7 +33,8 @@ mod bitcoind {
     use std::io::Cursor;
     use std::path::PathBuf;
 
-    use bitcoin_hashes::hex::FromHex;
+    use std::str::FromStr;
+
     use bitcoin_hashes::sha256;
     use flate2::read::GzDecoder;
     use tar::Archive;
@@ -83,8 +84,7 @@ mod bitcoind {
         for line in BufReader::new(file).lines().flatten() {
             let tokens: Vec<_> = line.split("  ").collect();
             if tokens.len() == 2 && bin_name == tokens[1] {
-                let bytes = <[u8; 32]>::from_hex(tokens[0]).unwrap();
-                return sha256::Hash::from_byte_array(bytes);
+                return sha256::Hash::from_str(tokens[0]).unwrap();
             }
         }
 
@@ -282,7 +282,8 @@ mod utreexod {
     use std::io::Cursor;
     use std::path::PathBuf;
 
-    use bitcoin_hashes::hex::FromHex;
+    use std::str::FromStr;
+
     use bitcoin_hashes::sha256;
     use flate2::read::GzDecoder;
     use tar::Archive;
@@ -331,8 +332,7 @@ mod utreexod {
         for line in BufReader::new(file).lines().flatten() {
             let tokens: Vec<_> = line.split("  ").collect();
             if tokens.len() == 2 && bin_name == tokens[1] {
-                let bytes = <[u8; 32]>::from_hex(tokens[0]).unwrap();
-                return sha256::Hash::from_byte_array(bytes);
+                return sha256::Hash::from_str(tokens[0]).unwrap();
             }
         }
 
