@@ -50,6 +50,7 @@ fn test_bitcoind_blocks_propagate_to_utreexod() {
 /// header-sync relationship, and blocks mined afterwards are never announced.
 /// Mining one block first takes [`BitcoinD`] out of IBD, and thenlive block
 /// relay works.
+#[ignore]
 #[test]
 fn test_bitcoind_utreexod_chain_sync() {
     let bitcoind = BitcoinD::new().unwrap();

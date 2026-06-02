@@ -33,7 +33,7 @@ zip = { version = "=7.2.0", default-features = false, features = ["bzip2", "defl
 
 [dev-dependencies]
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
-lazy_static = "1.4.0" # blame: tracing-subsbcriber
+lazy_static = "=1.5.0" # blame: tracing-subsbcriber
 
 [lints.clippy]
 let-and-return = "allow"
