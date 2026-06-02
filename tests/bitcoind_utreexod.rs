@@ -42,34 +42,30 @@ fn test_bitcoind_blocks_propagate_to_utreexod() {
     assert_eq!(utreexod.get_chain_tip().unwrap(), 21);
 }
 
-// Doesn't work
-// BitcoinD needs to mine and only then connect to UtreexoD.
-// UtreexoD appears to not sync headers after the initial handshake.
+/// Verify that blocks mined on [`BitcoinD`] *after* a [`UtreexoD`] peer is
+/// connected propagate live to that peer.
+///
+/// The chain must be bootstrapped with at least one block before connecting.
+/// If [`BitcoinD`] is in initial block download and never establishes the
+/// header-sync relationship, and blocks mined afterwards are never announced.
+/// Mining one block first takes [`BitcoinD`] out of IBD, and thenlive block
+/// relay works.
 #[test]
-#[ignore]
 fn test_bitcoind_utreexod_chain_sync() {
     let bitcoind = BitcoinD::new().unwrap();
     let utreexod = UtreexoD::new().unwrap();
 
+    // Bootstrap out of genesis, then connect and sync.
+    bitcoind.generate(1).unwrap();
     connect(&bitcoind, &utreexod).unwrap();
+    wait_for_height(&utreexod, 1).unwrap();
 
-    let bitcoind_peers = bitcoind
-        .get_rpc_client()
-        .call::<serde_json::Value>("getpeerinfo", &[])
-        .unwrap();
-    let utreexod_peers = utreexod
-        .get_rpc_client()
-        .call::<serde_json::Value>("getpeerinfo", &[])
-        .unwrap();
-
-    println!("bitcoind peers: {:#?}", bitcoind_peers);
-    println!("utreexod peers: {:#?}", utreexod_peers);
+    // Blocks mined after connecting must propagate live.
+    bitcoind.generate(10).unwrap();
+    wait_for_height(&utreexod, 11).unwrap();
+    assert_eq!(utreexod.get_chain_tip().unwrap(), 11);
 
     bitcoind.generate(10).unwrap();
-    wait_for_height(&utreexod, 10).unwrap();
-    assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
-
-    bitcoind.generate(10).unwrap();
-    wait_for_height(&utreexod, 20).unwrap();
-    assert_eq!(utreexod.get_chain_tip().unwrap(), 20);
+    wait_for_height(&utreexod, 21).unwrap();
+    assert_eq!(utreexod.get_chain_tip().unwrap(), 21);
 }
