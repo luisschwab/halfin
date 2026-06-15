@@ -214,6 +214,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "electrum-client"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5059f13888a90486e7268bbce59b175f5f76b1c55e5b9c568ceaa42d2b8507c"
+dependencies = [
+ "bitcoin",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -282,6 +294,7 @@ dependencies = [
  "bitcoin_hashes 1.0.0",
  "bitreq",
  "corepc-client",
+ "electrum-client",
  "flate2",
  "lazy_static",
  "serde_json",
@@ -290,6 +303,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "which",
+ "xshell",
  "zip",
 ]
 
@@ -850,6 +864,21 @@ dependencies = [
  "libc",
  "rustix",
 ]
+
+[[package]]
+name = "xshell"
+version = "0.3.0-pre.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e6192cff94a7552e329df8c2c6f00371f107eb6e8c970f9948879216d7c46fe"
+dependencies = [
+ "xshell-macros",
+]
+
+[[package]]
+name = "xshell-macros"
+version = "0.3.0-pre.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3259fc1522c6f4915b1cc3b52dff32a88069ba979b2513fe8ee6a058670dd5dc"
 
 [[package]]
 name = "zeroize"

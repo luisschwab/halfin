@@ -1,4 +1,7 @@
 Cargo.lock
 Cargo.lock.backup
+
 /target
-NOTES.md
+
+contrib/compile_electrs/dist/
+contrib/compile_electrs/tmp/
