@@ -15,21 +15,22 @@
 
 > A {regtest} bitcoin node runner 🏃‍♂️
 
-This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin)
-and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
-integration test contexts.
+This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin),
+[`utreexod`](https://github.com/utreexo/utreexod), and [`electrs`](https://github.com/romanz/electrs)
+instances from Rust code, useful in integration test contexts.
 
-_Heavily_ inspired by the [`bitcoind`](https://crates.io/crates/bitcoind) crate.
+_Heavily_ inspired by the [`bitcoind`](https://crates.io/crates/bitcoind)
+and [`electrsd`](https://crates.io/crates/electrsd) crates.
 
 ## Supported Implementations
 
-| Implementation | Version  | Feature Flag     | Default Feature |
-|----------------|----------|----------------- | --------------- |
-| `bitcoind`     | `v31.0`  | `bitcoind_31_0`  | Yes             |
-|                |          |                  |                 |
-| `utreexod`     | `v0.5.2` | `utreexod_0_5_2` | Yes             |
-
-By default, the `bitcoind_31_0` and `utreexod_0_5_2` features are enabled.
+| Implementation | Version   | Feature Flag     | Default Feature |
+|----------------|-----------|----------------- | --------------- |
+| `bitcoind`     | `v31.0`   | `bitcoind_31_0`  | Yes             |
+|                |           |                  |                 |
+| `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
+|                |           |                  |                 |
+| `electrs`      | `v0.11.1` | `electrs_0_11_1` | No              |
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
@@ -72,6 +73,20 @@ assert_eq!(utreexod.get_height().unwrap(), 100);
 
 // Raw call an unimplemented RPC
 let res = utreexod.call("uptime", &[]).unwrap();
+```
+
+### ElectrsD
+
+```rust
+use halfin::bitcoind::BitcoinD;
+use halfin::electrsd::ElectrsD;
+use halfin::electrsd::wait_for_electrs_to_catch_up;
+
+let bitcoind = BitcoinD::new().unwrap();
+bitcoind.generate(100).unwrap();
+
+let electrs = ElectrsD::new(&bitcoind).unwrap();
+wait_for_electrs_to_catch_up(&electrs, &bitcoind).unwrap();
 ```
 
 ## Running on CI environments

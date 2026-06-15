@@ -4,20 +4,18 @@
 //!
 //! > A {regtest} bitcoin node runner 🏃‍♂️
 //!
-//! This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin)
-//! and [`utreexod`](https://github.com/utreexo/utreexod) instances from Rust code, useful in
-//! integration test contexts.
-//!
-//! Pretty much [`bitcoind`](https://crates.io/crates/bitcoind) with
-//! [`utreexod`](https://github.com/utreexo/utreexod) support.
+//! This crate makes it simple to run regtest [`bitcoind`], [`utreexod`],
+//! and [`electrs`] instances from Rust code, useful in integration test contexts.
 //!
 //! ## Supported Implementations
 //!
-//! | Implementation | Version  | Feature Flag     | Default Feature |
-//! |----------------|----------|----------------- | --------------- |
-//! | `bitcoind`     | `v31.0`  | `bitcoind_31_0`  | Yes             |
-//! |                |          |                  |                 |
-//! | `utreexod`     | `v0.5.2` | `utreexod_0_5_2` | Yes             |
+//! | Implementation | Version   | Feature Flag     | Default Feature |
+//! |----------------|-----------|----------------- | --------------- |
+//! | `bitcoind`     | `v31.0`   | `bitcoind_31_0`  | Yes             |
+//! |                |           |                  |                 |
+//! | `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
+//! |                |           |                  |                 |
+//! | `electrs`      | `v0.11.1` | `electrs_0_11_1` | No              |
 //!
 //! ## Example
 //!
@@ -39,6 +37,7 @@
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
+//! [`electrs`]: <https://github.com/romanz/electrs>
 
 use core::error;
 use core::fmt;
@@ -65,6 +64,7 @@ pub(crate) use bitcoind::BitcoinD;
 pub(crate) use utreexod::UtreexoD;
 
 pub mod bitcoind;
+pub mod electrsd;
 pub mod utreexod;
 
 /// The IPv4 localhost address.
@@ -332,10 +332,10 @@ pub enum Error {
     /// The binary was not found at the expected location.
     BinaryNotFound((String, PathBuf)),
 
-    /// Failed to spawn a [process](std::process::Child) for [`BitcoinD`]/[`UtreexoD`].
+    /// Failed to spawn a [process](std::process::Child) for a [`Node`] or Electrum Server.
     FailedToSpawn(std::io::Error),
 
-    /// Failed to instantiate a [`BitcoinD`]/[`UtreexoD`] after [`NODE_BUILDING_MAX_RETRIES`] attempts.
+    /// Failed to instantiate a node or indexer after [`NODE_BUILDING_MAX_RETRIES`] attempts.
     ExhaustedNodeBuildingRetries(u8),
 
     /// Failed to stop [`BitcoinD`] or [`UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
@@ -358,6 +358,12 @@ pub enum Error {
 
     /// [`UtreexoD`] is unresponsive (it's probably not running).
     UnresponsiveUtreexoD(corepc_client::client_sync::Error),
+
+    /// [`electrsd::ElectrsD`] is unresponsive (it's probably not running).
+    UnresponsiveElectrsD(electrum_client::Error),
+
+    /// Timed out whilst waiting for [`electrsd::ElectrsD`] to index expected data.
+    ElectrsDIndexTimeout((String, Duration)),
 
     /// Timed out whilst waiting for the cookie file to be generated.
     CookieFileTimeout(PathBuf),
@@ -393,6 +399,8 @@ impl fmt::Display for Error {
             BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
             UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
             UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
+            UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
+            ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
             CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
             UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),

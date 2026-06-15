@@ -5,15 +5,21 @@ fn main() {
     if std::env::var("DOCS_RS").is_ok() {
         return;
     }
+
     // Skip if the `bitcoind_31_0` feature is not enabled.
     if cfg!(feature = "bitcoind_31_0") {
-        // Check if `bitcoind` is cached and download it if not.
+        // Check if `bitcoind` is cached, and download it if not.
         bitcoind::download();
     }
     // Skip if the `utreeoxd_0_5_2` feature is not enabled.
     if cfg!(feature = "utreexod_0_5_2") {
-        // Check if `utreexod` is cached and download it if not.
+        // Check if `utreexod` is cached, and download it if not.
         utreexod::download();
+    }
+    // Skip if the `electrs_0_11_1` feature is not enabled.
+    if cfg!(feature = "electrs_0_11_1") {
+        // Check if `electrs` is cached, and download it if not.
+        electrs::download();
     }
 }
 
@@ -522,6 +528,232 @@ mod utreexod {
                     .status()
                     .map_err(|e| format!("Failed to run `codesign -s` on `utreexod`: {}", e))
                     .unwrap();
+            }
+        }
+    }
+}
+
+/// Downloads and verifies the `electrs` binary based on the enabled version feature.
+mod electrs {
+    use std::env;
+    use std::ffi::OsStr;
+    use std::fs;
+    use std::fs::File;
+    use std::io;
+    use std::io::BufRead;
+    use std::io::BufReader;
+    use std::io::Cursor;
+    use std::path::PathBuf;
+    use std::str::FromStr;
+
+    use bitcoin_hashes::sha256;
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+
+    include!("src/electrsd/versions.rs");
+
+    const ELECTRS_DOWNLOAD_URL: &str = "https://bin.luisschwab.net";
+
+    /// Return the platform-specific archive filename for this version of `electrs`.
+    ///
+    /// Panics if the current OS/architecture combination is not supported.
+    fn get_download_filename() -> String {
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            return "electrs-darwin-arm64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            return "electrs-darwin-amd64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            return "electrs-linux-amd64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            return "electrs-linux-arm64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+            return "electrs-windows-amd64.zip".to_string();
+        }
+        if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+            return "electrs-windows-arm64.zip".to_string();
+        }
+        panic!("No download file for this OS+Architecture combination");
+    }
+
+    fn remote_dist_url() -> String {
+        format!("{}/electrs-{}", ELECTRS_DOWNLOAD_URL, ELECTRS_VERSION)
+    }
+
+    /// Look up the expected SHA256 hash for `filename` from the bundled `SHA256SUMS` file.
+    ///
+    /// Panics if the filename is not found in the checksum file.
+    #[allow(clippy::lines_filter_map_ok)]
+    fn get_expected_sha256(bin_name: &str) -> sha256::Hash {
+        let sha256sums_filename = format!("sha256/electrsd/electrs-{}-SHA256SUMS", ELECTRS_VERSION);
+
+        let file = File::open(&sha256sums_filename)
+            .map_err(|e| {
+                format!(
+                    "Cannot open `electrs` SHA256SUMS file={}: {:?}",
+                    sha256sums_filename, e
+                )
+            })
+            .unwrap();
+
+        for line in BufReader::new(file).lines().flatten() {
+            let tokens: Vec<_> = line.split("  ").collect();
+            if tokens.len() == 2 && bin_name == tokens[1] {
+                return sha256::Hash::from_str(tokens[0]).unwrap();
+            }
+        }
+
+        panic!(
+            "Failed to find SHA256SUM for electrs binary={} at path={}",
+            bin_name, sha256sums_filename
+        );
+    }
+
+    /// Read, verify, and extract the `electrs` binary into
+    /// `<OUT_DIR>/bin/electrs-<VERSION>/electrs`, or
+    /// `<HALFIN_BIN_DIR>/electrs-<VERSION>/electrs` if the
+    /// `HALFIN_BIN_DIR` environment variable is set.
+    ///
+    /// Skips extraction if the binary is already cached from a previous build.
+    pub(crate) fn download() {
+        let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
+            PathBuf::from(path)
+        } else {
+            PathBuf::from(env::var("OUT_DIR").unwrap()).join("bin")
+        };
+
+        fs::create_dir_all(&download_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create `electrs` download directory at={}: {:?}",
+                    download_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
+
+        let existing_filename = download_directory
+            .join(format!("electrs-{}", ELECTRS_VERSION))
+            .join("electrs");
+
+        // Emit the binary path as an environment variable
+        // so that `get_electrs_path` can pick it up.
+        println!(
+            "cargo:rustc-env=HALFIN_ELECTRS_PATH={}",
+            existing_filename.display()
+        );
+
+        let download_filename = get_download_filename();
+        let expected_hash = get_expected_sha256(&download_filename);
+
+        #[cfg(windows)]
+        let existing_file_exists = existing_filename.with_extension("exe").exists();
+        #[cfg(not(windows))]
+        let existing_file_exists = existing_filename.exists();
+
+        if existing_file_exists {
+            return;
+        }
+
+        let electrs_archive_bytes = {
+            let remote_dist_url = remote_dist_url();
+            let download_url = format!("{}/{}", remote_dist_url, download_filename);
+
+            println!(
+                "cargo:warning=Downloading `electrs` @ v{} ({}) from {}",
+                ELECTRS_VERSION, download_filename, remote_dist_url,
+            );
+
+            let response = bitreq::get(&download_url)
+                .send()
+                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
+                .unwrap();
+
+            assert_eq!(
+                response.status_code, 200,
+                "Failed to GET {}: {} {}",
+                download_url, response.status_code, response.reason_phrase
+            );
+
+            response.as_bytes().to_vec()
+        };
+
+        let electrs_archive_hash = sha256::Hash::hash(&electrs_archive_bytes);
+        assert_eq!(
+            electrs_archive_hash, expected_hash,
+            "electrs archive hash does not match expected hash: downloaded={} != expected={}",
+            electrs_archive_hash, expected_hash
+        );
+
+        let destination_directory = download_directory.join(format!("electrs-{}", ELECTRS_VERSION));
+        fs::create_dir_all(&destination_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create destination directory={}: {}",
+                    destination_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
+
+        if download_filename.ends_with(".tar.gz") {
+            let gz_decoder = GzDecoder::new(&electrs_archive_bytes[..]);
+            let mut archive = Archive::new(gz_decoder);
+
+            for mut entry in archive.entries().unwrap().flatten() {
+                if let Ok(path) = entry.path() {
+                    if path.file_name() == Some(OsStr::new("electrs")) {
+                        let destination_path = destination_directory.join("electrs");
+                        let mut output_file = File::create(&destination_path)
+                            .map_err(|e| {
+                                format!(
+                                    "Cannot create `electrs` at destination={}: {}",
+                                    destination_path.display(),
+                                    e
+                                )
+                            })
+                            .unwrap();
+
+                        io::copy(&mut entry, &mut output_file).unwrap();
+
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let mut perms = output_file.metadata().unwrap().permissions();
+                            perms.set_mode(0o755);
+                            output_file.set_permissions(perms).unwrap();
+                        }
+                        break;
+                    }
+                }
+            }
+        } else if download_filename.ends_with(".zip") {
+            let cursor = Cursor::new(electrs_archive_bytes);
+            let mut archive = zip::ZipArchive::new(cursor).unwrap();
+
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).unwrap();
+                if file
+                    .enclosed_name()
+                    .is_some_and(|p| p.file_name() == Some(OsStr::new("electrs.exe")))
+                {
+                    let destination_path = destination_directory.join("electrs.exe");
+                    let mut output_file = File::create(&destination_path)
+                        .map_err(|e| {
+                            format!(
+                                "Cannot create `electrs.exe` at destination={}: {}",
+                                destination_path.display(),
+                                e
+                            )
+                        })
+                        .unwrap();
+
+                    io::copy(&mut file, &mut output_file).unwrap();
+                    break;
+                }
             }
         }
     }

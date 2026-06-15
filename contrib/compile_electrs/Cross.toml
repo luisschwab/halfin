@@ -1,0 +1,44 @@
+[build.env]
+passthrough = [
+    "BINDGEN_EXTRA_CLANG_ARGS",
+    "CLANG_PATH",
+    "LIBCLANG_PATH",
+]
+
+[target.x86_64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
+pre-build = [
+    """
+    apt update && apt -y install \
+        clang \
+        libclang-dev \
+        cmake \
+        pkg-config \
+        make \
+        g++ \
+        zlib1g-dev \
+        libbz2-dev \
+        liblz4-dev \
+        libzstd-dev \
+        libsnappy-dev
+    """,
+]
+
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+pre-build = [
+    """
+    apt update && apt -y install \
+        clang \
+        libclang-dev \
+        cmake \
+        pkg-config \
+        make \
+        g++ \
+        zlib1g-dev \
+        libbz2-dev \
+        liblz4-dev \
+        libzstd-dev \
+        libsnappy-dev
+    """,
+]

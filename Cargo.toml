@@ -15,9 +15,11 @@ rust-version = "1.85.0" # MSRV
 default = ["bitcoind_31_0", "utreexod_0_5_2"]
 bitcoind_31_0 = []
 utreexod_0_5_2 = []
+electrs_0_11_1 = []
 
 [dependencies]
 corepc-client = { version = "=0.15.0", features = ["client-sync"] }
+electrum-client = { version = "=0.24.1", default-features = false }
 tempfile = { version = "=3.27.0", default-features = false }
 serde_json = { version = "=1.0.150", default-features = false }
 tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
@@ -34,6 +36,13 @@ zip = { version = "=7.2.0", default-features = false, features = ["bzip2", "defl
 [dev-dependencies]
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
 lazy_static = "=1.5.0" # blame: tracing-subsbcriber
+xshell = "=0.3.0-pre.2"
+
+[[example]]
+name = "cross-compile-electrs"
+path = "contrib/compile_electrs/build.rs"
+test = false
+bench = false
 
 [lints.clippy]
 let-and-return = "allow"
@@ -49,10 +58,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 [package.metadata.rbmt.test]
 exclude_features = [
     "bitcoind_31_0",
-    "utreexod_0_5_2"
+    "utreexod_0_5_2",
+    "electrs_0_11_1",
 ]
 exact_features = [
     ["bitcoind_31_0", "utreexod_0_5_2"],
+    ["bitcoind_31_0", "electrs_0_11_1"],
 ]
 
 # Allow packages of different versions in the dependency tree.
