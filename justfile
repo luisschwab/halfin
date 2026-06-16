@@ -60,7 +60,6 @@ test:
 
 [doc: "Install and/or Update `cargo-rbmt` and Stable and Nightly toolchains"]
 toolchains:
-    bash contrib/install-cargo-rbmt.sh
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-stable
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-nightly
 
