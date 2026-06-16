@@ -108,7 +108,7 @@ mod bitcoind {
     ///
     /// Skips the download if the binary is already cached from a previous build.
     pub(crate) fn download() {
-        const BITCOIND_DOWNLOAD_URL: &str = "https://bitcoincore.org";
+        const BITCOIND_DOWNLOAD_URL: &str = "https://bin.luisschwab.net";
 
         let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
             PathBuf::from(path)
@@ -142,17 +142,17 @@ mod bitcoind {
 
         if existing_filename.exists() {
             return;
-        } else {
-            println!(
-                "cargo:warning=Downloading `bitcoind` @ v{} ({}) from `bitcoincore.org`",
-                BITCOIND_VERSION, download_filename,
-            );
         }
 
         let bitcoind_tarball_bytes = {
             let download_url = format!(
-                "{}/bin/bitcoin-core-{}/{}",
+                "{}/bitcoin-core-{}/{}",
                 BITCOIND_DOWNLOAD_URL, BITCOIND_VERSION, download_filename
+            );
+
+            println!(
+                "cargo:warning=Downloading `bitcoind` @ v{} ({}) from `{}`",
+                BITCOIND_VERSION, download_filename, BITCOIND_DOWNLOAD_URL,
             );
 
             let response = bitreq::get(&download_url)
@@ -166,9 +166,7 @@ mod bitcoind {
                 download_url, response.status_code, response.reason_phrase
             );
 
-            let bitcoind_tarball = response.as_bytes().to_vec();
-
-            bitcoind_tarball
+            response.as_bytes().to_vec()
         };
 
         let bitcoind_tarball_hash = sha256::Hash::hash(&bitcoind_tarball_bytes);
@@ -301,19 +299,19 @@ mod utreexod {
     /// Panics if the current OS/architecture combination is not supported.
     fn get_download_filename() -> String {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-            return format!("utreexod-darwin-arm64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
+            return "utreexod-darwin-arm64.tar.gz".to_string();
         }
         if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
-            return format!("utreexod-darwin-amd64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
+            return "utreexod-darwin-amd64.tar.gz".to_string();
         }
         if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-            return format!("utreexod-linux-amd64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
+            return "utreexod-linux-amd64.tar.gz".to_string();
         }
         if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-            return format!("utreexod-linux-arm64-{}-01.tar.gz", UTREEXOD_RELEASE_DATE);
+            return "utreexod-linux-arm64.tar.gz".to_string();
         }
         if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
-            return format!("utreexod-windows-amd64-{}-01.zip", UTREEXOD_RELEASE_DATE);
+            return "utreexod-windows-amd64.zip".to_string();
         }
         panic!("No download file for this OS+Architecture combination");
     }
@@ -356,7 +354,7 @@ mod utreexod {
     ///
     /// Skips the download if the binary is already cached from a previous build.
     pub(crate) fn download() {
-        const UTREEXOD_DOWNLOAD_URL: &str = "https://github.com/utreexo/utreexod/releases/download";
+        const UTREEXOD_DOWNLOAD_URL: &str = "https://bin.luisschwab.net";
 
         let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
             PathBuf::from(path)
@@ -390,35 +388,23 @@ mod utreexod {
 
         if existing_filename.exists() {
             return;
-        } else {
-            println!(
-                "cargo:warning=Downloading `utreexod` @ v{} ({}) from `github.com`",
-                UTREEXOD_VERSION, download_filename,
-            );
         }
 
         let utreexod_tarball_bytes = {
             let download_url = format!(
-                "{}/v{}/{}",
+                "{}/utreexod-{}/{}",
                 UTREEXOD_DOWNLOAD_URL, UTREEXOD_VERSION, download_filename
             );
 
-            let response = {
-                let mut request = bitreq::get(&download_url);
+            println!(
+                "cargo:warning=Downloading `utreexod` @ v{} ({}) from `{}`",
+                UTREEXOD_VERSION, download_filename, UTREEXOD_DOWNLOAD_URL,
+            );
 
-                // GitHub CI workflows should export the `GITHUB_TOKEN` environment
-                // variable so as to not get 403 Forbidden errors when downloading
-                // from GitHub (make it make sense).
-                //
-                // Attaches the `Authorization: Bearer <GITHUB_TOKEN>` to the request.
-                if let Ok(token) = env::var("GITHUB_TOKEN") {
-                    request = request.with_header("Authorization", format!("Bearer {}", token));
-                }
-                request
-                    .send()
-                    .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
-                    .unwrap()
-            };
+            let response = bitreq::get(&download_url)
+                .send()
+                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
+                .unwrap();
 
             assert_eq!(
                 response.status_code, 200,
