@@ -151,8 +151,8 @@ mod bitcoind {
             );
 
             println!(
-                "cargo:warning=Downloading `bitcoind` @ v{} ({}) from `{}`",
-                BITCOIND_VERSION, download_filename, BITCOIND_DOWNLOAD_URL,
+                "cargo:warning=Downloading `bitcoind` @ v{} from `{}`",
+                BITCOIND_VERSION, download_url,
             );
 
             let response = bitreq::get(&download_url)
@@ -397,8 +397,8 @@ mod utreexod {
             );
 
             println!(
-                "cargo:warning=Downloading `utreexod` @ v{} ({}) from `{}`",
-                UTREEXOD_VERSION, download_filename, UTREEXOD_DOWNLOAD_URL,
+                "cargo:warning=Downloading `utreexod` @ v{} from `{}`",
+                UTREEXOD_VERSION, download_url,
             );
 
             let response = bitreq::get(&download_url)
@@ -649,8 +649,8 @@ mod electrs {
             let download_url = format!("{}/{}", remote_dist_url, download_filename);
 
             println!(
-                "cargo:warning=Downloading `electrs` @ v{} ({}) from {}",
-                ELECTRS_VERSION, download_filename, remote_dist_url,
+                "cargo:warning=Downloading `electrs` @ v{} from `{}`",
+                ELECTRS_VERSION, download_url,
             );
 
             let response = bitreq::get(&download_url)
