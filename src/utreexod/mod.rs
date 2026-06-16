@@ -263,6 +263,9 @@ impl UtreexoD {
         for _attempt in 0..=conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
 
+            #[cfg(target_os = "windows")]
+            Self::prepare_sparse_forest_file(&working_directory)?;
+
             let rpc_port = get_available_port();
             let rpc_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, rpc_port));
             let rpc_url = format!("http://{}", rpc_socket);
@@ -275,6 +278,7 @@ impl UtreexoD {
             let rpcuser_arg = format!("--rpcuser={}", RPC_USER);
             let rpcpass_arg = format!("--rpcpass={}", RPC_PASS);
             let listen_arg = format!("--listen=127.0.0.1:{}", p2p_port);
+            let proof_index_max_memory_arg = "--utreexoproofindexmaxmemory=256".to_string();
 
             debug!(
                 "Spawning {} [RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
@@ -293,7 +297,7 @@ impl UtreexoD {
                 .arg(&listen_arg)
                 .arg("--prune=0")
                 .arg("--flatutreexoproofindex")
-                .arg("--utreexoproofindexmaxmemory=512")
+                .arg(&proof_index_max_memory_arg)
                 .arg("--v2transport")
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -306,10 +310,21 @@ impl UtreexoD {
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
-                Ok(Some(_)) | Err(_) => {
+                Ok(Some(status)) => {
+                    let output = process.wait_with_output().map_err(Error::Io)?;
+                    eprintln!(
+                        "{} exited immediately with status={status}; stdout={}; stderr={}",
+                        UtreexoD::get_name(),
+                        String::from_utf8_lossy(&output.stdout).trim(),
+                        String::from_utf8_lossy(&output.stderr).trim(),
+                    );
+                    continue;
+                }
+                Err(err) => {
                     debug!(
-                        "{} exited immediately, retrying with fresh ports",
-                        UtreexoD::get_name()
+                        "{} status check failed, retrying with fresh ports: {}",
+                        UtreexoD::get_name(),
+                        err
                     );
                     let _ = process.kill();
                     continue;
@@ -659,6 +674,44 @@ impl UtreexoD {
             ),
         };
         Ok(work_dir)
+    }
+
+    /// Mark the Utreexo forest data file as sparse before `utreexod` opens it.
+    ///
+    /// The `utreexo::OpenForest` call truncates `forest_data.dat` to a large apparent size.
+    /// Unix filesystems usually handle that as sparse automatically, but Windows requires
+    /// the sparse flag to be set first.
+    #[cfg(target_os = "windows")]
+    fn prepare_sparse_forest_file(working_directory: &DataDir) -> Result<(), Error> {
+        let forest_dir = working_directory
+            .path()
+            .join("regtest")
+            .join("utreexostate_flat");
+        fs::create_dir_all(&forest_dir).map_err(Error::Io)?;
+
+        let forest_data_file = forest_dir.join("forest_data.dat");
+        fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&forest_data_file)
+            .map_err(Error::Io)?;
+
+        let status = Command::new("fsutil")
+            .arg("sparse")
+            .arg("setflag")
+            .arg(&forest_data_file)
+            .status()
+            .map_err(Error::Io)?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Error::UnexpectedResponse(format!(
+                "failed to mark {} as sparse with fsutil: {}",
+                forest_data_file.display(),
+                status
+            )))
+        }
     }
 
     /// Poll `getblockchaininfo` until it succeeds, building and returning the
