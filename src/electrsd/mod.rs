@@ -627,8 +627,8 @@ impl ElectrsD {
         Ok(work_dir)
     }
 
-    /// Poll `server.ping` until it succeeds, building and returning the
-    /// Electrum client on success.
+    /// Poll `server.ping` until it succeeds, building
+    /// and returning the Electrum client on success.
     ///
     /// Returns `Err` if the indexer is not responsive within `timeout`.
     fn wait_for_client(
@@ -646,7 +646,7 @@ impl ElectrsD {
                 Ok(None) => {}
             }
 
-            match RawClient::new(electrum_socket, Some(Duration::from_millis(500))) {
+            match RawClient::new(electrum_socket, Some(Duration::from_millis(500)), None) {
                 Ok(client) => match client.ping() {
                     Ok(()) => return Ok(client),
                     Err(err) => last_error = Some(err),

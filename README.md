@@ -89,30 +89,6 @@ let electrs = ElectrsD::new(&bitcoind).unwrap();
 wait_for_electrs_to_catch_up(&electrs, &bitcoind).unwrap();
 ```
 
-## Running on CI environments
-
-Since [`utreexod`](https://github.com/utreexo/utreexod) binaries are downloaded directly
-from its GitHub releases page, we can get 403'ed by GitHub itself. To curb this, you need
-to export the `GITHUB_TOKEN` environment variable and give `read` permissions in your CI
-workflow, as such:
-
-```yml
-env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-permissions:
-    contents: read
-```
-
-The [`build.rs`](./build.rs) script automatically reads this variable from the
-environment and adds it as an `Authorization: Bearer $GITHUB_TOKEN` header 
-when making requests to `github.com`.
-
-```rs
-if let Ok(token) = env::var("GITHUB_TOKEN") {
-    request = request.with_header("Authorization", format!("Bearer {}", token));
-}
-```
-
 ## Developing
 
 This project uses [`just`](https://github.com/casey/just) for command running, and
