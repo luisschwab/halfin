@@ -69,9 +69,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin-consensus-encoding"
-version = "1.0.0"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2d6094e2a1ba3c93b5a596fe5a10d1a10c3c6e06785cde89f693a044c01aa40"
+checksum = "e8d7ca3dc8ff835693ad73bf1596240c06f974a31eeb3f611aaedf855f1f2725"
 dependencies = [
  "bitcoin-internals 0.5.0",
 ]
@@ -135,13 +135,13 @@ dependencies = [
 
 [[package]]
 name = "bitcoin_hashes"
-version = "1.0.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f70c29ac06e7effa19682e91318deae86bdb46c4fd1bbd0f12fd196ff427ab0"
+checksum = "9a8a45c2b41c457a9a9e4670422fcbdf109afb3b22bc920b4045e8bdfd788a3d"
 dependencies = [
  "bitcoin-consensus-encoding",
  "bitcoin-internals 0.5.0",
- "hex-conservative 1.1.0",
+ "hex-conservative 0.3.0",
 ]
 
 [[package]]
@@ -297,7 +297,7 @@ name = "halfin"
 version = "0.3.8"
 dependencies = [
  "anyhow",
- "bitcoin_hashes 1.0.0",
+ "bitcoin_hashes 0.20.0",
  "bitreq",
  "corepc-client",
  "electrum-client",
@@ -330,9 +330,9 @@ dependencies = [
 
 [[package]]
 name = "hex-conservative"
-version = "1.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7289f6b628ce69fb1a371d0fdcf8ff38cd93ec00e3010eb055d1e044998c8d1"
+checksum = "4afe881d0527571892c4034822e59bb10c6c991cce6abe8199b6f5cf10766f55"
 dependencies = [
  "arrayvec",
 ]
