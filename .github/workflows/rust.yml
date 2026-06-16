@@ -19,11 +19,11 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - name: Check Formatting
+                    - name: Formatting
                       task: fmt --check
-                    - name: Lint
+                    - name: Linting
                       task: lint
-                    - name: Build Documentation
+                    - name: Documentation
                       task: docsrs
         steps:
             - name: Checkout Repository

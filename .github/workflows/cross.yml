@@ -13,7 +13,7 @@ env:
 
 jobs:
     build:
-        name: Build on ${{ matrix.os }} + ${{ matrix.arch }}
+        name: ${{ matrix.os }} + ${{ matrix.arch }}
         runs-on: ${{ matrix.runner }}
         strategy:
             fail-fast: false
@@ -23,6 +23,11 @@ jobs:
                       target: aarch64-apple-darwin
                       os: MacOS
                       arch: Apple Silicon (ARM64)
+
+                    - runner: macos-13
+                      target: x86_64-apple-darwin
+                      os: MacOS
+                      arch: Intel Silicon (x86_64)
 
                     - runner: ubuntu-latest
                       target: x86_64-unknown-linux-gnu
@@ -45,20 +50,29 @@ jobs:
               with:
                   persist-credentials: false
 
-            - name: Install Rust toolchain
+            - name: Setup Build Cache
+              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+            - name: Install Rust Toolchain
+              if: runner.os == 'Windows'
               uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.94.1
               with:
                   toolchain: stable
                   targets: ${{ matrix.target }}
 
-            - name: Setup Build Cache
-              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-              with:
-                  key: ${{ matrix.target }}
+            - name: Setup cargo-rbmt
+              if: runner.os != 'Windows'
+              uses: ./.github/actions/setup-rbmt
 
-            - name: Build Code
-              run: cargo build --target ${{ matrix.target }} --verbose
+            - name: Install ${{ matrix.target }} Toolchain
+              if: runner.os != 'Windows'
+              shell: bash
+              run: rustup target add --toolchain "$(cargo rbmt toolchains --stable)" ${{ matrix.target }}
 
-            - name: Run Tests
-              if: runner.os != 'Windows' # Skip running tests on Windows
-              run: cargo test --target ${{ matrix.target }} --verbose --no-fail-fast
+            - name: Run Tests for ${{ matrix.target }} Target
+              if: runner.os != 'Windows'
+              run: cargo rbmt test --toolchain stable --lock-file recent -- --target ${{ matrix.target }} --no-fail-fast
+
+            - name: Run Tests for ${{ matrix.target }} Target
+              if: runner.os == 'Windows'
+              run: cargo test --target ${{ matrix.target }} --no-fail-fast
