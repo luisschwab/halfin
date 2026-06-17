@@ -80,13 +80,12 @@ let res = utreexod.call("uptime", &[]).unwrap();
 ```rust
 use halfin::bitcoind::BitcoinD;
 use halfin::electrsd::ElectrsD;
-use halfin::electrsd::wait_for_electrs_to_catch_up;
 
 let bitcoind = BitcoinD::new().unwrap();
 bitcoind.generate(100).unwrap();
 
 let electrs = ElectrsD::new(&bitcoind).unwrap();
-wait_for_electrs_to_catch_up(&electrs, &bitcoind).unwrap();
+electrs.wait_until_caught_up(&bitcoind, None).unwrap();
 ```
 
 ## Developing

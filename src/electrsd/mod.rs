@@ -11,13 +11,12 @@
 //! ```rust,no_run
 //! use halfin::bitcoind::BitcoinD;
 //! use halfin::electrsd::ElectrsD;
-//! use halfin::electrsd::wait_for_electrs_to_catch_up;
 //!
 //! let bitcoind = BitcoinD::new().unwrap();
 //! bitcoind.generate(10).unwrap();
 //!
 //! let electrs = ElectrsD::new(&bitcoind).unwrap();
-//! wait_for_electrs_to_catch_up(&electrs, &bitcoind).unwrap();
+//! electrs.wait_until_caught_up(&bitcoind, None).unwrap();
 //! ```
 //!
 //! ## Directory Handling
@@ -44,6 +43,7 @@ use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Script;
 use corepc_client::bitcoin::Txid;
 use electrum_client::ElectrumApi;
+use electrum_client::Error as ElectrumError;
 use electrum_client::HeaderNotification;
 use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
@@ -85,150 +85,6 @@ pub fn get_electrs_path() -> Result<PathBuf, Error> {
         true => Ok(bin_path),
         false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
-}
-
-/// Poll [`ElectrsD`] until its Electrum header tip matches [`BitcoinD`]'s tip.
-///
-/// Both the tip height and block hash are verified.
-pub fn wait_for_electrs_to_catch_up(electrsd: &ElectrsD, bitcoind: &BitcoinD) -> Result<(), Error> {
-    wait_for_electrs_to_catch_up_with_timeout(electrsd, bitcoind, ELECTRS_INDEXING_TIMEOUT)
-}
-
-/// Poll [`ElectrsD`] until its Electrum header tip matches [`BitcoinD`]'s tip
-/// with a custom `timeout`.
-///
-/// Both the tip height and block hash are verified.
-pub fn wait_for_electrs_to_catch_up_with_timeout(
-    electrsd: &ElectrsD,
-    bitcoind: &BitcoinD,
-    timeout: Duration,
-) -> Result<(), Error> {
-    let height = bitcoind.get_chain_tip()?;
-    let hash = bitcoind.get_block_hash(height)?;
-    wait_for_electrs_block_with_timeout(electrsd, height, Some(hash), timeout)
-}
-
-/// Poll [`ElectrsD`] until its Electrum header tip reaches `expected_height`.
-///
-/// Throws an error if the indexer does not reach `expected_height` within
-/// [`ELECTRS_INDEXING_TIMEOUT`].
-pub fn wait_for_electrs_tip(electrsd: &ElectrsD, expected_height: u32) -> Result<(), Error> {
-    wait_for_electrs_tip_with_timeout(electrsd, expected_height, ELECTRS_INDEXING_TIMEOUT)
-}
-
-/// Poll [`ElectrsD`] until its Electrum header tip reaches `expected_height`
-/// with a custom `timeout`.
-///
-/// Throws an error if the indexer does not reach `expected_height` within
-/// `timeout`.
-pub fn wait_for_electrs_tip_with_timeout(
-    electrsd: &ElectrsD,
-    expected_height: u32,
-    timeout: Duration,
-) -> Result<(), Error> {
-    wait_for_electrs_block_with_timeout(electrsd, expected_height, None, timeout)
-}
-
-/// Poll [`ElectrsD`] until `txid` appears as an unconfirmed transaction for
-/// `script_pubkey`.
-///
-/// Throws an error if the indexer does not see the transaction within
-/// [`ELECTRS_INDEXING_TIMEOUT`].
-pub fn wait_for_electrs_mempool_tx(
-    electrsd: &ElectrsD,
-    script_pubkey: &Script,
-    txid: Txid,
-) -> Result<(), Error> {
-    wait_for_electrs_mempool_tx_with_timeout(
-        electrsd,
-        script_pubkey,
-        txid,
-        ELECTRS_INDEXING_TIMEOUT,
-    )
-}
-
-/// Poll [`ElectrsD`] until `txid` appears as an unconfirmed transaction for
-/// `script_pubkey` with a custom `timeout`.
-///
-/// Throws an error if the indexer does not see the transaction within
-/// `timeout`.
-pub fn wait_for_electrs_mempool_tx_with_timeout(
-    electrsd: &ElectrsD,
-    script_pubkey: &Script,
-    txid: Txid,
-    timeout: Duration,
-) -> Result<(), Error> {
-    wait_until(format!("mempool transaction {txid}"), timeout, || {
-        electrsd
-            .get_electrum_client()
-            .script_get_history(script_pubkey)
-            .map(|history| {
-                history
-                    .iter()
-                    .any(|entry| entry.tx_hash == txid && entry.height == 0)
-            })
-            .unwrap_or(false)
-    })
-}
-
-fn wait_for_electrs_block_with_timeout(
-    electrsd: &ElectrsD,
-    expected_height: u32,
-    expected_hash: Option<BlockHash>,
-    timeout: Duration,
-) -> Result<(), Error> {
-    let client = electrsd.get_electrum_client();
-    let mut next_notification = Some(
-        client
-            .block_headers_subscribe()
-            .map_err(Error::UnresponsiveElectrsD)?,
-    );
-
-    let expected_height = expected_height as usize;
-    let description = match expected_hash {
-        Some(hash) => format!("block {expected_height} ({hash})"),
-        None => format!("block {expected_height}"),
-    };
-
-    wait_until_result(description, timeout, || {
-        electrsd.trigger()?;
-        client.ping().map_err(Error::UnresponsiveElectrsD)?;
-
-        let notification = match next_notification.take() {
-            Some(notification) => Some(notification),
-            None => client
-                .block_headers_pop()
-                .map_err(Error::UnresponsiveElectrsD)?,
-        };
-        let Some(notification) = notification else {
-            return Ok(false);
-        };
-
-        electrs_header_matches(client, notification, expected_height, expected_hash)
-    })
-}
-
-fn electrs_header_matches(
-    client: &RawClient<ElectrumPlaintextStream>,
-    notification: HeaderNotification,
-    expected_height: usize,
-    expected_hash: Option<BlockHash>,
-) -> Result<bool, Error> {
-    if notification.height < expected_height {
-        return Ok(false);
-    }
-
-    let header = if notification.height == expected_height {
-        notification.header
-    } else {
-        client
-            .block_header(expected_height)
-            .map_err(Error::UnresponsiveElectrsD)?
-    };
-
-    Ok(expected_hash
-        .map(|expected_hash| header.block_hash() == expected_hash)
-        .unwrap_or(true))
 }
 
 /// Configuration for an [`ElectrsD`] instance.
@@ -577,7 +433,145 @@ impl ElectrsD {
             .map(|esplora_socket| format!("http://{esplora_socket}"))
     }
 
+    /// Poll until this [`ElectrsD`]'s Electrum header tip matches [`BitcoinD`]'s tip.
+    ///
+    /// Both the tip height and block hash are verified. Pass `None` to use
+    /// [`ELECTRS_INDEXING_TIMEOUT`].
+    pub fn wait_until_caught_up(
+        &self,
+        bitcoind: &BitcoinD,
+        timeout: Option<Duration>,
+    ) -> Result<(), Error> {
+        let height = bitcoind.get_chain_tip()?;
+        let hash = bitcoind.get_block_hash(height)?;
+        self.wait_until_block(height, Some(hash), timeout)
+    }
+
+    /// Poll until this [`ElectrsD`]'s Electrum header tip reaches `exp_height`.
+    ///
+    /// The block hash at `exp_height` is verified against `exp_hash`.
+    /// Pass `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
+    pub fn wait_until_tip(
+        &self,
+        exp_height: u32,
+        exp_hash: BlockHash,
+        timeout: Option<Duration>,
+    ) -> Result<(), Error> {
+        self.wait_until_block(exp_height, Some(exp_hash), timeout)
+    }
+
+    /// Poll until `txid` appears as an unconfirmed transaction for `script_pubkey`.
+    ///
+    /// Pass `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
+    pub fn wait_until_mempool_tx(
+        &self,
+        spk: &Script,
+        txid: Txid,
+        timeout: Option<Duration>,
+    ) -> Result<(), Error> {
+        let (subscribed, initial_status) = match self.client.script_subscribe(spk) {
+            Ok(status) => (true, status),
+            Err(ElectrumError::AlreadySubscribed(_)) => (false, None),
+            Err(err) => return Err(Error::UnresponsiveElectrsD(err)),
+        };
+        let description = format!("mempool transaction {txid}");
+        let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
+        let result = (|| {
+            if initial_status.is_some() && self.script_history_has_mempool_tx(spk, txid)? {
+                return Ok(());
+            }
+
+            let start = Instant::now();
+            while start.elapsed() < timeout {
+                self.trigger()?;
+                self.client.ping().map_err(Error::UnresponsiveElectrsD)?;
+
+                if self
+                    .client
+                    .script_pop(spk)
+                    .map_err(Error::UnresponsiveElectrsD)?
+                    .is_some()
+                    && self.script_history_has_mempool_tx(spk, txid)?
+                {
+                    return Ok(());
+                }
+
+                thread::sleep(2 * POLL_INTERVAL);
+            }
+
+            Err(Error::ElectrsDIndexTimeout((description, timeout)))
+        })();
+
+        if subscribed {
+            let _ = self.client.script_unsubscribe(spk);
+        }
+
+        result
+    }
+
     // ----> INTERNAL
+
+    /// Return whether `script_pubkey` history contains `txid` as an unconfirmed transaction.
+    fn script_history_has_mempool_tx(&self, spk: &Script, txid: Txid) -> Result<bool, Error> {
+        self.client
+            .script_get_history(spk)
+            .map(|history| {
+                history
+                    .iter()
+                    .any(|entry| entry.tx_hash == txid && entry.height == 0)
+            })
+            .map_err(Error::UnresponsiveElectrsD)
+    }
+
+    /// Wait for an Electrum block-header notification proving `exp_height`/`exp_hash` is indexed.
+    ///
+    /// Electrs sends header notifications only after its confirmed script
+    /// histories are current for the notified tip, so this waits on
+    /// notifications instead of polling block headers directly.
+    fn wait_until_block(
+        &self,
+        exp_height: u32,
+        exp_hash: Option<BlockHash>,
+        timeout: Option<Duration>,
+    ) -> Result<(), Error> {
+        let client = self.get_electrum_client();
+        let mut next_notification = Some(
+            client
+                .block_headers_subscribe()
+                .map_err(Error::UnresponsiveElectrsD)?,
+        );
+
+        let description = match exp_hash {
+            Some(hash) => format!("block {exp_height} ({hash})"),
+            None => format!("block {exp_height}"),
+        };
+
+        let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            self.trigger()?;
+            client.ping().map_err(Error::UnresponsiveElectrsD)?;
+
+            let notification = match next_notification.take() {
+                Some(notification) => Some(notification),
+                None => client
+                    .block_headers_pop()
+                    .map_err(Error::UnresponsiveElectrsD)?,
+            };
+            let Some(notification) = notification else {
+                thread::sleep(2 * POLL_INTERVAL);
+                continue;
+            };
+
+            if electrs_header_matches(client, notification, exp_height, exp_hash)? {
+                return Ok(());
+            }
+
+            thread::sleep(2 * POLL_INTERVAL);
+        }
+
+        Err(Error::ElectrsDIndexTimeout((description, timeout)))
+    }
 
     /// Ensure the backing [`BitcoinD`] has left initial block download.
     fn ensure_bitcoind_ready(bitcoind: &BitcoinD) -> Result<(), Error> {
@@ -662,30 +656,6 @@ impl ElectrsD {
     }
 }
 
-fn wait_until(
-    description: String,
-    timeout: Duration,
-    mut condition: impl FnMut() -> bool,
-) -> Result<(), Error> {
-    wait_until_result(description, timeout, || Ok(condition()))
-}
-
-fn wait_until_result(
-    description: String,
-    timeout: Duration,
-    mut condition: impl FnMut() -> Result<bool, Error>,
-) -> Result<(), Error> {
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if condition()? {
-            return Ok(());
-        }
-        thread::sleep(2 * POLL_INTERVAL);
-    }
-
-    Err(Error::ElectrsDIndexTimeout((description, timeout)))
-}
-
 impl Drop for ElectrsD {
     /// Kills the `electrs` process.
     ///
@@ -698,4 +668,37 @@ impl Drop for ElectrsD {
         );
         let _ = self.process.kill();
     }
+}
+
+/// Check whether an Electrum header notification proves ElectrsD has indexed `exp_height`.
+///
+/// If the notification has advanced past `exp_height`, fetch the header at
+/// `exp_height` explicitly so `exp_hash` can still be verified.
+fn electrs_header_matches(
+    client: &RawClient<ElectrumPlaintextStream>,
+    notification: HeaderNotification,
+    exp_height: u32,
+    exp_hash: Option<BlockHash>,
+) -> Result<bool, Error> {
+    let notification_height = u32::try_from(notification.height)
+        .map_err(|err| Error::UnexpectedResponse(err.to_string()))?;
+
+    if notification_height < exp_height {
+        return Ok(false);
+    }
+
+    let header = if notification_height == exp_height {
+        notification.header
+    } else {
+        client
+            .block_header(
+                usize::try_from(exp_height)
+                    .map_err(|err| Error::UnexpectedResponse(err.to_string()))?,
+            )
+            .map_err(Error::UnresponsiveElectrsD)?
+    };
+
+    Ok(exp_hash
+        .map(|exp_hash| header.block_hash() == exp_hash)
+        .unwrap_or(true))
 }
