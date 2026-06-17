@@ -602,6 +602,40 @@ impl BitcoinD {
         Ok(hashes)
     }
 
+    /// Invalidates `count` [`Block`](corepc_client::bitcoin::Block)s from [`BitcoinD`]'s chain.
+    pub fn invalidate_blocks(&self, count: u32) -> Result<(), Error> {
+        debug!(
+            "{}: invalidating count={} block(s)",
+            BitcoinD::get_name(),
+            count,
+        );
+
+        for _ in 0..count {
+            let hash = self
+                .rpc_client
+                .get_best_block_hash()
+                .unwrap()
+                .block_hash()
+                .unwrap();
+
+            let height = self
+                .rpc_client
+                .get_blockchain_info()
+                .map_err(Error::JsonRpc)?
+                .blocks as u32;
+
+            self.rpc_client.invalidate_block(hash).unwrap();
+            debug!(
+                "{}: invalidated block at height={} and hash={}",
+                BitcoinD::get_name(),
+                height,
+                hash
+            );
+        }
+
+        Ok(())
+    }
+
     // ----> INTERNAL
 
     /// Resolve and create the working directory according to `conf`.
