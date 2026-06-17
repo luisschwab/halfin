@@ -49,7 +49,7 @@ let-and-return = "allow"
 
 [package.metadata.rbmt.toolchains]
 stable = "1.96.0"
-nightly = "nightly-2026-06-02"
+nightly = "nightly-2026-06-16"
 
 [package.metadata.docs.rs]
 all-features = true
