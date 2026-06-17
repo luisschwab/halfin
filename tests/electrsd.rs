@@ -7,10 +7,8 @@
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;
 use halfin::bitcoind::BitcoinD;
+use halfin::electrsd::ELECTRS_INDEXING_TIMEOUT;
 use halfin::electrsd::ElectrsD;
-use halfin::electrsd::wait_for_electrs_mempool_tx;
-use halfin::electrsd::wait_for_electrs_tip;
-use halfin::electrsd::wait_for_electrs_to_catch_up;
 use tracing::Level;
 use tracing::info;
 
@@ -43,7 +41,7 @@ fn test_electrsd_sees_mempool_transactions() {
     let electrsd = ElectrsD::new(&bitcoind).unwrap();
 
     electrsd.get_electrum_client().ping().unwrap();
-    wait_for_electrs_to_catch_up(&electrsd, &bitcoind).unwrap();
+    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
 
     let address = bitcoind
         .get_rpc_client()
@@ -61,7 +59,9 @@ fn test_electrsd_sees_mempool_transactions() {
         .unwrap();
     electrsd.trigger().unwrap();
 
-    wait_for_electrs_mempool_tx(&electrsd, &script_pubkey, txid).unwrap();
+    electrsd
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRS_INDEXING_TIMEOUT))
+        .unwrap();
 }
 
 /// Verify that [`ElectrsD`] repeatedly syncs to [`BitcoinD`]'s chain tip.
@@ -72,17 +72,57 @@ fn test_electrsd_syncs_blocks() {
 
     let bitcoind = BitcoinD::new().unwrap();
     bitcoind.generate(BLOCK_COUNT).unwrap();
+
     let electrsd = ElectrsD::new(&bitcoind).unwrap();
+    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
 
-    wait_for_electrs_to_catch_up(&electrsd, &bitcoind).unwrap();
-
-    let mut expected_height = BLOCK_COUNT;
+    let mut exp_height = BLOCK_COUNT;
     for batch in SYNC_STRESS_BLOCK_BATCHES {
         bitcoind.generate(*batch).unwrap();
-        electrsd.trigger().unwrap();
+        electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
 
-        expected_height += batch;
-        wait_for_electrs_tip(&electrsd, expected_height).unwrap();
-        wait_for_electrs_to_catch_up(&electrsd, &bitcoind).unwrap();
+        exp_height += batch;
+        let exp_hash = bitcoind.get_block_hash(exp_height).unwrap();
+        electrsd
+            .wait_until_tip(exp_height, exp_hash, Some(ELECTRS_INDEXING_TIMEOUT))
+            .unwrap();
+        electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
     }
+}
+
+/// Verify that [`ElectrsD`] follows the replacement tip after a reorg.
+#[test]
+fn test_electrsd_reindexes_reorgs() {
+    let bitcoind = BitcoinD::new().unwrap();
+    let electrsd = ElectrsD::new(&bitcoind).unwrap();
+
+    bitcoind.generate(10).unwrap();
+
+    let height = bitcoind.get_chain_tip().unwrap();
+    let hash = bitcoind.get_block_hash(height).unwrap();
+
+    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    let tip = electrsd.client.block_headers_subscribe().unwrap();
+    assert_eq!(tip.height as u32, height);
+    assert_eq!(tip.header.block_hash(), hash);
+
+    // Invalidate the latest block
+    bitcoind.invalidate_blocks(1).unwrap();
+
+    // Mine a new block simulating a chain reorg
+    bitcoind.generate(1).unwrap();
+
+    let reorg_height = bitcoind.get_chain_tip().unwrap();
+    let reorg_hash = bitcoind.get_block_hash(reorg_height).unwrap();
+
+    assert_ne!(hash, reorg_hash);
+    assert_eq!(height, reorg_height);
+
+    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    let reorg_tip = electrsd
+        .get_electrum_client()
+        .block_headers_subscribe()
+        .unwrap();
+    assert_eq!(reorg_tip.height as u32, reorg_height);
+    assert_eq!(reorg_tip.header.block_hash(), reorg_hash);
 }
