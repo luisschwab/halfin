@@ -46,7 +46,7 @@ fn test_bitcoind_generate_to_address() {
     let bitcoind = BitcoinD::new().unwrap();
 
     let address = bitcoind
-        .get_rpc_client()
+        .client
         .get_new_address(None, None)
         .unwrap()
         .address()
@@ -57,7 +57,7 @@ fn test_bitcoind_generate_to_address() {
 
     let address_desc = format!("addr({})", address);
     let address_balance = bitcoind
-        .get_rpc_client()
+        .client
         .scan_tx_out_set_start(&[&address_desc])
         .unwrap()
         .total_amount;

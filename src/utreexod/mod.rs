@@ -41,8 +41,8 @@ use crate::CONNECTION_TIMEOUT;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
+use crate::NODE_BUILDING_ATTEMPTS;
 use crate::NODE_BUILDING_INTERVAL;
-use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::POLL_INTERVAL;
 use crate::WAIT_TIMEOUT;
@@ -81,9 +81,6 @@ pub fn get_utreexod_path() -> Result<PathBuf, Error> {
 
 /// Configuration for a [`UtreexoD`] instance.
 ///
-/// Build one explicitly or call [`UtreexoDConf::default`] for sensible regtest
-/// defaults (`--regtest --notls --nodnsseed --noassumeutreexo`).
-///
 /// # Directory precedence
 ///
 /// Exactly one of `tmpdir` / `staticdir` may be set at a time; setting both
@@ -116,7 +113,7 @@ pub struct UtreexoDConf<'a> {
     /// How many times to retry spawning `utreexod` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_MAX_RETRIES`].
+    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -134,7 +131,7 @@ impl Default for UtreexoDConf<'_> {
             ],
             tmpdir: None,
             staticdir: None,
-            max_retries: NODE_BUILDING_MAX_RETRIES,
+            max_retries: NODE_BUILDING_ATTEMPTS,
         }
     }
 }
@@ -152,19 +149,22 @@ impl Default for UtreexoDConf<'_> {
 /// # Networking
 ///
 /// Both the RPC and P2P ports are chosen from the OS's ephemeral range at
-/// startup. Use [`rpc_socket`](UtreexoD::rpc_socket) and
-/// [`get_p2p_socket`](UtreexoD::get_p2p_socket) to discover them after
-/// construction.
+/// startup. Use [`UtreexoD::get_rpc_socket`] and [`UtreexoD::get_p2p_socket`]
+/// to discover them after construction.
 #[derive(Debug)]
 pub struct UtreexoD {
     /// Handle to the spawned `utreexod` child process.
     process: Child,
+
     /// Authenticated JSON-RPC client connected to the node.
-    rpc_client: Client,
+    pub client: Client,
+
     /// Owns (and optionally cleans up) the node's data directory.
     working_directory: DataDir,
+
     /// Address the JSON-RPC server is bound to.
     rpc_socket: SocketAddr,
+
     /// Address the P2P listener is bound to.
     p2p_socket: SocketAddr,
 }
@@ -173,7 +173,7 @@ pub struct UtreexoD {
 impl Node for UtreexoD {
     fn get_name() -> &'static str { "UtreexoD" }
 
-    fn get_bin_name() -> &'static str { "utreexod_v_0_5_0" }
+    fn get_bin_name() -> &'static str { "utreexod_v_0_5_2" }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
@@ -199,7 +199,7 @@ impl Node for UtreexoD {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
-        self.rpc_client.call(method, args).map_err(Error::JsonRpc)
+        self.client.call(method, args).map_err(Error::JsonRpc)
     }
 
     fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
@@ -260,7 +260,7 @@ impl UtreexoD {
             });
         }
 
-        for _attempt in 0..=conf.max_retries {
+        for _attempt in 0..conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
 
             #[cfg(target_os = "windows")]
@@ -344,7 +344,7 @@ impl UtreexoD {
 
             let auth = Auth::UserPass(RPC_USER.to_string(), RPC_PASS.to_string());
             match Self::wait_for_client(&rpc_url, &auth, Duration::from_secs(10)) {
-                Ok(rpc_client) => {
+                Ok(client) => {
                     sleep(Duration::from_millis(200));
 
                     debug!(
@@ -358,7 +358,7 @@ impl UtreexoD {
 
                     return Ok(UtreexoD {
                         process,
-                        rpc_client,
+                        client,
                         working_directory,
                         rpc_socket,
                         p2p_socket,
@@ -371,7 +371,7 @@ impl UtreexoD {
             }
         }
 
-        Err(Error::ExhaustedNodeBuildingRetries(conf.max_retries))
+        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
     }
 
     /// Send `stop` via RPC and wait for the process to exit.
@@ -386,8 +386,9 @@ impl UtreexoD {
             UtreexoD::get_name(),
             self.process.id()
         );
+
         // Send a `stop` over RPC.
-        let _ = self.rpc_client.stop().map_err(Error::FailedToStop)?;
+        let _ = self.client.stop().map_err(Error::FailedToStop)?;
         // Wait for the process to terminate and get its exit status.
         let exit_status = self.process.wait().map_err(Error::Io)?;
 
@@ -396,29 +397,59 @@ impl UtreexoD {
 
     /// Return the OS process ID of the running `utreexod` process.
     pub fn get_pid(&self) -> u32 {
-        self.process.id()
+        let pid = self.process.id();
+
+        debug!("{}: got pid={}", UtreexoD::get_name(), pid);
+
+        pid
     }
 
     /// Get [`UtreexoD`]'s data directory.
     pub fn get_working_directory(&self) -> PathBuf {
-        self.working_directory.path()
+        let working_directory = self.working_directory.path();
+
+        debug!(
+            "{}: got working directory at path={}",
+            UtreexoD::get_name(),
+            working_directory.display()
+        );
+
+        working_directory
     }
 
     /// Get a reference to [`UtreexoD`]'s RPC [`Client`].
     pub fn get_rpc_client(&self) -> &Client {
-        &self.rpc_client
+        debug!(
+            "{}: got rpc client for socket={}",
+            UtreexoD::get_name(),
+            self.rpc_socket
+        );
+
+        &self.client
+    }
+
+    /// Return the JSON-RPC [`SocketAddr`] the node is listening on.
+    pub fn get_rpc_socket(&self) -> SocketAddr {
+        debug!(
+            "{}: got rpc socket at socket={}",
+            UtreexoD::get_name(),
+            self.rpc_socket
+        );
+
+        self.rpc_socket
     }
 
     /// Return the P2P [`SocketAddr`] the node is listening on.
     ///
     /// Pass this to [`UtreexoD::add_peer`] on another node to connect the two.
     pub fn get_p2p_socket(&self) -> SocketAddr {
-        self.p2p_socket
-    }
+        debug!(
+            "{}: got p2p socket at socket={}",
+            UtreexoD::get_name(),
+            self.p2p_socket
+        );
 
-    /// Return the JSON-RPC [`SocketAddr`] the node is listening on.
-    pub fn rpc_socket(&self) -> SocketAddr {
-        self.rpc_socket
+        self.p2p_socket
     }
 
     // ----> RPC CALL WRAPPERS
@@ -426,7 +457,7 @@ impl UtreexoD {
     /// Get the current chain height.
     pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self
-            .rpc_client
+            .client
             .call::<serde_json::Value>("getblockchaininfo", &[])
             .map_err(Error::JsonRpc)?["blocks"]
             .as_u64()
@@ -434,7 +465,11 @@ impl UtreexoD {
                 "getblockchaininfo returned no `blocks` field".to_string(),
             ))? as u32;
 
-        debug!("{}: chain tip height={}", UtreexoD::get_name(), height);
+        debug!(
+            "{}: got chain tip at height={}",
+            UtreexoD::get_name(),
+            height
+        );
 
         Ok(height)
     }
@@ -443,7 +478,8 @@ impl UtreexoD {
     pub fn get_filter_tip(&self) -> Result<u32, Error> {
         let height = self.get_chain_tip()?;
         let hash = self.get_block_hash(height)?;
-        self.rpc_client
+
+        self.client
             .call::<serde_json::Value>(
                 "getcfilterheader",
                 &[
@@ -453,7 +489,11 @@ impl UtreexoD {
             )
             .map_err(Error::JsonRpc)?;
 
-        debug!("{}: filter tip height={}", UtreexoD::get_name(), height);
+        debug!(
+            "{}: got filter tip at height={}",
+            UtreexoD::get_name(),
+            height
+        );
 
         Ok(height)
     }
@@ -461,7 +501,7 @@ impl UtreexoD {
     /// Get the [`BlockHash`] of the block at height `height`.
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self
-            .rpc_client
+            .client
             .call::<serde_json::Value>("getblockhash", &[height.into()])
             .map_err(Error::JsonRpc)?
             .as_str()
@@ -472,7 +512,7 @@ impl UtreexoD {
             .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
 
         debug!(
-            "{}: block at height={} hash={}",
+            "{}: got block hash at height={} hash={}",
             UtreexoD::get_name(),
             height,
             hash
@@ -492,7 +532,7 @@ impl UtreexoD {
 
         let block_hash = self.get_block_hash(height)?;
         let proof_hex = self
-            .rpc_client
+            .client
             .call::<serde_json::Value>("getutreexoproof", &[block_hash.to_string().into()])
             .map_err(Error::JsonRpc)?
             .as_str()
@@ -506,9 +546,10 @@ impl UtreexoD {
     // Check whether this [`UtreexoD`] has a peer with a specific [`SocketAddr`].
     pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
         let peers = self
-            .rpc_client
+            .client
             .call::<serde_json::Value>("getpeerinfo", &[])
             .map_err(Error::JsonRpc)?;
+
         let has_peer = peers
             .as_array()
             .map(|v| {
@@ -535,6 +576,13 @@ impl UtreexoD {
             })
             .unwrap_or(false);
 
+        debug!(
+            "{}: checked peer connection at socket={} connected={}",
+            UtreexoD::get_name(),
+            socket,
+            has_peer
+        );
+
         Ok(has_peer)
     }
 
@@ -549,7 +597,7 @@ impl UtreexoD {
             socket
         );
 
-        self.rpc_client
+        self.client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
             .map_err(Error::JsonRpc)?;
 
@@ -558,7 +606,7 @@ impl UtreexoD {
         let start = Instant::now();
         while start.elapsed() < CONNECTION_TIMEOUT {
             let peers = self
-                .rpc_client
+                .client
                 .call::<serde_json::Value>("getpeerinfo", &[])
                 .map_err(Error::JsonRpc)?;
             if peers
@@ -574,7 +622,7 @@ impl UtreexoD {
                 .unwrap_or(false)
             {
                 debug!(
-                    "{}: peer connected with socket={}",
+                    "{}: connected peer at socket={}",
                     UtreexoD::get_name(),
                     socket
                 );
@@ -593,7 +641,7 @@ impl UtreexoD {
     /// Get [`UtreexoD`]'s peer count.
     pub fn get_peer_count(&self) -> Result<u32, Error> {
         let peers = self
-            .rpc_client
+            .client
             .call::<serde_json::Value>("getpeerinfo", &[])
             .map_err(Error::JsonRpc)?;
         let peer_count = peers
@@ -603,7 +651,11 @@ impl UtreexoD {
             ))?
             .len() as u32;
 
-        debug!("{}: peer count={}", UtreexoD::get_name(), peer_count);
+        debug!(
+            "{}: got peer count value={}",
+            UtreexoD::get_name(),
+            peer_count
+        );
 
         Ok(peer_count)
     }
@@ -619,7 +671,7 @@ impl UtreexoD {
         );
 
         let hashes = self
-            .rpc_client
+            .client
             .call::<serde_json::Value>("generate", &[serde_json::to_value(count).unwrap()])
             .map_err(Error::JsonRpc)?
             .as_array()
@@ -651,6 +703,7 @@ impl UtreexoD {
             .tmpdir
             .clone()
             .or_else(|| env::var("TEMPDIR_ROOT").map(PathBuf::from).ok());
+
         let work_dir = match (&tmpdir, &conf.staticdir) {
             // Cannot specify both directories.
             (Some(_), Some(_)) => return Err(Error::BothDirsSpecified),
@@ -673,6 +726,7 @@ impl UtreexoD {
                     .map_err(Error::Io)?,
             ),
         };
+
         Ok(work_dir)
     }
 
@@ -731,6 +785,7 @@ impl UtreexoD {
             }
             thread::sleep(Duration::from_millis(200));
         }
+
         Err(Error::RpcClientSetupTimeout)
     }
 }
@@ -741,7 +796,7 @@ impl Drop for UtreexoD {
     /// Errors from `kill` are silently discarded so that `Drop` never panics.
     fn drop(&mut self) {
         debug!(
-            "Dropping {} [PID={}]",
+            "{}: killing process with pid={}",
             UtreexoD::get_name(),
             self.process.id()
         );

@@ -18,12 +18,12 @@ utreexod_0_5_2 = []
 electrs_0_11_1 = []
 
 [dependencies]
-corepc-client = { version = "=0.15.0", features = ["client-sync"] }
+corepc-client = { version = "=0.16.0", features = ["client-sync"] }
 electrum-client = { version = "=0.25.0", default-features = false }
 tempfile = { version = "=3.27.0", default-features = false }
 serde_json = { version = "=1.0.150", default-features = false }
 tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
-which = { version = "=8.0.2", default-features = false }
+which = { version = "=8.0.4", default-features = false }
 
 [build-dependencies]
 anyhow = { version = "=1.0.102" }
@@ -35,8 +35,8 @@ zip = { version = "=7.2.0", default-features = false, features = ["bzip2", "defl
 
 [dev-dependencies]
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
-lazy_static = "=1.5.0" # blame: tracing-subsbcriber
-xshell = "=0.3.0-pre.2"
+lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
+xshell = { version = "=0.3.0-pre.2" }
 
 [[example]]
 name = "cross-compile-electrs"

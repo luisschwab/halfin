@@ -13,9 +13,9 @@
 //! |----------------|-----------|----------------- | --------------- |
 //! | `bitcoind`     | `v31.0`   | `bitcoind_31_0`  | Yes             |
 //! |                |           |                  |                 |
-//! | `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
-//! |                |           |                  |                 |
 //! | `electrs`      | `v0.11.1` | `electrs_0_11_1` | No              |
+//! |                |           |                  |                 |
+//! | `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
 //!
 //! ## Example
 //!
@@ -36,8 +36,8 @@
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
-//! [`utreexod`]: <https://github.com/utreexo/utreexod>
 //! [`electrs`]: <https://github.com/romanz/electrs>
+//! [`utreexod`]: <https://github.com/utreexo/utreexod>
 
 use core::error;
 use core::fmt;
@@ -61,6 +61,8 @@ pub use serde_json;
 #[allow(unused)]
 pub(crate) use bitcoind::BitcoinD;
 #[allow(unused)]
+pub(crate) use electrsd::ElectrsD;
+#[allow(unused)]
 pub(crate) use utreexod::UtreexoD;
 
 pub mod bitcoind;
@@ -70,8 +72,8 @@ pub mod utreexod;
 /// The IPv4 localhost address.
 const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
-/// The maximum number of attempts at instantiating a [`BitcoinD`]/[`UtreexoD`].
-pub const NODE_BUILDING_MAX_RETRIES: u8 = 5;
+/// The maximum number of attempts at instantiating a [`BitcoinD`]/[`UtreexoD`]/[`ElectrsD`].
+pub const NODE_BUILDING_ATTEMPTS: u8 = 5;
 
 /// The [`Duration`] between attempts at instantiating a [`Node`].
 pub const NODE_BUILDING_INTERVAL: Duration = Duration::from_millis(500);
@@ -125,7 +127,7 @@ pub trait Node {
     /// Get this [`Node`]' s peer count.
     fn get_peer_count(&self) -> Result<u32, Error>;
 
-    /// How long to sleep between `get_height` RPC calls.
+    /// How long to sleep between `get_chain_tip` RPC calls.
     ///
     /// Defaults to [`POLL_INTERVAL`].
     ///
@@ -270,7 +272,7 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
 /// Spawn a background thread that reads `reader` line by line and re-emits
 /// each line as a [`trace!`] event, prefixed with `source`.
 ///
-/// Used to pipe a child [`BitcoinD`]/[`UtreexoD`] process's `stdout`/`stderr`
+/// Used to pipe a child [`BitcoinD`]/[`UtreexoD`]/[`ElectrsD`] process `stdout`/`stderr`
 /// into [`tracing`]. The thread exits on EOF, which happens when the process
 /// dies and its pipe is closed.
 pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
@@ -286,8 +288,6 @@ pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'sta
 }
 
 /// Ask the OS for an available port, immediately unbind and return it.
-///
-/// Inlining is needed to curb TOCTOU race conditions.
 #[inline]
 pub fn get_available_port() -> u16 {
     TcpListener::bind((IPV4_LOCALHOST, 0))
@@ -335,8 +335,8 @@ pub enum Error {
     /// Failed to spawn a [process](std::process::Child) for a [`Node`] or Electrum Server.
     FailedToSpawn(std::io::Error),
 
-    /// Failed to instantiate a node or indexer after [`NODE_BUILDING_MAX_RETRIES`] attempts.
-    ExhaustedNodeBuildingRetries(u8),
+    /// Failed to instantiate a node or indexer after [`NODE_BUILDING_ATTEMPTS`] attempts.
+    ExhaustedNodeBuildingAttempts(u8),
 
     /// Failed to stop [`BitcoinD`] or [`UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
     FailedToStop(corepc_client::client_sync::Error),
@@ -391,7 +391,7 @@ impl fmt::Display for Error {
             BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
             BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
             FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
-            ExhaustedNodeBuildingRetries(retries) => write!(f, "Failed to instantiate the node after {} attempts", retries),
+            ExhaustedNodeBuildingAttempts(retries) => write!(f, "Failed to instantiate the node after {} attempts", retries),
             FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
             Io(err) => write!(f, "I/O Error: {err:?}"),
             JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
@@ -417,5 +417,4 @@ impl fmt::Display for Error {
         }
     }
 }
-
 impl error::Error for Error {}

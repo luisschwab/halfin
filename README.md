@@ -28,9 +28,9 @@ and [`electrsd`](https://crates.io/crates/electrsd) crates.
 |----------------|-----------|----------------- | --------------- |
 | `bitcoind`     | `v31.0`   | `bitcoind_31_0`  | Yes             |
 |                |           |                  |                 |
-| `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
-|                |           |                  |                 |
 | `electrs`      | `v0.11.1` | `electrs_0_11_1` | No              |
+|                |           |                  |                 |
+| `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
@@ -52,27 +52,11 @@ connect(&bitcoind_alpha, &bitcoind_beta).unwrap()
 
 // Mine blocks
 bitcoind_alpha.generate(100).unwrap();
-assert_eq!(bitcoind_alpha.get_height().unwrap(), 100);
+assert_eq!(bitcoind_alpha.get_chain_tip().unwrap(), 100);
 
 // Wait for a node to catch up with the other
 wait_for_height(&bitcoind_beta, 100).unwrap();
-assert_eq!(bitcoind_beta.get_height().unwrap(), 100);
-```
-
-### UtreexoD
-
-```rust
-use halfin::utreexod::UtreexoD;
-
-// Use a downloaded binary
-let utreexod = UtreexoD::new().unwrap();
-
-// Mine blocks
-utreexod.generate(100).unwrap();
-assert_eq!(utreexod.get_height().unwrap(), 100);
-
-// Raw call an unimplemented RPC
-let res = utreexod.call("uptime", &[]).unwrap();
+assert_eq!(bitcoind_beta.get_chain_tip().unwrap(), 100);
 ```
 
 ### ElectrsD
@@ -86,6 +70,22 @@ bitcoind.generate(100).unwrap();
 
 let electrs = ElectrsD::new(&bitcoind).unwrap();
 electrs.wait_until_caught_up(&bitcoind, None).unwrap();
+```
+
+### UtreexoD
+
+```rust
+use halfin::utreexod::UtreexoD;
+
+// Use a downloaded binary
+let utreexod = UtreexoD::new().unwrap();
+
+// Mine blocks
+utreexod.generate(100).unwrap();
+assert_eq!(utreexod.get_chain_tip().unwrap(), 100);
+
+// Raw call an unimplemented RPC
+let res = utreexod.call("uptime", &[]).unwrap();
 ```
 
 ## Developing
