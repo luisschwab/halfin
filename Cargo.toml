@@ -35,8 +35,8 @@ zip = { version = "=7.2.0", default-features = false, features = ["bzip2", "defl
 
 [dev-dependencies]
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
-lazy_static = "=1.5.0" # blame: tracing-subsbcriber
-xshell = "=0.3.0-pre.2"
+lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
+xshell = { version = "=0.3.0-pre.2" }
 
 [[example]]
 name = "cross-compile-electrs"

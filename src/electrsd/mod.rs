@@ -53,8 +53,8 @@ use crate::BitcoinD;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
+use crate::NODE_BUILDING_ATTEMPTS;
 use crate::NODE_BUILDING_INTERVAL;
-use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::POLL_INTERVAL;
 use crate::get_available_port;
@@ -111,9 +111,6 @@ pub struct ElectrsDConf<'a> {
     /// Bitcoin network passed to `electrs`. Defaults to `regtest`.
     pub network: &'a str,
 
-    /// Whether to expose `electrs`' HTTP/Esplora endpoint.
-    pub http_enabled: bool,
-
     /// Root directory under which a fresh temporary working directory is
     /// created for each instance. Falls back to the `TEMPDIR_ROOT`
     /// environment variable, then the system temp dir.
@@ -127,7 +124,7 @@ pub struct ElectrsDConf<'a> {
     /// How many times to retry spawning `electrs` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_MAX_RETRIES`].
+    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -136,10 +133,9 @@ impl Default for ElectrsDConf<'_> {
         ElectrsDConf {
             args: vec![],
             network: "regtest",
-            http_enabled: false,
             tmpdir: None,
             staticdir: None,
-            max_retries: NODE_BUILDING_MAX_RETRIES,
+            max_retries: NODE_BUILDING_ATTEMPTS,
         }
     }
 }
@@ -153,23 +149,24 @@ impl Default for ElectrsDConf<'_> {
 /// # Networking
 ///
 /// The Electrum RPC, monitoring, and optional HTTP ports are chosen from the
-/// OS's ephemeral range at startup. Use [`electrum_socket`](ElectrsD::electrum_socket),
-/// [`monitoring_socket`](ElectrsD::monitoring_socket), and
-/// [`esplora_socket`](ElectrsD::esplora_socket) to discover them after
+/// OS's ephemeral range at startup. Use [`electrum_socket`](ElectrsD::electrum_socket)
+/// and [`monitoring_socket`](ElectrsD::monitoring_socket) to discover them after
 /// construction.
 pub struct ElectrsD {
     /// Handle to the spawned `electrs` child process.
     process: Child,
+
     /// Plaintext Electrum client connected to `electrs`.
     pub client: RawClient<ElectrumPlaintextStream>,
+
     /// Owns (and optionally cleans up) the indexer's data directory.
     working_directory: DataDir,
+
     /// Address the Electrum RPC server is bound to.
     electrum_socket: SocketAddr,
+
     /// Address the monitoring server is bound to.
     monitoring_socket: SocketAddr,
-    /// Address the optional HTTP/Esplora server is bound to.
-    esplora_socket: Option<SocketAddr>,
 }
 
 #[rustfmt::skip]
@@ -240,7 +237,7 @@ impl ElectrsD {
 
         Self::ensure_bitcoind_ready(bitcoind)?;
 
-        for _attempt in 0..=conf.max_retries {
+        for _attempt in 0..conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
 
             let electrum_port = get_available_port();
@@ -249,10 +246,6 @@ impl ElectrsD {
             let monitoring_port = get_available_port();
             let monitoring_socket =
                 SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, monitoring_port));
-
-            let esplora_socket = conf
-                .http_enabled
-                .then(|| SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, get_available_port())));
 
             let mut args: Vec<String> = conf.args.iter().map(|arg| arg.to_string()).collect();
             args.extend([
@@ -271,16 +264,12 @@ impl ElectrsD {
                 "--cookie-file".to_string(),
                 bitcoind.cookie_file().display().to_string(),
             ]);
-            if let Some(esplora_socket) = esplora_socket {
-                args.extend(["--http-addr".to_string(), esplora_socket.to_string()]);
-            }
 
             debug!(
-                "Spawning {} [ELECTRUM_SOCKET={}, MONITORING_SOCKET={}, ESPLORA_SOCKET={:?}, DATADIR={}]",
+                "Spawning {} [ELECTRUM_SOCKET={}, MONITORING_SOCKET={}, DATADIR={}]",
                 ElectrsD::get_name(),
                 electrum_socket,
                 monitoring_socket,
-                esplora_socket,
                 working_directory.path().display()
             );
 
@@ -323,12 +312,11 @@ impl ElectrsD {
                     sleep(Duration::from_millis(200));
 
                     debug!(
-                        "Started {} [PID={}, ELECTRUM_SOCKET={}, MONITORING_SOCKET={}, ESPLORA_SOCKET={:?}, DATADIR={}]",
+                        "Started {} [PID={}, ELECTRUM_SOCKET={}, MONITORING_SOCKET={}, DATADIR={}]",
                         ElectrsD::get_name(),
                         process.id(),
                         electrum_socket,
                         monitoring_socket,
-                        esplora_socket,
                         working_directory.path().display()
                     );
 
@@ -338,7 +326,6 @@ impl ElectrsD {
                         working_directory,
                         electrum_socket,
                         monitoring_socket,
-                        esplora_socket,
                     });
                 }
                 Err(_) => {
@@ -348,7 +335,7 @@ impl ElectrsD {
             }
         }
 
-        Err(Error::ExhaustedNodeBuildingRetries(conf.max_retries))
+        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
     }
 
     /// Send `SIGUSR1` to trigger a rescan on Unix-derived platforms.
@@ -356,12 +343,20 @@ impl ElectrsD {
     /// This is a no-op on Windows.
     #[cfg(not(target_os = "windows"))]
     pub fn trigger(&self) -> Result<(), Error> {
+        debug!(
+            "{}: triggering rescan pid={}",
+            ElectrsD::get_name(),
+            self.process.id()
+        );
+
         let status = Command::new("kill")
             .arg("-USR1")
             .arg(self.process.id().to_string())
             .status()
             .map_err(Error::Io)?;
         if status.success() {
+            debug!("{}: triggered rescan", ElectrsD::get_name());
+
             Ok(())
         } else {
             Err(Error::UnexpectedResponse(format!(
@@ -373,6 +368,11 @@ impl ElectrsD {
     /// No-op rescan trigger on Windows.
     #[cfg(target_os = "windows")]
     pub fn trigger(&self) -> Result<(), Error> {
+        debug!(
+            "{}: skipped rescan trigger on Windows",
+            ElectrsD::get_name()
+        );
+
         Ok(())
     }
 
@@ -394,43 +394,70 @@ impl ElectrsD {
 
     /// Return the OS process ID of the running `electrs` process.
     pub fn get_pid(&self) -> u32 {
-        self.process.id()
+        let pid = self.process.id();
+
+        debug!("{}: got pid={}", ElectrsD::get_name(), pid);
+
+        pid
     }
 
     /// Get [`ElectrsD`]'s data directory.
     pub fn get_working_directory(&self) -> PathBuf {
-        self.working_directory.path()
+        let working_directory = self.working_directory.path();
+
+        debug!(
+            "{}: got working directory at path={}",
+            ElectrsD::get_name(),
+            working_directory.display()
+        );
+
+        working_directory
     }
 
     /// Get a reference to [`ElectrsD`]'s Electrum [`RawClient`].
     pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
+        debug!(
+            "{}: got electrum client for socket={}",
+            ElectrsD::get_name(),
+            self.electrum_socket
+        );
+
         &self.client
     }
 
     /// Return the Electrum RPC [`SocketAddr`] the indexer is listening on.
     pub fn electrum_socket(&self) -> SocketAddr {
+        debug!(
+            "{}: got electrum socket at socket={}",
+            ElectrsD::get_name(),
+            self.electrum_socket
+        );
+
         self.electrum_socket
     }
 
     /// Return the Electrum RPC URL for the indexer.
     pub fn electrum_url(&self) -> String {
-        self.electrum_socket.to_string()
+        let electrum_url = self.electrum_socket.to_string();
+
+        debug!(
+            "{}: got electrum url at url={}",
+            ElectrsD::get_name(),
+            electrum_url
+        );
+
+        electrum_url
     }
 
     /// Return the monitoring [`SocketAddr`] the indexer is listening on.
     pub fn monitoring_socket(&self) -> SocketAddr {
+        debug!(
+            "{}: got monitoring socket at socket={}",
+            ElectrsD::get_name(),
+            self.monitoring_socket
+        );
+
         self.monitoring_socket
-    }
-
-    /// Return the optional HTTP/Esplora [`SocketAddr`] the indexer is listening on.
-    pub fn esplora_socket(&self) -> Option<SocketAddr> {
-        self.esplora_socket
-    }
-
-    /// Return the optional HTTP/Esplora URL for the indexer.
-    pub fn esplora_url(&self) -> Option<String> {
-        self.esplora_socket
-            .map(|esplora_socket| format!("http://{esplora_socket}"))
     }
 
     /// Poll until this [`ElectrsD`]'s Electrum header tip matches [`BitcoinD`]'s tip.
@@ -444,6 +471,14 @@ impl ElectrsD {
     ) -> Result<(), Error> {
         let height = bitcoind.get_chain_tip()?;
         let hash = bitcoind.get_block_hash(height)?;
+
+        debug!(
+            "{}: waiting until caught up height={} hash={}",
+            ElectrsD::get_name(),
+            height,
+            hash
+        );
+
         self.wait_until_block(height, Some(hash), timeout)
     }
 
@@ -457,27 +492,46 @@ impl ElectrsD {
         exp_hash: BlockHash,
         timeout: Option<Duration>,
     ) -> Result<(), Error> {
+        debug!(
+            "{}: waiting until tip height={} hash={}",
+            ElectrsD::get_name(),
+            exp_height,
+            exp_hash
+        );
+
         self.wait_until_block(exp_height, Some(exp_hash), timeout)
     }
 
-    /// Poll until `txid` appears as an unconfirmed transaction for `script_pubkey`.
+    /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for `spk`.
     ///
-    /// Pass `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
+    /// If `timeout` is `None`, the default [`ELECTRS_INDEXING_TIMEOUT`] will be used.
     pub fn wait_until_mempool_tx(
         &self,
         spk: &Script,
         txid: Txid,
         timeout: Option<Duration>,
     ) -> Result<(), Error> {
+        debug!(
+            "{}: waiting until mempool transaction txid={}",
+            ElectrsD::get_name(),
+            txid
+        );
+
         let (subscribed, initial_status) = match self.client.script_subscribe(spk) {
             Ok(status) => (true, status),
             Err(ElectrumError::AlreadySubscribed(_)) => (false, None),
             Err(err) => return Err(Error::UnresponsiveElectrsD(err)),
         };
-        let description = format!("mempool transaction {txid}");
+
         let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
         let result = (|| {
             if initial_status.is_some() && self.script_history_has_mempool_tx(spk, txid)? {
+                debug!(
+                    "{}: found mempool transaction with txid={}",
+                    ElectrsD::get_name(),
+                    txid
+                );
+
                 return Ok(());
             }
 
@@ -493,13 +547,22 @@ impl ElectrsD {
                     .is_some()
                     && self.script_history_has_mempool_tx(spk, txid)?
                 {
+                    debug!(
+                        "{}: found mempool transaction with txid={}",
+                        ElectrsD::get_name(),
+                        txid
+                    );
+
                     return Ok(());
                 }
 
                 thread::sleep(2 * POLL_INTERVAL);
             }
 
-            Err(Error::ElectrsDIndexTimeout((description, timeout)))
+            Err(Error::ElectrsDIndexTimeout((
+                format!("mempool transaction with txid={txid}"),
+                timeout,
+            )))
         })();
 
         if subscribed {
@@ -511,14 +574,23 @@ impl ElectrsD {
 
     // ----> INTERNAL
 
-    /// Return whether `script_pubkey` history contains `txid` as an unconfirmed transaction.
+    /// Return whether this `spk`'s history contains `txid` as an unconfirmed transaction.
     fn script_history_has_mempool_tx(&self, spk: &Script, txid: Txid) -> Result<bool, Error> {
         self.client
             .script_get_history(spk)
             .map(|history| {
-                history
+                let has_tx = history
                     .iter()
-                    .any(|entry| entry.tx_hash == txid && entry.height == 0)
+                    .any(|entry| entry.tx_hash == txid && entry.height == 0);
+
+                debug!(
+                    "{}: checked script mempool transaction with txid={} found={}",
+                    ElectrsD::get_name(),
+                    txid,
+                    has_tx
+                );
+
+                has_tx
             })
             .map_err(Error::UnresponsiveElectrsD)
     }
@@ -547,6 +619,13 @@ impl ElectrsD {
         };
 
         let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
+        debug!(
+            "{}: waiting until indexed {} timeout={:?}",
+            ElectrsD::get_name(),
+            description,
+            timeout
+        );
+
         let start = Instant::now();
         while start.elapsed() < timeout {
             self.trigger()?;
@@ -564,6 +643,12 @@ impl ElectrsD {
             };
 
             if electrs_header_matches(client, notification, exp_height, exp_hash)? {
+                debug!(
+                    "{}: finished indexing {}",
+                    ElectrsD::get_name(),
+                    description
+                );
+
                 return Ok(());
             }
 
@@ -580,6 +665,13 @@ impl ElectrsD {
             .get("initialblockdownload")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
+
+        debug!(
+            "{}: checked backing bitcoind readiness initial_block_download={}",
+            ElectrsD::get_name(),
+            initial_block_download
+        );
+
         if initial_block_download {
             let _ = bitcoind.generate(1)?;
         }
@@ -662,7 +754,7 @@ impl Drop for ElectrsD {
     /// Errors from `kill` are silently discarded so that [`Drop`] never panics.
     fn drop(&mut self) {
         debug!(
-            "Dropping {} [PID={}]",
+            "{}: killing process with pid={}",
             ElectrsD::get_name(),
             self.process.id()
         );
@@ -670,10 +762,10 @@ impl Drop for ElectrsD {
     }
 }
 
-/// Check whether an Electrum header notification proves ElectrsD has indexed `exp_height`.
+/// Check whether an Electrum header notification proves [`ElectrsD`] has indexed up to `exp_height`.
 ///
-/// If the notification has advanced past `exp_height`, fetch the header at
-/// `exp_height` explicitly so `exp_hash` can still be verified.
+/// If the notification has advanced past `exp_height`, fetch the header at `exp_height` explicitly
+/// so `exp_hash` can still be verified.
 fn electrs_header_matches(
     client: &RawClient<ElectrumPlaintextStream>,
     notification: HeaderNotification,

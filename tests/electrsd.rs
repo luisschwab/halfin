@@ -23,11 +23,15 @@ fn test_electrsd_spawns() {
     let bitcoind = BitcoinD::new().unwrap();
     let electrsd = ElectrsD::new(&bitcoind).unwrap();
 
-    electrsd.get_electrum_client().ping().unwrap();
+    electrsd.client.ping().unwrap();
 
     info!("PID: {}", electrsd.get_pid());
     info!("Working Directory: {:?}", electrsd.get_working_directory());
     info!("Electrum Socket: {}", electrsd.electrum_socket());
+    info!(
+        "Electrum Server Protocol Version: {}",
+        electrsd.client.server_features().unwrap().protocol_max
+    );
     info!("Monitoring Socket: {}", electrsd.monitoring_socket());
 }
 
@@ -40,11 +44,11 @@ fn test_electrsd_sees_mempool_transactions() {
     bitcoind.generate(BLOCK_COUNT).unwrap();
     let electrsd = ElectrsD::new(&bitcoind).unwrap();
 
-    electrsd.get_electrum_client().ping().unwrap();
+    electrsd.client.ping().unwrap();
     electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
 
     let address = bitcoind
-        .get_rpc_client()
+        .client
         .get_new_address(None, None)
         .unwrap()
         .address()
@@ -52,7 +56,7 @@ fn test_electrsd_sees_mempool_transactions() {
         .assume_checked();
     let script_pubkey = address.script_pubkey();
     let txid = bitcoind
-        .get_rpc_client()
+        .client
         .send_to_address(&address, Amount::from_int_btc(1))
         .unwrap()
         .txid()
@@ -119,10 +123,7 @@ fn test_electrsd_reindexes_reorgs() {
     assert_eq!(height, reorg_height);
 
     electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    let reorg_tip = electrsd
-        .get_electrum_client()
-        .block_headers_subscribe()
-        .unwrap();
+    let reorg_tip = electrsd.client.block_headers_subscribe().unwrap();
     assert_eq!(reorg_tip.height as u32, reorg_height);
     assert_eq!(reorg_tip.header.block_hash(), reorg_hash);
 }

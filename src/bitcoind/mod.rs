@@ -55,8 +55,8 @@ use crate::CONNECTION_TIMEOUT;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
+use crate::NODE_BUILDING_ATTEMPTS;
 use crate::NODE_BUILDING_INTERVAL;
-use crate::NODE_BUILDING_MAX_RETRIES;
 use crate::Node;
 use crate::get_available_port;
 use crate::pipe_to_tracing;
@@ -87,9 +87,6 @@ pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
 }
 
 /// Configuration for a [`BitcoinD`] instance.
-///
-/// Build one explicitly, or call [`BitcoinDConf::default`] for sensible regtest
-/// defaults (`-regtest -fallbackfee=0.0001`).
 ///
 /// # Directory precedence
 ///
@@ -124,7 +121,7 @@ pub struct BitcoinDConf<'a> {
     /// How many times to retry spawning `bitcoind` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_MAX_RETRIES`].
+    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -134,7 +131,7 @@ impl Default for BitcoinDConf<'_> {
             args: vec!["-regtest", "-fallbackfee=0.0001", "-blockfilterindex=1"],
             tmpdir: None,
             staticdir: None,
-            max_retries: NODE_BUILDING_MAX_RETRIES,
+            max_retries: NODE_BUILDING_ATTEMPTS,
         }
     }
 }
@@ -161,7 +158,7 @@ pub struct BitcoinD {
     /// Handle to the spawned `bitcoind` child process.
     process: Child,
     /// Authenticated JSON-RPC client scoped to the node's wallet.
-    rpc_client: Client,
+    pub client: Client,
     /// Owns (and optionally cleans up) the node's data directory.
     working_directory: DataDir,
     /// Path to the cookie file used for RPC authentication.
@@ -193,7 +190,7 @@ impl Node for BitcoinD {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
-        self.rpc_client.call(method, args).map_err(Error::JsonRpc)
+        self.client.call(method, args).map_err(Error::JsonRpc)
     }
 }
 
@@ -220,14 +217,13 @@ impl BitcoinD {
     }
 
     /// Create a [`BitcoinD`] instance running the binary at [`Path`] with a custom [`BitcoinDConf`].
-    /// The method retries up to [`BitcoinDConf::max_retries`] times.  On each
-    /// attempt it:
+    /// The method retries up to [`BitcoinDConf::max_retries`] times.  On each attempt it:
     ///
     /// 1. Picks fresh ephemeral RPC and P2P ports.
     /// 2. Spawns `bitcoind` with those ports and a fresh data directory.
-    /// 3. Waits for the cookie file to appear (up to 5 s).
+    /// 3. Waits for the cookie file to appear (up to 5 seconds).
     /// 4. Creates or loads the default wallet and builds an RPC client.
-    /// 5. Waits for the node to become responsive (up to 5 s).
+    /// 5. Waits for the node to become responsive (up to 5 seconds).
     ///
     /// Returns an error if all attempts are exhausted.
     pub fn from_bin_with_conf<P: AsRef<Path>>(
@@ -251,7 +247,7 @@ impl BitcoinD {
             });
         }
 
-        for _ in 0..=conf.max_retries {
+        for _ in 0..conf.max_retries {
             let working_directory = Self::init_work_dir(conf)?;
             let cookie_file = working_directory
                 .path()
@@ -331,7 +327,7 @@ impl BitcoinD {
             // Create a new wallet or load an existing wallet
             // named `BITCOIND_WALLET` with a 5 second timeout.
             let deadline = Instant::now() + Duration::from_secs(5);
-            let rpc_client = loop {
+            let client = loop {
                 if Instant::now() > deadline {
                     let _ = process.kill();
                     continue;
@@ -346,7 +342,7 @@ impl BitcoinD {
                 thread::sleep(Duration::from_millis(200));
             };
 
-            if Self::wait_for_client(&rpc_client, Duration::from_secs(5)).is_err() {
+            if Self::wait_for_client(&client, Duration::from_secs(5)).is_err() {
                 let _ = process.kill();
                 continue;
             }
@@ -364,7 +360,7 @@ impl BitcoinD {
 
             return Ok(BitcoinD {
                 process,
-                rpc_client,
+                client,
                 working_directory,
                 cookie_file,
                 rpc_socket,
@@ -372,7 +368,7 @@ impl BitcoinD {
             });
         }
 
-        Err(Error::ExhaustedNodeBuildingRetries(conf.max_retries))
+        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
     }
 
     /// Send `stop` via RPC and wait for the process to exit.
@@ -388,7 +384,7 @@ impl BitcoinD {
             self.process.id()
         );
         // Send a `stop` over RPC.
-        let _ = self.rpc_client.stop().map_err(Error::FailedToStop)?;
+        let _ = self.client.stop().map_err(Error::FailedToStop)?;
         // Wait for the process to terminate and get its exit status.
         let exit_status = self.process.wait().map_err(Error::Io)?;
 
@@ -397,33 +393,69 @@ impl BitcoinD {
 
     /// Get [`BitcoinD`]'s PID process.
     pub fn get_pid(&self) -> u32 {
-        self.process.id()
+        let pid = self.process.id();
+
+        debug!("{}: got pid={}", BitcoinD::get_name(), pid);
+
+        pid
     }
 
     /// Get [`BitcoinD`]'s data directory.
     pub fn get_working_directory(&self) -> PathBuf {
-        self.working_directory.path()
+        let working_directory = self.working_directory.path();
+
+        debug!(
+            "{}: got working directory at path={}",
+            BitcoinD::get_name(),
+            working_directory.display()
+        );
+
+        working_directory
     }
 
     /// Get [`BitcoinD`]'s P2P [`SocketAddr`].
     ///
     /// Pass this to [`BitcoinD::add_peer`] on another node to connect the two.
     pub fn get_p2p_socket(&self) -> SocketAddr {
+        debug!(
+            "{}: got p2p socket at socket={}",
+            BitcoinD::get_name(),
+            self.p2p_socket
+        );
+
         self.p2p_socket
     }
 
     /// Get a reference to [`BitcoinD`]'s RPC [`Client`].
     pub fn get_rpc_client(&self) -> &Client {
-        &self.rpc_client
+        debug!(
+            "{}: got rpc client for socket={}",
+            BitcoinD::get_name(),
+            self.rpc_socket
+        );
+
+        &self.client
     }
 
     /// Get [`BitcoinD`]'s JSON-RPC [`SocketAddr`].
     pub fn rpc_socket(&self) -> SocketAddr {
+        debug!(
+            "{}: got rpc socket at socket={}",
+            BitcoinD::get_name(),
+            self.rpc_socket
+        );
+
         self.rpc_socket
     }
 
     /// Get the [`Path`] to [`BitcoinD`]'s cookie file.
     pub fn cookie_file(&self) -> &Path {
+        debug!(
+            "{}: got cookie file at path={}",
+            BitcoinD::get_name(),
+            self.cookie_file.display()
+        );
+
         &self.cookie_file
     }
 
@@ -431,20 +463,21 @@ impl BitcoinD {
 
     /// Get the current chain height.
     pub fn get_chain_tip(&self) -> Result<u32, Error> {
-        let response = self
-            .rpc_client
-            .get_blockchain_info()
-            .map_err(Error::JsonRpc)?;
+        let response = self.client.get_blockchain_info().map_err(Error::JsonRpc)?;
         let height = response.blocks as u32;
 
-        debug!("{}: chain tip height={}", BitcoinD::get_name(), height);
+        debug!(
+            "{}: got chain tip at height={}",
+            BitcoinD::get_name(),
+            height
+        );
 
         Ok(height)
     }
 
     /// Get the current filter height.
     pub fn get_filter_tip(&self) -> Result<u32, Error> {
-        let response = self.rpc_client.get_index_info().map_err(Error::JsonRpc)?;
+        let response = self.client.get_index_info().map_err(Error::JsonRpc)?;
         let filter_height = response
             .0
             .get("basic block filter index")
@@ -456,7 +489,7 @@ impl BitcoinD {
             })?;
 
         debug!(
-            "{}: filter tip height={}",
+            "{}: got filter tip at height={}",
             BitcoinD::get_name(),
             filter_height
         );
@@ -467,7 +500,7 @@ impl BitcoinD {
     /// Get the [`BlockHash`] of the block at height `height`.
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self
-            .rpc_client
+            .client
             .get_block_hash(height as u64)
             .map_err(Error::JsonRpc)?
             .0
@@ -475,7 +508,7 @@ impl BitcoinD {
             .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
 
         debug!(
-            "{}: block at height={} hash={}",
+            "{}: got block hash at height={} hash={}",
             BitcoinD::get_name(),
             height,
             hash
@@ -486,11 +519,18 @@ impl BitcoinD {
 
     /// Check whether this [`BitcoinD`] has a peer with a specific [`SocketAddr`].
     pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
-        let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?;
+        let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?;
         let has_peer = peers
             .0
             .iter()
             .any(|p| p.address.contains(&socket.to_string()));
+
+        debug!(
+            "{}: checked peer connection at socket={} connected={}",
+            BitcoinD::get_name(),
+            socket,
+            has_peer
+        );
 
         Ok(has_peer)
     }
@@ -506,7 +546,7 @@ impl BitcoinD {
             socket
         );
 
-        self.rpc_client
+        self.client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
             .map_err(Error::JsonRpc)?;
 
@@ -514,14 +554,14 @@ impl BitcoinD {
 
         let start = Instant::now();
         while start.elapsed() < CONNECTION_TIMEOUT {
-            let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?;
+            let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?;
             if peers
                 .0
                 .iter()
                 .any(|p| p.address.contains(&socket.to_string()))
             {
                 debug!(
-                    "{}: peer connected with socket={}",
+                    "{}: connected peer at socket={}",
                     BitcoinD::get_name(),
                     socket
                 );
@@ -539,10 +579,14 @@ impl BitcoinD {
 
     /// Get [`BitcoinD`]'s peer count.
     pub fn get_peer_count(&self) -> Result<u32, Error> {
-        let peers = self.rpc_client.get_peer_info().map_err(Error::JsonRpc)?.0;
+        let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?.0;
         let peer_count = peers.len() as u32;
 
-        debug!("{}: peer count={}", BitcoinD::get_name(), peer_count);
+        debug!(
+            "{}: got peer count value={}",
+            BitcoinD::get_name(),
+            peer_count
+        );
 
         Ok(peer_count)
     }
@@ -557,9 +601,9 @@ impl BitcoinD {
             count
         );
 
-        let address = self.rpc_client.new_address().map_err(Error::JsonRpc)?;
+        let address = self.client.new_address().map_err(Error::JsonRpc)?;
         let hashes = self
-            .rpc_client
+            .client
             .generate_to_address(count as usize, &address)
             .map_err(Error::JsonRpc)?
             .0
@@ -589,7 +633,7 @@ impl BitcoinD {
         );
 
         let hashes = self
-            .rpc_client
+            .client
             .generate_to_address(count as usize, address)
             .map_err(Error::JsonRpc)?
             .0
@@ -612,19 +656,19 @@ impl BitcoinD {
 
         for _ in 0..count {
             let hash = self
-                .rpc_client
+                .client
                 .get_best_block_hash()
                 .unwrap()
                 .block_hash()
                 .unwrap();
 
             let height = self
-                .rpc_client
+                .client
                 .get_blockchain_info()
                 .map_err(Error::JsonRpc)?
                 .blocks as u32;
 
-            self.rpc_client.invalidate_block(hash).unwrap();
+            self.client.invalidate_block(hash).unwrap();
             debug!(
                 "{}: invalidated block at height={} and hash={}",
                 BitcoinD::get_name(),
@@ -726,7 +770,7 @@ impl Drop for BitcoinD {
     /// never panics.
     fn drop(&mut self) {
         debug!(
-            "Dropping {} [PID={}]",
+            "{}: killing process with pid={}",
             BitcoinD::get_name(),
             self.process.id()
         );
