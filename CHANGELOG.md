@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Refactor `build.rs`
 * Drop version suffix from feature names
 * Lock modules behind the respective feature
 * Lock `electrum-client` dependency behind `electrs_0_11_1` feature

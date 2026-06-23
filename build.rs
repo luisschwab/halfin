@@ -1,8 +1,26 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::env;
+use std::ffi::OsStr;
+use std::fs;
+use std::fs::File;
+use std::io;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Cursor;
+use std::path::Path;
+use std::path::PathBuf;
+use std::str::FromStr;
+
+use bitcoin_hashes::sha256;
+use flate2::read::GzDecoder;
+use tar::Archive;
+
+const DOWNLOAD_BASE_URL: &str = "https://bin.luisschwab.net";
+
 fn main() {
     // Skip downloading when docs.rs is building documentation
-    if std::env::var("DOCS_RS").is_ok() {
+    if env::var("DOCS_RS").is_ok() {
         return;
     }
 
@@ -23,29 +41,306 @@ fn main() {
     }
 }
 
+/// Return the root directory used to cache extracted binaries.
+fn download_directory() -> PathBuf {
+    if let Ok(path) = env::var("HALFIN_BIN_DIR") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from(env::var("OUT_DIR").unwrap()).join("bin")
+    }
+}
+
+/// Mark extracted Unix executables as runnable.
+fn set_executable(_file: &File) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut perms = _file.metadata().unwrap().permissions();
+        perms.set_mode(0o755);
+        _file.set_permissions(perms).unwrap();
+    }
+}
+
+/// Build-time metadata needed to fetch, verify, cache, and expose a binary.
+struct Binary {
+    /// Name of the executable inside the downloaded archive.
+    name: &'static str,
+    /// Version displayed in build warnings and used in destination paths.
+    version: &'static str,
+    /// Compile-time environment variable that exposes the extracted binary path.
+    env_var: &'static str,
+    /// Prefix for the versioned directory that stores this binary.
+    destination_dir_prefix: &'static str,
+    /// Bundled SHA256SUMS file for this binary's archives.
+    checksum_file: PathBuf,
+    /// Remote directory under [`DOWNLOAD_BASE_URL`].
+    remote_path: PathBuf,
+    /// Platform-specific archive selected by the binary module.
+    archive_filename: PathBuf,
+    /// Whether macOS aarch64 builds should ad-hoc sign the extracted binary.
+    codesign_on_macos_aarch64: bool,
+}
+
+impl Binary {
+    /// Return the versioned directory name used for this binary.
+    fn destination_dir_name(&self) -> String {
+        format!("{}-{}", self.destination_dir_prefix, self.version)
+    }
+
+    /// Return the non-Windows path emitted as this binary's `HALFIN_*_PATH`.
+    fn destination_path(&self, download_directory: &Path) -> PathBuf {
+        download_directory
+            .join(self.destination_dir_name())
+            .join(self.name)
+    }
+
+    /// Return the executable path to check for an existing cached binary.
+    fn existing_path(&self, download_directory: &Path) -> PathBuf {
+        let path = self.destination_path(download_directory);
+
+        if cfg!(windows) {
+            path.with_extension("exe")
+        } else {
+            path
+        }
+    }
+
+    /// Return the full URL for this binary's selected platform archive.
+    fn download_url(&self, archive_filename: &str) -> String {
+        format!(
+            "{}/{}/{}",
+            DOWNLOAD_BASE_URL,
+            self.remote_path.display(),
+            archive_filename
+        )
+    }
+
+    /// Download, verify, and extract this binary.
+    ///
+    /// The binary is extracted into `<OUT_DIR>/bin/<destination-dir-prefix>-<VERSION>/<name>`,
+    /// or `<HALFIN_BIN_DIR>/<destination-dir-prefix>-<VERSION>/<name>` if the
+    /// `HALFIN_BIN_DIR` environment variable is set.
+    ///
+    /// Download is skipped if the binary is already cached from a previous build.
+    fn download_and_install(self) {
+        let download_directory = download_directory();
+        fs::create_dir_all(&download_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create `{}` download directory at={}: {:?}",
+                    self.name,
+                    download_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
+
+        let destination_path = self.destination_path(&download_directory);
+
+        // Emit the binary path as an environment variable so runtime helpers can pick it up.
+        println!(
+            "cargo:rustc-env={}={}",
+            self.env_var,
+            destination_path.display()
+        );
+
+        let expected_hash = self.expected_sha256();
+
+        if self.existing_path(&download_directory).exists() {
+            return;
+        }
+
+        let archive_filename = self.archive_filename.to_string_lossy();
+        let download_url = self.download_url(&archive_filename);
+        let archive_bytes = self.download_archive(&download_url);
+        self.verify_archive_hash(&archive_bytes, expected_hash);
+        self.extract_archive(&archive_bytes, &download_directory);
+
+        if self.codesign_on_macos_aarch64 {
+            self.codesign_on_macos_aarch64(&destination_path);
+        }
+    }
+
+    /// Look up the expected SHA256 hash for this binary's archive.
+    ///
+    /// Panics if the filename is not found in the checksum file.
+    #[allow(clippy::lines_filter_map_ok)]
+    fn expected_sha256(&self) -> sha256::Hash {
+        let file = File::open(&self.checksum_file)
+            .map_err(|e| {
+                format!(
+                    "Cannot open `{}` SHA256SUMS file={}: {:?}",
+                    self.name,
+                    self.checksum_file.display(),
+                    e
+                )
+            })
+            .unwrap();
+
+        let archive_filename = self.archive_filename.to_string_lossy();
+        for line in BufReader::new(file).lines().flatten() {
+            let tokens: Vec<_> = line.split("  ").collect();
+            if tokens.len() == 2 && archive_filename == tokens[1] {
+                return sha256::Hash::from_str(tokens[0]).unwrap();
+            }
+        }
+
+        panic!(
+            "Failed to find SHA256SUM for {} archive={} at path={}",
+            self.name,
+            self.archive_filename.display(),
+            self.checksum_file.display()
+        );
+    }
+
+    /// Download this binary's archive and return its raw bytes.
+    fn download_archive(&self, download_url: &str) -> Vec<u8> {
+        println!(
+            "cargo:warning=Downloading `{}` @ v{} from `{}`",
+            self.name, self.version, download_url,
+        );
+
+        let response = bitreq::get(download_url)
+            .send()
+            .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
+            .unwrap();
+
+        assert_eq!(
+            response.status_code, 200,
+            "Failed to GET {}: {} {}",
+            download_url, response.status_code, response.reason_phrase
+        );
+
+        response.as_bytes().to_vec()
+    }
+
+    /// Verify downloaded archive bytes against the expected SHA256 hash.
+    fn verify_archive_hash(&self, archive_bytes: &[u8], expected_hash: sha256::Hash) {
+        let downloaded_hash = sha256::Hash::hash(archive_bytes);
+        assert_eq!(
+            downloaded_hash, expected_hash,
+            "Downloaded {} archive hash does not match expected hash: downloaded={} != expected={}",
+            self.name, downloaded_hash, expected_hash
+        );
+    }
+
+    /// Extract the selected archive format into this binary's destination directory.
+    fn extract_archive(&self, archive_bytes: &[u8], download_directory: &Path) {
+        let destination_directory = download_directory.join(self.destination_dir_name());
+        fs::create_dir_all(&destination_directory)
+            .map_err(|e| {
+                format!(
+                    "Cannot create destination directory={}: {}",
+                    destination_directory.display(),
+                    e
+                )
+            })
+            .unwrap();
+
+        let archive_filename = self.archive_filename.to_string_lossy();
+        if archive_filename.ends_with(".tar.gz") {
+            self.extract_tar_gz(archive_bytes, &destination_directory);
+        } else if archive_filename.ends_with(".zip") {
+            self.extract_zip(archive_bytes, &destination_directory);
+        } else {
+            panic!(
+                "Unsupported archive format: {}",
+                self.archive_filename.display()
+            );
+        }
+    }
+
+    /// Extract a Unix-style executable from a `.tar.gz` archive.
+    fn extract_tar_gz(&self, archive_bytes: &[u8], destination_directory: &Path) {
+        let gz_decoder = GzDecoder::new(archive_bytes);
+        let mut archive = Archive::new(gz_decoder);
+
+        for mut entry in archive.entries().unwrap().flatten() {
+            if entry
+                .path()
+                .is_ok_and(|path| path.file_name() == Some(OsStr::new(self.name)))
+            {
+                let destination_path = destination_directory.join(self.name);
+                let mut output_file = self.create_binary_file(&destination_path);
+                io::copy(&mut entry, &mut output_file).unwrap();
+                set_executable(&output_file);
+                return;
+            }
+        }
+
+        panic!("Failed to find `{}` in downloaded archive", self.name);
+    }
+
+    /// Extract a Windows executable from a `.zip` archive.
+    fn extract_zip(&self, archive_bytes: &[u8], destination_directory: &Path) {
+        let cursor = Cursor::new(archive_bytes);
+        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+        let executable_name = format!("{}.exe", self.name);
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).unwrap();
+            if file
+                .enclosed_name()
+                .is_some_and(|p| p.file_name() == Some(OsStr::new(&executable_name)))
+            {
+                let destination_path = destination_directory.join(&executable_name);
+                let mut output_file = self.create_binary_file(&destination_path);
+                io::copy(&mut file, &mut output_file).unwrap();
+                return;
+            }
+        }
+
+        panic!("Failed to find `{executable_name}` in downloaded archive");
+    }
+
+    /// Create the destination executable file.
+    fn create_binary_file(&self, destination_path: &Path) -> File {
+        File::create(destination_path)
+            .map_err(|e| {
+                format!(
+                    "Cannot create `{}` at destination={}: {}",
+                    self.name,
+                    destination_path.display(),
+                    e
+                )
+            })
+            .unwrap()
+    }
+
+    /// Sign macOS aarch64 binaries ad hoc if they are not already accepted by `codesign -v`.
+    fn codesign_on_macos_aarch64(&self, _destination_path: &Path) {
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        {
+            use std::process::Command;
+
+            let signing_status = Command::new("codesign")
+                .arg("-v")
+                .arg(_destination_path)
+                .status()
+                .map_err(|e| format!("Failed to run `codesign -v` on `{}`: {}", self.name, e))
+                .unwrap();
+
+            if !signing_status.success() {
+                Command::new("codesign")
+                    .arg("-s")
+                    .arg("-")
+                    .arg(_destination_path)
+                    .status()
+                    .map_err(|e| format!("Failed to run `codesign -s` on `{}`: {}", self.name, e))
+                    .unwrap();
+            }
+        }
+    }
+}
+
 /// Downloads and verifies the `bitcoind` binary based on the enabled version feature.
-///
-/// Binaries are verified agains the corresponding SHA256SUM under `sha256/bitcoind`.
-///
-/// If the binary was previously dowloaded and exists under `target/bin/bitcoin`, it won't download again.
 mod bitcoind {
-    use std::env;
-    use std::ffi::OsStr;
-    use std::fs;
-    use std::fs::File;
-    use std::io;
-    use std::io::BufRead;
-    use std::io::BufReader;
-    use std::io::Cursor;
-    use std::path::PathBuf;
-
-    use std::str::FromStr;
-
-    use bitcoin_hashes::sha256;
-    use flate2::read::GzDecoder;
-    use tar::Archive;
+    use super::Binary;
 
     include!("src/bitcoind/versions.rs");
+
+    const HALFIN_BITCOIND_PATH: &str = "HALFIN_BITCOIND_PATH";
 
     /// Return the platform-specific tarball filename for this version of `bitcoind`.
     ///
@@ -69,38 +364,6 @@ mod bitcoind {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Look up the expected SHA256 hash for `filename` from the bundled `SHA256SUMS` file.
-    ///
-    /// Panics if the filename is not found in the checksum file.
-    #[allow(clippy::lines_filter_map_ok)]
-    fn get_expected_sha256(bin_name: &str) -> sha256::Hash {
-        let sha256sums_filename = format!(
-            "sha256/bitcoind/bitcoin-core-{}-SHA256SUMS",
-            BITCOIND_VERSION
-        );
-        let file = File::open(&sha256sums_filename)
-            .map_err(|e| {
-                format!(
-                    "Cannot open `bitcoind` SHA256SUMS file={}: {:?}",
-                    sha256sums_filename, e
-                )
-            })
-            .unwrap();
-
-        for line in BufReader::new(file).lines().flatten() {
-            let tokens: Vec<_> = line.split("  ").collect();
-            if tokens.len() == 2 && bin_name == tokens[1] {
-                return sha256::Hash::from_str(tokens[0]).unwrap();
-            }
-        }
-
-        // Failed to get the expected SHA256SUM for the binary. Is it present in the file?
-        panic!(
-            "Failed to find SHA256SUM for binary={} at file={}",
-            bin_name, sha256sums_filename
-        );
-    }
-
     /// Download, verify, and extract the `bitcoind` binary into
     /// `<OUT_DIR>/bin/bitcoin-<VERSION>/bitcoind`, or
     /// `<HALFIN_BIN_DIR>/bitcoin-<VERSION>/bitcoind` if the
@@ -108,191 +371,30 @@ mod bitcoind {
     ///
     /// Skips the download if the binary is already cached from a previous build.
     pub(crate) fn download() {
-        const BITCOIND_DOWNLOAD_URL: &str = "https://bin.luisschwab.net";
-
-        let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
-            PathBuf::from(path)
-        } else {
-            PathBuf::from(env::var("OUT_DIR").unwrap()).join("bin")
-        };
-
-        fs::create_dir_all(&download_directory)
-            .map_err(|e| {
-                format!(
-                    "Cannot create `bitcoind` download directory at={}: {:?}",
-                    download_directory.display(),
-                    e
-                )
-            })
-            .unwrap();
-
-        let existing_filename = download_directory
-            .join(format!("bitcoin-{}", BITCOIND_VERSION))
-            .join("bitcoind");
-
-        // Emit the binary path an an environment variable
-        // so that `get_bitcoind_path` picks it up.
-        println!(
-            "cargo:rustc-env=HALFIN_BITCOIND_PATH={}",
-            existing_filename.display()
-        );
-
-        let download_filename = get_download_filename();
-        let expected_hash = get_expected_sha256(&download_filename);
-
-        if existing_filename.exists() {
-            return;
+        Binary {
+            name: "bitcoind",
+            version: BITCOIND_VERSION,
+            env_var: HALFIN_BITCOIND_PATH,
+            destination_dir_prefix: "bitcoin",
+            checksum_file: super::PathBuf::from(format!(
+                "sha256/bitcoind/bitcoin-core-{}-SHA256SUMS",
+                BITCOIND_VERSION
+            )),
+            remote_path: super::PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
+            archive_filename: super::PathBuf::from(get_download_filename()),
+            codesign_on_macos_aarch64: true,
         }
-
-        let bitcoind_tarball_bytes = {
-            let download_url = format!(
-                "{}/bitcoin-core-{}/{}",
-                BITCOIND_DOWNLOAD_URL, BITCOIND_VERSION, download_filename
-            );
-
-            println!(
-                "cargo:warning=Downloading `bitcoind` @ v{} from `{}`",
-                BITCOIND_VERSION, download_url,
-            );
-
-            let response = bitreq::get(&download_url)
-                .send()
-                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
-                .unwrap();
-
-            assert_eq!(
-                response.status_code, 200,
-                "Failed to GET {}: {} {}",
-                download_url, response.status_code, response.reason_phrase
-            );
-
-            response.as_bytes().to_vec()
-        };
-
-        let bitcoind_tarball_hash = sha256::Hash::hash(&bitcoind_tarball_bytes);
-        assert_eq!(
-            bitcoind_tarball_hash, expected_hash,
-            "Downloaded bitcoind binary hash does not match expected hash: downloaded={} != expected={}",
-            bitcoind_tarball_hash, expected_hash
-        );
-
-        let destination_directory =
-            download_directory.join(format!("bitcoin-{}", BITCOIND_VERSION));
-        fs::create_dir_all(&destination_directory)
-            .map_err(|e| {
-                format!(
-                    "Cannot create destination directory={}: {}",
-                    destination_directory.display(),
-                    e
-                )
-            })
-            .unwrap();
-
-        if download_filename.ends_with(".tar.gz") {
-            let gz_decoder = GzDecoder::new(&bitcoind_tarball_bytes[..]);
-            let mut archive = Archive::new(gz_decoder);
-
-            for mut entry in archive.entries().unwrap().flatten() {
-                if let Ok(path) = entry.path() {
-                    if path.file_name() == Some(OsStr::new("bitcoind")) {
-                        let destination_path = destination_directory.join("bitcoind");
-                        let mut output_file = File::create(&destination_path)
-                            .map_err(|e| {
-                                format!(
-                                    "Cannot create `bitcoind` at destination={}: {}",
-                                    destination_path.display(),
-                                    e
-                                )
-                            })
-                            .unwrap();
-
-                        io::copy(&mut entry, &mut output_file).unwrap();
-
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let mut perms = output_file.metadata().unwrap().permissions();
-                            perms.set_mode(0o755);
-                            output_file.set_permissions(perms).unwrap();
-                        }
-                        break;
-                    }
-                }
-            }
-        } else if download_filename.ends_with(".zip") {
-            let cursor = Cursor::new(bitcoind_tarball_bytes);
-            let mut archive = zip::ZipArchive::new(cursor).unwrap();
-
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i).unwrap();
-                if file
-                    .enclosed_name()
-                    .is_some_and(|p| p.file_name() == Some(OsStr::new("bitcoind.exe")))
-                {
-                    let destination_path = destination_directory.join("bitcoind.exe");
-                    let mut output_file = File::create(&destination_path)
-                        .map_err(|e| {
-                            format!(
-                                "Cannot create `bitcoind.exe` at destination={}: {}",
-                                destination_path.display(),
-                                e
-                            )
-                        })
-                        .unwrap();
-
-                    io::copy(&mut file, &mut output_file).unwrap();
-                    break;
-                }
-            }
-        }
-
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        {
-            use std::process::Command;
-
-            let signing_status = Command::new("codesign")
-                .arg("-v")
-                .arg(&existing_filename)
-                .status()
-                .map_err(|e| format!("Failed to run `codesign -v` on `bitcoind`: {}", e))
-                .unwrap();
-
-            if !signing_status.success() {
-                Command::new("codesign")
-                    .arg("-s")
-                    .arg("-")
-                    .arg(&existing_filename)
-                    .status()
-                    .map_err(|e| format!("Failed to run `codesign -s` on `bitcoind`: {}", e))
-                    .unwrap();
-            }
-        }
+        .download_and_install();
     }
 }
 
 /// Downloads and verifies the `utreexod` binary based on the enabled version feature.
-///
-/// Binaries are verified agains the corresponding SHA256SUM under `sha256/utreexod`.
-///
-/// If the binary was previously dowloaded and exists under `target/bin/utreexod`, it won't download again.
 mod utreexod {
-    use std::env;
-    use std::ffi::OsStr;
-    use std::fs;
-    use std::fs::File;
-    use std::io;
-    use std::io::BufRead;
-    use std::io::BufReader;
-    use std::io::Cursor;
-    use std::path::PathBuf;
-
-    use std::str::FromStr;
-
-    use bitcoin_hashes::sha256;
-    use flate2::read::GzDecoder;
-    use tar::Archive;
+    use super::Binary;
 
     include!("src/utreexod/versions.rs");
+
+    const HALFIN_UTREEXOD_PATH: &str = "HALFIN_UTREEXOD_PATH";
 
     /// Return the platform-specific tarball filename for this version of `utreexod`.
     ///
@@ -316,229 +418,37 @@ mod utreexod {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Look up the expected SHA256 hash for `filename` from the bundled `SHA256SUMS` file.
-    ///
-    /// Panics if the filename is not found in the checksum file.
-    #[allow(clippy::lines_filter_map_ok)]
-    fn get_expected_sha256(bin_name: &str) -> sha256::Hash {
-        let sha256sums_filename =
-            format!("sha256/utreexod/utreexod-{}-SHA256SUMS", UTREEXOD_VERSION);
-
-        let file = File::open(&sha256sums_filename)
-            .map_err(|e| {
-                format!(
-                    "Cannot open `utreexod` SHA256SUMS file={}: {:?}",
-                    sha256sums_filename, e
-                )
-            })
-            .unwrap();
-
-        for line in BufReader::new(file).lines().flatten() {
-            let tokens: Vec<_> = line.split("  ").collect();
-            if tokens.len() == 2 && bin_name == tokens[1] {
-                return sha256::Hash::from_str(tokens[0]).unwrap();
-            }
-        }
-
-        // Failed to get the expected SHA256SUM for the binary. Is it present in the file?
-        panic!(
-            "Failed to find SHA256SUM for utreexod binary={} at path={}",
-            bin_name, sha256sums_filename
-        );
-    }
-
     /// Download, verify, and extract the `utreexod` binary into
     /// `<OUT_DIR>/bin/utreexod-<VERSION>/utreexod`, or
     /// `<HALFIN_BIN_DIR>/utreexod-<VERSION>/utreexod` if the
-    /// the `HALFIN_BIN_DIR` environment variable is set.
+    /// `HALFIN_BIN_DIR` environment variable is set.
     ///
     /// Skips the download if the binary is already cached from a previous build.
     pub(crate) fn download() {
-        const UTREEXOD_DOWNLOAD_URL: &str = "https://bin.luisschwab.net";
-
-        let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
-            PathBuf::from(path)
-        } else {
-            PathBuf::from(env::var("OUT_DIR").unwrap()).join("bin")
-        };
-
-        fs::create_dir_all(&download_directory)
-            .map_err(|e| {
-                format!(
-                    "Cannot create `utreexod` download directory at={}: {:?}",
-                    download_directory.display(),
-                    e
-                )
-            })
-            .unwrap();
-
-        let existing_filename = download_directory
-            .join(format!("utreexod-{}", UTREEXOD_VERSION))
-            .join("utreexod");
-
-        // Emit the binary path an an environment variable
-        // so that `get_utreexod_path` picks it up.
-        println!(
-            "cargo:rustc-env=HALFIN_UTREEXOD_PATH={}",
-            existing_filename.display()
-        );
-
-        let download_filename = get_download_filename();
-        let expected_hash = get_expected_sha256(&download_filename);
-
-        if existing_filename.exists() {
-            return;
+        Binary {
+            name: "utreexod",
+            version: UTREEXOD_VERSION,
+            env_var: HALFIN_UTREEXOD_PATH,
+            destination_dir_prefix: "utreexod",
+            checksum_file: super::PathBuf::from(format!(
+                "sha256/utreexod/utreexod-{}-SHA256SUMS",
+                UTREEXOD_VERSION
+            )),
+            remote_path: super::PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
+            archive_filename: super::PathBuf::from(get_download_filename()),
+            codesign_on_macos_aarch64: true,
         }
-
-        let utreexod_tarball_bytes = {
-            let download_url = format!(
-                "{}/utreexod-{}/{}",
-                UTREEXOD_DOWNLOAD_URL, UTREEXOD_VERSION, download_filename
-            );
-
-            println!(
-                "cargo:warning=Downloading `utreexod` @ v{} from `{}`",
-                UTREEXOD_VERSION, download_url,
-            );
-
-            let response = bitreq::get(&download_url)
-                .send()
-                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
-                .unwrap();
-
-            assert_eq!(
-                response.status_code, 200,
-                "Failed to GET {}: {} {}",
-                download_url, response.status_code, response.reason_phrase
-            );
-
-            let utreexod_tarball = response.as_bytes().to_vec();
-
-            utreexod_tarball
-        };
-
-        let utreexod_tarball_hash = sha256::Hash::hash(&utreexod_tarball_bytes);
-        assert_eq!(
-            utreexod_tarball_hash, expected_hash,
-            "Downloaded utreexod binary hash does not match expected hash: downloaded={} != expected={}",
-            utreexod_tarball_hash, expected_hash
-        );
-
-        let destination_directory =
-            download_directory.join(format!("utreexod-{}", UTREEXOD_VERSION));
-        fs::create_dir_all(&destination_directory)
-            .map_err(|e| {
-                format!(
-                    "Cannot create destination directory={}: {}",
-                    destination_directory.display(),
-                    e
-                )
-            })
-            .unwrap();
-
-        if download_filename.ends_with(".tar.gz") {
-            let gz_decoder = GzDecoder::new(&utreexod_tarball_bytes[..]);
-            let mut archive = Archive::new(gz_decoder);
-
-            for mut entry in archive.entries().unwrap().flatten() {
-                if let Ok(path) = entry.path() {
-                    if path.file_name() == Some(OsStr::new("utreexod")) {
-                        let destination_path = destination_directory.join("utreexod");
-                        let mut outputfile = File::create(&destination_path)
-                            .map_err(|e| {
-                                format!(
-                                    "Cannot create `utreexod` at destination={}: {}",
-                                    destination_path.display(),
-                                    e
-                                )
-                            })
-                            .unwrap();
-
-                        io::copy(&mut entry, &mut outputfile).unwrap();
-
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let mut perms = outputfile.metadata().unwrap().permissions();
-                            perms.set_mode(0o755);
-                            outputfile.set_permissions(perms).unwrap();
-                        }
-                        break;
-                    }
-                }
-            }
-        } else if download_filename.ends_with(".zip") {
-            let cursor = Cursor::new(utreexod_tarball_bytes);
-            let mut archive = zip::ZipArchive::new(cursor).unwrap();
-
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i).unwrap();
-                if file
-                    .enclosed_name()
-                    .is_some_and(|p| p.file_name() == Some(OsStr::new("utreexod.exe")))
-                {
-                    let destination_path = destination_directory.join("utreexod.exe");
-                    let mut outputfile = File::create(&destination_path)
-                        .map_err(|e| {
-                            format!(
-                                "Cannot create `utreexod.exe` at destination={}: {}",
-                                destination_path.display(),
-                                e
-                            )
-                        })
-                        .unwrap();
-
-                    io::copy(&mut file, &mut outputfile).unwrap();
-                    break;
-                }
-            }
-        }
-
-        // MacOS (`arm64`) requires binaries to be code-signed locally for the OS to allow it's execution.
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        {
-            use std::process::Command;
-
-            let signing_status = Command::new("codesign")
-                .arg("-v")
-                .arg(&existing_filename)
-                .status()
-                .map_err(|e| format!("Failed to run `codesign -v` on `utreexod`: {}", e))
-                .unwrap();
-
-            if !signing_status.success() {
-                Command::new("codesign")
-                    .arg("-s")
-                    .arg("-")
-                    .arg(&existing_filename)
-                    .status()
-                    .map_err(|e| format!("Failed to run `codesign -s` on `utreexod`: {}", e))
-                    .unwrap();
-            }
-        }
+        .download_and_install();
     }
 }
 
 /// Downloads and verifies the `electrs` binary based on the enabled version feature.
 mod electrs {
-    use std::env;
-    use std::ffi::OsStr;
-    use std::fs;
-    use std::fs::File;
-    use std::io;
-    use std::io::BufRead;
-    use std::io::BufReader;
-    use std::io::Cursor;
-    use std::path::PathBuf;
-    use std::str::FromStr;
-
-    use bitcoin_hashes::sha256;
-    use flate2::read::GzDecoder;
-    use tar::Archive;
+    use super::Binary;
 
     include!("src/electrsd/versions.rs");
 
-    const ELECTRS_DOWNLOAD_URL: &str = "https://bin.luisschwab.net";
+    const HALFIN_ELECTRS_PATH: &str = "HALFIN_ELECTRS_PATH";
 
     /// Return the platform-specific archive filename for this version of `electrs`.
     ///
@@ -565,39 +475,6 @@ mod electrs {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    fn remote_dist_url() -> String {
-        format!("{}/electrs-{}", ELECTRS_DOWNLOAD_URL, ELECTRS_VERSION)
-    }
-
-    /// Look up the expected SHA256 hash for `filename` from the bundled `SHA256SUMS` file.
-    ///
-    /// Panics if the filename is not found in the checksum file.
-    #[allow(clippy::lines_filter_map_ok)]
-    fn get_expected_sha256(bin_name: &str) -> sha256::Hash {
-        let sha256sums_filename = format!("sha256/electrsd/electrs-{}-SHA256SUMS", ELECTRS_VERSION);
-
-        let file = File::open(&sha256sums_filename)
-            .map_err(|e| {
-                format!(
-                    "Cannot open `electrs` SHA256SUMS file={}: {:?}",
-                    sha256sums_filename, e
-                )
-            })
-            .unwrap();
-
-        for line in BufReader::new(file).lines().flatten() {
-            let tokens: Vec<_> = line.split("  ").collect();
-            if tokens.len() == 2 && bin_name == tokens[1] {
-                return sha256::Hash::from_str(tokens[0]).unwrap();
-            }
-        }
-
-        panic!(
-            "Failed to find SHA256SUM for electrs binary={} at path={}",
-            bin_name, sha256sums_filename
-        );
-    }
-
     /// Read, verify, and extract the `electrs` binary into
     /// `<OUT_DIR>/bin/electrs-<VERSION>/electrs`, or
     /// `<HALFIN_BIN_DIR>/electrs-<VERSION>/electrs` if the
@@ -605,142 +482,19 @@ mod electrs {
     ///
     /// Skips extraction if the binary is already cached from a previous build.
     pub(crate) fn download() {
-        let download_directory = if let Ok(path) = env::var("HALFIN_BIN_DIR") {
-            PathBuf::from(path)
-        } else {
-            PathBuf::from(env::var("OUT_DIR").unwrap()).join("bin")
-        };
-
-        fs::create_dir_all(&download_directory)
-            .map_err(|e| {
-                format!(
-                    "Cannot create `electrs` download directory at={}: {:?}",
-                    download_directory.display(),
-                    e
-                )
-            })
-            .unwrap();
-
-        let existing_filename = download_directory
-            .join(format!("electrs-{}", ELECTRS_VERSION))
-            .join("electrs");
-
-        // Emit the binary path as an environment variable
-        // so that `get_electrs_path` can pick it up.
-        println!(
-            "cargo:rustc-env=HALFIN_ELECTRS_PATH={}",
-            existing_filename.display()
-        );
-
-        let download_filename = get_download_filename();
-        let expected_hash = get_expected_sha256(&download_filename);
-
-        #[cfg(windows)]
-        let existing_file_exists = existing_filename.with_extension("exe").exists();
-        #[cfg(not(windows))]
-        let existing_file_exists = existing_filename.exists();
-
-        if existing_file_exists {
-            return;
+        Binary {
+            name: "electrs",
+            version: ELECTRS_VERSION,
+            env_var: HALFIN_ELECTRS_PATH,
+            destination_dir_prefix: "electrs",
+            checksum_file: super::PathBuf::from(format!(
+                "sha256/electrsd/electrs-{}-SHA256SUMS",
+                ELECTRS_VERSION
+            )),
+            remote_path: super::PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
+            archive_filename: super::PathBuf::from(get_download_filename()),
+            codesign_on_macos_aarch64: false,
         }
-
-        let electrs_archive_bytes = {
-            let remote_dist_url = remote_dist_url();
-            let download_url = format!("{}/{}", remote_dist_url, download_filename);
-
-            println!(
-                "cargo:warning=Downloading `electrs` @ v{} from `{}`",
-                ELECTRS_VERSION, download_url,
-            );
-
-            let response = bitreq::get(&download_url)
-                .send()
-                .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
-                .unwrap();
-
-            assert_eq!(
-                response.status_code, 200,
-                "Failed to GET {}: {} {}",
-                download_url, response.status_code, response.reason_phrase
-            );
-
-            response.as_bytes().to_vec()
-        };
-
-        let electrs_archive_hash = sha256::Hash::hash(&electrs_archive_bytes);
-        assert_eq!(
-            electrs_archive_hash, expected_hash,
-            "electrs archive hash does not match expected hash: downloaded={} != expected={}",
-            electrs_archive_hash, expected_hash
-        );
-
-        let destination_directory = download_directory.join(format!("electrs-{}", ELECTRS_VERSION));
-        fs::create_dir_all(&destination_directory)
-            .map_err(|e| {
-                format!(
-                    "Cannot create destination directory={}: {}",
-                    destination_directory.display(),
-                    e
-                )
-            })
-            .unwrap();
-
-        if download_filename.ends_with(".tar.gz") {
-            let gz_decoder = GzDecoder::new(&electrs_archive_bytes[..]);
-            let mut archive = Archive::new(gz_decoder);
-
-            for mut entry in archive.entries().unwrap().flatten() {
-                if let Ok(path) = entry.path() {
-                    if path.file_name() == Some(OsStr::new("electrs")) {
-                        let destination_path = destination_directory.join("electrs");
-                        let mut output_file = File::create(&destination_path)
-                            .map_err(|e| {
-                                format!(
-                                    "Cannot create `electrs` at destination={}: {}",
-                                    destination_path.display(),
-                                    e
-                                )
-                            })
-                            .unwrap();
-
-                        io::copy(&mut entry, &mut output_file).unwrap();
-
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let mut perms = output_file.metadata().unwrap().permissions();
-                            perms.set_mode(0o755);
-                            output_file.set_permissions(perms).unwrap();
-                        }
-                        break;
-                    }
-                }
-            }
-        } else if download_filename.ends_with(".zip") {
-            let cursor = Cursor::new(electrs_archive_bytes);
-            let mut archive = zip::ZipArchive::new(cursor).unwrap();
-
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i).unwrap();
-                if file
-                    .enclosed_name()
-                    .is_some_and(|p| p.file_name() == Some(OsStr::new("electrs.exe")))
-                {
-                    let destination_path = destination_directory.join("electrs.exe");
-                    let mut output_file = File::create(&destination_path)
-                        .map_err(|e| {
-                            format!(
-                                "Cannot create `electrs.exe` at destination={}: {}",
-                                destination_path.display(),
-                                e
-                            )
-                        })
-                        .unwrap();
-
-                    io::copy(&mut file, &mut output_file).unwrap();
-                    break;
-                }
-            }
-        }
+        .download_and_install();
     }
 }
