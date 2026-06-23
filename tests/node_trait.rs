@@ -2,7 +2,7 @@
 
 //! Integration tests for [`Node`] trait.
 
-#![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_2"))]
+#![cfg(all(feature = "bitcoind", feature = "utreexod"))]
 
 use halfin::Node;
 use halfin::bitcoind::BitcoinD;

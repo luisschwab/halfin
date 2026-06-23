@@ -12,10 +12,10 @@ edition = "2024"
 rust-version = "1.85.0" # MSRV
 
 [features]
-default = ["bitcoind_31_0", "utreexod_0_5_2"]
-bitcoind_31_0 = []
-utreexod_0_5_2 = []
-electrs_0_11_1 = ["bitcoind_31_0", "dep:electrum-client"]
+default = ["bitcoind", "utreexod"]
+bitcoind = []
+utreexod = []
+electrs = ["bitcoind", "dep:electrum-client"]
 
 [dependencies]
 corepc-client = { version = "=0.16.0", features = ["client-sync"] }
@@ -57,13 +57,13 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.rbmt.test]
 exclude_features = [
-    "bitcoind_31_0",
-    "utreexod_0_5_2",
-    "electrs_0_11_1",
+    "bitcoind",
+    "utreexod",
+    "electrs",
 ]
 exact_features = [
-    ["bitcoind_31_0", "utreexod_0_5_2"],
-    ["bitcoind_31_0", "electrs_0_11_1"],
+    ["bitcoind", "utreexod"],
+    ["bitcoind", "electrs"],
 ]
 
 # Allow packages of different versions in the dependency tree.

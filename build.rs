@@ -6,18 +6,18 @@ fn main() {
         return;
     }
 
-    // Skip if the `bitcoind_31_0` feature is not enabled.
-    if cfg!(feature = "bitcoind_31_0") {
+    // Skip if the `bitcoind` feature is not enabled.
+    if cfg!(feature = "bitcoind") {
         // Check if `bitcoind` is cached, and download it if not.
         bitcoind::download();
     }
-    // Skip if the `utreeoxd_0_5_2` feature is not enabled.
-    if cfg!(feature = "utreexod_0_5_2") {
+    // Skip if the `utreexod` feature is not enabled.
+    if cfg!(feature = "utreexod") {
         // Check if `utreexod` is cached, and download it if not.
         utreexod::download();
     }
-    // Skip if the `electrs_0_11_1` feature is not enabled.
-    if cfg!(feature = "electrs_0_11_1") {
+    // Skip if the `electrs` feature is not enabled.
+    if cfg!(feature = "electrs") {
         // Check if `electrs` is cached, and download it if not.
         electrs::download();
     }

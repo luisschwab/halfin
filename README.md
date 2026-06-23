@@ -24,13 +24,13 @@ and [`electrsd`](https://crates.io/crates/electrsd) crates.
 
 ## Supported Implementations
 
-| Implementation | Version   | Feature Flag     | Default Feature |
-|----------------|-----------|------------------|-----------------|
-| `bitcoind`     | `v31.0`   | `bitcoind_31_0`  | Yes             |
-|                |           |                  |                 |
-| `electrs`      | `v0.11.1` | `electrs_0_11_1` | No              |
-|                |           |                  |                 |
-| `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
+| Implementation | Version   | Feature Flag | Default Feature |
+|----------------|-----------|--------------|-----------------|
+| `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |
+|                |           |              |                 |
+| `electrs`      | `v0.11.1` | `electrs`    | No              |
+|                |           |              |                 |
+| `utreexod`     | `v0.5.2`  | `utreexod`   | Yes             |
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 

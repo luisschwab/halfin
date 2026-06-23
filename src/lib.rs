@@ -11,31 +11,28 @@
 //!
 //! | Implementation | Version   | Feature Flag     | Default Feature |
 //! |----------------|-----------|------------------|-----------------|
-//! | [`bitcoind`]   | `v31.0`   | `bitcoind_31_0`  | Yes             |
+//! | [`bitcoind`]   | `v31.0`   | `bitcoind`       | Yes             |
 //! |                |           |                  |                 |
-//! | [`electrs`]    | `v0.11.1` | `electrs_0_11_1` | No              |
+//! | [`electrs`]    | `v0.11.1` | `electrs`        | No              |
 //! |                |           |                  |                 |
-//! | [`utreexod`]   | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
+//! | [`utreexod`]   | `v0.5.2`  | `utreexod`       | Yes             |
 //!
 //! ## Example
 //!
-//! ```rust,no_run
-//! # #[cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_2"))]
-//! # {
-//!     use halfin::bitcoind::BitcoinD;
-//!     use halfin::connect;
-//!     use halfin::utreexod::UtreexoD;
+//! ```rust,ignore
+//! use halfin::bitcoind::BitcoinD;
+//! use halfin::connect;
+//! use halfin::utreexod::UtreexoD;
 //!
-//!     let bitcoind = BitcoinD::new().unwrap();
-//!     bitcoind.generate(10).unwrap();
-//!     assert_eq!(bitcoind.get_chain_tip().unwrap(), 10);
+//! let bitcoind = BitcoinD::new().unwrap();
+//! bitcoind.generate(10).unwrap();
+//! assert_eq!(bitcoind.get_chain_tip().unwrap(), 10);
 //!
-//!     let utreexod = UtreexoD::new().unwrap();
-//!     utreexod.generate(10).unwrap();
-//!     assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
+//! let utreexod = UtreexoD::new().unwrap();
+//! utreexod.generate(10).unwrap();
+//! assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
 //!
-//!     connect(&bitcoind, &utreexod).unwrap();
-//! # }
+//! connect(&bitcoind, &utreexod).unwrap();
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
@@ -47,11 +44,7 @@ use core::fmt;
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
 use corepc_client::bitcoin::BlockHash;
-#[cfg(any(
-    feature = "bitcoind_31_0",
-    feature = "utreexod_0_5_2",
-    feature = "electrs_0_11_1"
-))]
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::io::{BufRead, BufReader, Read};
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -61,30 +54,26 @@ use std::time::Instant;
 use tempfile::TempDir;
 use tracing::debug;
 use tracing::info;
-#[cfg(any(
-    feature = "bitcoind_31_0",
-    feature = "utreexod_0_5_2",
-    feature = "electrs_0_11_1"
-))]
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use tracing::trace;
 
 pub use serde_json;
 
 #[allow(unused)]
-#[cfg(feature = "bitcoind_31_0")]
+#[cfg(feature = "bitcoind")]
 pub(crate) use bitcoind::BitcoinD;
 #[allow(unused)]
-#[cfg(feature = "electrs_0_11_1")]
+#[cfg(feature = "electrs")]
 pub(crate) use electrsd::ElectrsD;
 #[allow(unused)]
-#[cfg(feature = "utreexod_0_5_2")]
+#[cfg(feature = "utreexod")]
 pub(crate) use utreexod::UtreexoD;
 
-#[cfg(feature = "bitcoind_31_0")]
+#[cfg(feature = "bitcoind")]
 pub mod bitcoind;
-#[cfg(feature = "electrs_0_11_1")]
+#[cfg(feature = "electrs")]
 pub mod electrsd;
-#[cfg(feature = "utreexod_0_5_2")]
+#[cfg(feature = "utreexod")]
 pub mod utreexod;
 
 /// IPv4 localhost address.
@@ -313,11 +302,7 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
 /// Used to pipe a child [`BitcoinD`]/[`UtreexoD`]/[`ElectrsD`] process `stdout`/`stderr`
 /// into [`tracing`]. The thread exits on EOF, which happens when the process
 /// dies and its pipe is closed.
-#[cfg(any(
-    feature = "bitcoind_31_0",
-    feature = "utreexod_0_5_2",
-    feature = "electrs_0_11_1"
-))]
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
     thread::spawn(move || {
         let mut lines = BufReader::new(reader).lines();
@@ -397,19 +382,19 @@ pub enum Error {
     BothDirsSpecified,
 
     /// [`BitcoinD`] is unresponsive (it's probably not running).
-    #[cfg(feature = "bitcoind_31_0")]
+    #[cfg(feature = "bitcoind")]
     UnresponsiveBitcoinD(corepc_client::client_sync::Error),
 
     /// [`UtreexoD`] is unresponsive (it's probably not running).
-    #[cfg(feature = "utreexod_0_5_2")]
+    #[cfg(feature = "utreexod")]
     UnresponsiveUtreexoD(corepc_client::client_sync::Error),
 
     /// [`electrsd::ElectrsD`] is unresponsive (it's probably not running).
-    #[cfg(feature = "electrs_0_11_1")]
+    #[cfg(feature = "electrs")]
     UnresponsiveElectrsD(electrum_client::Error),
 
     /// Timed out whilst waiting for [`electrsd::ElectrsD`] to index expected data.
-    #[cfg(feature = "electrs_0_11_1")]
+    #[cfg(feature = "electrs")]
     ElectrsDIndexTimeout((String, Duration)),
 
     /// Timed out whilst waiting for the cookie file to be generated.
@@ -444,13 +429,13 @@ impl fmt::Display for Error {
             JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
             PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
             BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
-            #[cfg(feature = "bitcoind_31_0")]
+            #[cfg(feature = "bitcoind")]
             UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
-            #[cfg(feature = "utreexod_0_5_2")]
+            #[cfg(feature = "utreexod")]
             UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
-            #[cfg(feature = "electrs_0_11_1")]
+            #[cfg(feature = "electrs")]
             UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
-            #[cfg(feature = "electrs_0_11_1")]
+            #[cfg(feature = "electrs")]
             ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
             CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),

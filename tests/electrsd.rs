@@ -2,7 +2,7 @@
 
 //! # Integration Tests between [`ElectrsD`] and [`BitcoinD`].
 
-#![cfg(all(feature = "bitcoind_31_0", feature = "electrs_0_11_1"))]
+#![cfg(all(feature = "bitcoind", feature = "electrs"))]
 
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;

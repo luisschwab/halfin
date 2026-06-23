@@ -74,5 +74,5 @@ jobs:
                   TEMPDIR_ROOT: ${{ github.workspace }}\target\test-tmp
               run: >
                   New-Item -ItemType Directory -Force $env:TEMPDIR_ROOT;
-                  cargo test --target ${{ matrix.target }} --no-fail-fast --no-default-features --features bitcoind_31_0,utreexod_0_5_2
-                  && cargo test --target ${{ matrix.target }} --no-fail-fast --no-default-features --features bitcoind_31_0,electrs_0_11_1
+                  cargo test --target ${{ matrix.target }} --no-fail-fast --no-default-features --features bitcoind,utreexod
+                  && cargo test --target ${{ matrix.target }} --no-fail-fast --no-default-features --features bitcoind,electrs

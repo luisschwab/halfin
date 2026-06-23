@@ -8,7 +8,7 @@
 //! cargo test --test logging -- --nocapture
 //! ```
 
-#![cfg(all(feature = "bitcoind_31_0", feature = "utreexod_0_5_2"))]
+#![cfg(all(feature = "bitcoind", feature = "utreexod"))]
 
 use std::thread;
 use std::time::Duration;

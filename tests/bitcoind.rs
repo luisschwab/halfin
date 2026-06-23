@@ -2,7 +2,7 @@
 
 //! # Integration Tests for [`BitcoinD`].
 
-#![cfg(feature = "bitcoind_31_0")]
+#![cfg(feature = "bitcoind")]
 
 use corepc_client::bitcoin::Amount;
 use halfin::bitcoind::BitcoinD;
