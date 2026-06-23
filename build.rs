@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use std::collections::hash_map::RandomState;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
+use std::hash::BuildHasher;
 use std::io;
 use std::io::BufRead;
 use std::io::BufReader;
@@ -13,10 +15,15 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use bitcoin_hashes::sha256;
+use bitreq::Method;
+use bitreq::Request;
+use bitreq::Url;
 use flate2::read::GzDecoder;
 use tar::Archive;
 
-const DOWNLOAD_BASE_URL: &str = "https://bin.luisschwab.net";
+const BIN_DOWNLOAD_TIMEOUT: u64 = 60;
+const BIN_DOWNLOAD_MIRRORS: &[&str] =
+    &["https://bin.luisschwab.net", "https://bin.lab.vinteum.org"];
 
 fn main() {
     // Skip downloading when docs.rs is building documentation
@@ -74,7 +81,7 @@ struct Binary {
     destination_dir_prefix: &'static str,
     /// Bundled SHA256SUMS file for this binary's archives.
     checksum_file: PathBuf,
-    /// Remote directory under [`DOWNLOAD_BASE_URL`].
+    /// Remote directory path for the binary.
     remote_path: PathBuf,
     /// Platform-specific archive selected by the binary module.
     archive_filename: PathBuf,
@@ -106,14 +113,21 @@ impl Binary {
         }
     }
 
-    /// Return the full URL for this binary's selected platform archive.
-    fn download_url(&self, archive_filename: &str) -> String {
-        format!(
+    /// Return the URL for this binary's selected platform archive on the selected mirror.
+    fn download_url(&self, base_url: &str, archive_filename: &str) -> Url {
+        Url::parse(&format!(
             "{}/{}/{}",
-            DOWNLOAD_BASE_URL,
+            base_url,
             self.remote_path.display(),
             archive_filename
-        )
+        ))
+        .unwrap()
+    }
+
+    /// Randomly select a mirror from [`BIN_DOWNLOAD_MIRRORS`].
+    fn random_download_base_url_index(&self) -> usize {
+        RandomState::new().hash_one((self.name, self.version, &self.archive_filename)) as usize
+            % BIN_DOWNLOAD_MIRRORS.len()
     }
 
     /// Download, verify, and extract this binary.
@@ -147,13 +161,18 @@ impl Binary {
 
         let expected_hash = self.expected_sha256();
 
-        if self.existing_path(&download_directory).exists() {
+        let existing_path = self.existing_path(&download_directory);
+        if existing_path.exists() {
+            println!(
+                "cargo:warning=Found cached `{}` @ v{} at `{}`, skipping download...",
+                self.name,
+                self.version,
+                existing_path.display(),
+            );
             return;
         }
 
-        let archive_filename = self.archive_filename.to_string_lossy();
-        let download_url = self.download_url(&archive_filename);
-        let archive_bytes = self.download_archive(&download_url);
+        let archive_bytes = self.download_archive();
         self.verify_archive_hash(&archive_bytes, expected_hash);
         self.extract_archive(&archive_bytes, &download_directory);
 
@@ -195,24 +214,48 @@ impl Binary {
     }
 
     /// Download this binary's archive and return its raw bytes.
-    fn download_archive(&self, download_url: &str) -> Vec<u8> {
-        println!(
-            "cargo:warning=Downloading `{}` @ v{} from `{}`",
-            self.name, self.version, download_url,
+    fn download_archive(&self) -> Vec<u8> {
+        let mut last_error = None;
+        let start = self.random_download_base_url_index();
+        let archive_filename = self.archive_filename.to_string_lossy();
+
+        for offset in 0..BIN_DOWNLOAD_MIRRORS.len() {
+            let base_url = BIN_DOWNLOAD_MIRRORS[(start + offset) % BIN_DOWNLOAD_MIRRORS.len()];
+            let download_url: Url = self.download_url(base_url, &archive_filename);
+
+            println!(
+                "cargo:warning=Downloading `{}` @ v{} from `{}`",
+                self.name, self.version, download_url,
+            );
+
+            let response = Request::new(Method::Get, download_url.as_str())
+                .with_timeout(BIN_DOWNLOAD_TIMEOUT)
+                .send();
+
+            match response {
+                Ok(response) if response.status_code == 200 => {
+                    return response.as_bytes().to_vec();
+                }
+                Ok(response) => {
+                    last_error = Some(format!(
+                        "Failed to GET `{}`: {} {}",
+                        download_url.as_str(),
+                        response.status_code,
+                        response.reason_phrase
+                    ));
+                }
+                Err(err) => {
+                    last_error = Some(format!("Failed to GET `{}`: {:?}", download_url, err));
+                }
+            }
+        }
+
+        panic!(
+            "Failed to download `{}` from all mirrors={:?}: {}",
+            self.name,
+            BIN_DOWNLOAD_MIRRORS,
+            last_error.unwrap_or_else(|| "unknown error".to_string())
         );
-
-        let response = bitreq::get(download_url)
-            .send()
-            .map_err(|e| format!("Failed to GET {}: {:?}", download_url, e))
-            .unwrap();
-
-        assert_eq!(
-            response.status_code, 200,
-            "Failed to GET {}: {} {}",
-            download_url, response.status_code, response.reason_phrase
-        );
-
-        response.as_bytes().to_vec()
     }
 
     /// Verify downloaded archive bytes against the expected SHA256 hash.
@@ -337,6 +380,7 @@ impl Binary {
 /// Downloads and verifies the `bitcoind` binary based on the enabled version feature.
 mod bitcoind {
     use super::Binary;
+    use super::PathBuf;
 
     include!("src/bitcoind/versions.rs");
 
@@ -376,12 +420,12 @@ mod bitcoind {
             version: BITCOIND_VERSION,
             env_var: HALFIN_BITCOIND_PATH,
             destination_dir_prefix: "bitcoin",
-            checksum_file: super::PathBuf::from(format!(
+            checksum_file: PathBuf::from(format!(
                 "sha256/bitcoind/bitcoin-core-{}-SHA256SUMS",
                 BITCOIND_VERSION
             )),
-            remote_path: super::PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
-            archive_filename: super::PathBuf::from(get_download_filename()),
+            remote_path: PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
+            archive_filename: PathBuf::from(get_download_filename()),
             codesign_on_macos_aarch64: true,
         }
         .download_and_install();
@@ -391,6 +435,7 @@ mod bitcoind {
 /// Downloads and verifies the `utreexod` binary based on the enabled version feature.
 mod utreexod {
     use super::Binary;
+    use super::PathBuf;
 
     include!("src/utreexod/versions.rs");
 
@@ -430,12 +475,12 @@ mod utreexod {
             version: UTREEXOD_VERSION,
             env_var: HALFIN_UTREEXOD_PATH,
             destination_dir_prefix: "utreexod",
-            checksum_file: super::PathBuf::from(format!(
+            checksum_file: PathBuf::from(format!(
                 "sha256/utreexod/utreexod-{}-SHA256SUMS",
                 UTREEXOD_VERSION
             )),
-            remote_path: super::PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
-            archive_filename: super::PathBuf::from(get_download_filename()),
+            remote_path: PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
+            archive_filename: PathBuf::from(get_download_filename()),
             codesign_on_macos_aarch64: true,
         }
         .download_and_install();
@@ -445,6 +490,7 @@ mod utreexod {
 /// Downloads and verifies the `electrs` binary based on the enabled version feature.
 mod electrs {
     use super::Binary;
+    use super::PathBuf;
 
     include!("src/electrsd/versions.rs");
 
@@ -487,12 +533,12 @@ mod electrs {
             version: ELECTRS_VERSION,
             env_var: HALFIN_ELECTRS_PATH,
             destination_dir_prefix: "electrs",
-            checksum_file: super::PathBuf::from(format!(
+            checksum_file: PathBuf::from(format!(
                 "sha256/electrsd/electrs-{}-SHA256SUMS",
                 ELECTRS_VERSION
             )),
-            remote_path: super::PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
-            archive_filename: super::PathBuf::from(get_download_filename()),
+            remote_path: PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
+            archive_filename: PathBuf::from(get_download_filename()),
             codesign_on_macos_aarch64: false,
         }
         .download_and_install();

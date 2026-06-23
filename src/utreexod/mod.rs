@@ -173,7 +173,7 @@ pub struct UtreexoD {
 impl Node for UtreexoD {
     fn get_name() -> &'static str { "UtreexoD" }
 
-    fn get_bin_name() -> &'static str { "utreexod_v_0_5_2" }
+    fn get_bin_name() -> &'static str { "utreexod_v_0_6_0" }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 

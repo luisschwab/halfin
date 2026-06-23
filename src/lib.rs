@@ -15,7 +15,7 @@
 //! |                |           |                  |                 |
 //! | [`electrs`]    | `v0.11.1` | `electrs`        | No              |
 //! |                |           |                  |                 |
-//! | [`utreexod`]   | `v0.5.2`  | `utreexod`       | Yes             |
+//! | [`utreexod`]   | `v0.6.0`  | `utreexod`       | Yes             |
 //!
 //! ## Example
 //!
