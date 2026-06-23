@@ -25,7 +25,7 @@ and [`electrsd`](https://crates.io/crates/electrsd) crates.
 ## Supported Implementations
 
 | Implementation | Version   | Feature Flag     | Default Feature |
-|----------------|-----------|----------------- | --------------- |
+|----------------|-----------|------------------|-----------------|
 | `bitcoind`     | `v31.0`   | `bitcoind_31_0`  | Yes             |
 |                |           |                  |                 |
 | `electrs`      | `v0.11.1` | `electrs_0_11_1` | No              |
@@ -84,7 +84,7 @@ let utreexod = UtreexoD::new().unwrap();
 utreexod.generate(100).unwrap();
 assert_eq!(utreexod.get_chain_tip().unwrap(), 100);
 
-// Raw call an unimplemented RPC
+// Perform a raw RPC call
 let res = utreexod.call("uptime", &[]).unwrap();
 ```
 
