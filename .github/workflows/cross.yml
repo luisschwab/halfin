@@ -66,7 +66,7 @@ jobs:
 
             - name: Run Tests for ${{ matrix.target }} Target
               if: runner.os != 'Windows'
-              run: cargo rbmt test --toolchain stable --lock-file recent -- --target ${{ matrix.target }} --no-fail-fast
+              run: cargo rbmt test --toolchain stable --lockfile recent -- --target ${{ matrix.target }}
 
             - name: Run Tests for ${{ matrix.target }} Target
               if: runner.os == 'Windows'

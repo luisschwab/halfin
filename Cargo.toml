@@ -44,41 +44,22 @@ path = "contrib/compile_electrs/build.rs"
 test = false
 bench = false
 
-[lints.clippy]
-let-and-return = "allow"
-
-[package.metadata.rbmt.toolchains]
-stable = "1.96.0"
-nightly = "nightly-2026-06-16"
-
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[package.metadata.rbmt.toolchains]
+stable = "1.96.0"
+nightly = "nightly-2026-06-23"
+
 [package.metadata.rbmt.test]
-exclude_features = [
-    "bitcoind",
-    "utreexod",
-    "electrs",
-]
-exact_features = [
-    ["bitcoind", "utreexod"],
-    ["bitcoind", "electrs"],
-    ["bitcoind", "electrs", "utreexod"],
-]
+sample_strategy = "all"
 
 # Allow packages of different versions in the dependency tree.
 [package.metadata.rbmt.lint]
 allowed_duplicates = [
-    "anyhow",
     "base64",
-    "bitcoin-internals",
-    "bitcoin_hashes",
-    "bitreq",
-    "hex-conservative",
-    "libc",
-    "memchr",
-    "once_cell",
-    "rustix",
-    "windows-sys"
 ]
+
+[lints.clippy]
+let-and-return = "allow"

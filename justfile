@@ -54,9 +54,9 @@ lock:
 [doc: "Run tests with relevant toolchain and lockfile combinations"]
 test:
     @just lock
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lock-file recent
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lock-file minimal
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lock-file minimal
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile recent
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
 
 [doc: "Install and/or Update `cargo-rbmt` and Stable and Nightly toolchains"]
 toolchains:
