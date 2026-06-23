@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Add [`bin.lab.vinteum.org`](https://bin.lab.vinteum.org) binary download mirror
 * Refactor `build.rs`
 * Drop version suffix from feature names
 * Lock modules behind the respective feature
