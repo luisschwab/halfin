@@ -15,11 +15,11 @@ rust-version = "1.85.0" # MSRV
 default = ["bitcoind_31_0", "utreexod_0_5_2"]
 bitcoind_31_0 = []
 utreexod_0_5_2 = []
-electrs_0_11_1 = []
+electrs_0_11_1 = ["bitcoind_31_0", "dep:electrum-client"]
 
 [dependencies]
 corepc-client = { version = "=0.16.0", features = ["client-sync"] }
-electrum-client = { version = "=0.25.0", default-features = false }
+electrum-client = { version = "=0.25.0", default-features = false, optional = true }
 tempfile = { version = "=3.27.0", default-features = false }
 serde_json = { version = "=1.0.150", default-features = false }
 tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
