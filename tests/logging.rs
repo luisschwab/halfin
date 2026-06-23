@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Integration test that exercises the `tracing` logging for both [`BitcoinD`]
-//! and [`UtreexoD`]: halfin's own `debug!` instrumentation as well as each
-//! node's stdout/stderr piped in as `trace!` events.
+//! Integration test that exercises `tracing` logging for node and indexer
+//! processes: halfin's own `debug!` instrumentation as well as each process's
+//! `stdout` & `stderr` piped in as `trace!` events.
 //!
 //! ```sh
 //! cargo test --test logging -- --nocapture
 //! ```
 
-#![cfg(all(feature = "bitcoind", feature = "utreexod"))]
+#![cfg(all(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 
 use std::thread;
 use std::time::Duration;
 
 use halfin::bitcoind::BitcoinD;
 use halfin::connect;
+use halfin::electrsd::ElectrsD;
 use halfin::utreexod::UtreexoD;
 use tracing::Level;
 
@@ -35,6 +36,10 @@ fn test_logging_all() {
     utreexod.generate(2).unwrap();
 
     connect(&bitcoind, &utreexod).unwrap();
+
+    let electrsd = ElectrsD::new(&bitcoind).unwrap();
+    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    electrsd.trigger().unwrap();
 
     thread::sleep(Duration::from_millis(500));
 }

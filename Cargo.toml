@@ -64,6 +64,7 @@ exclude_features = [
 exact_features = [
     ["bitcoind", "utreexod"],
     ["bitcoind", "electrs"],
+    ["bitcoind", "electrs", "utreexod"],
 ]
 
 # Allow packages of different versions in the dependency tree.
