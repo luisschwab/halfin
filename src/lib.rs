@@ -10,18 +10,18 @@
 //! ## Supported Implementations
 //!
 //! | Implementation | Version   | Feature Flag     | Default Feature |
-//! |----------------|-----------|----------------- | --------------- |
-//! | `bitcoind`     | `v31.0`   | `bitcoind_31_0`  | Yes             |
+//! |----------------|-----------|------------------|-----------------|
+//! | [`bitcoind`]   | `v31.0`   | `bitcoind`       | Yes             |
 //! |                |           |                  |                 |
-//! | `electrs`      | `v0.11.1` | `electrs_0_11_1` | No              |
+//! | [`electrs`]    | `v0.11.1` | `electrs`        | No              |
 //! |                |           |                  |                 |
-//! | `utreexod`     | `v0.5.2`  | `utreexod_0_5_2` | Yes             |
+//! | [`utreexod`]   | `v0.5.2`  | `utreexod`       | Yes             |
 //!
 //! ## Example
 //!
-//! ```rust,no_run
-//! use halfin::connect;
+//! ```rust,ignore
 //! use halfin::bitcoind::BitcoinD;
+//! use halfin::connect;
 //! use halfin::utreexod::UtreexoD;
 //!
 //! let bitcoind = BitcoinD::new().unwrap();
@@ -44,9 +44,8 @@ use core::fmt;
 use core::net::Ipv4Addr;
 use core::net::SocketAddr;
 use corepc_client::bitcoin::BlockHash;
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::Read;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
+use std::io::{BufRead, BufReader, Read};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::thread;
@@ -54,40 +53,48 @@ use std::time::Duration;
 use std::time::Instant;
 use tempfile::TempDir;
 use tracing::debug;
+use tracing::info;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use tracing::trace;
 
 pub use serde_json;
 
 #[allow(unused)]
+#[cfg(feature = "bitcoind")]
 pub(crate) use bitcoind::BitcoinD;
 #[allow(unused)]
+#[cfg(feature = "electrs")]
 pub(crate) use electrsd::ElectrsD;
 #[allow(unused)]
+#[cfg(feature = "utreexod")]
 pub(crate) use utreexod::UtreexoD;
 
+#[cfg(feature = "bitcoind")]
 pub mod bitcoind;
+#[cfg(feature = "electrs")]
 pub mod electrsd;
+#[cfg(feature = "utreexod")]
 pub mod utreexod;
 
-/// The IPv4 localhost address.
+/// IPv4 localhost address.
 const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
-/// The maximum number of attempts at instantiating a [`BitcoinD`]/[`UtreexoD`]/[`ElectrsD`].
+/// Maximum number of attempts at instantiating a [`Node`] process.
 pub const NODE_BUILDING_ATTEMPTS: u8 = 5;
 
-/// The [`Duration`] between attempts at instantiating a [`Node`].
+/// Period between attempts at instantiating a [`Node`] process.
 pub const NODE_BUILDING_INTERVAL: Duration = Duration::from_millis(500);
 
-/// The [`Duration`] interval between polls for [`connect`] and [`wait_for_height`].
+/// Period between polls for [`connect`] and [`wait_for_height`].
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// The timeout [`Duration`] for [`connect`] and [`wait_for_height`].
+/// Timeout for [`connect`] and [`wait_for_height`].
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The interval [`Duration`] between successive attempts of node connection.
+/// Period between successive attempts of [`Node`] connection.
 pub const CONNECTION_INTERVAL: Duration = Duration::from_millis(150);
 
-/// The timeout [`Duration`] for node connection.
+/// Timeout for [`Node`] connection.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Common interface across all node implementations ([`BitcoinD`]/[`UtreexoD`]).
@@ -152,7 +159,13 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     let socket_a = a.get_p2p_socket();
     let socket_b = b.get_p2p_socket();
 
-    debug!("Connecting socket={} to socket={}", socket_a, socket_b);
+    debug!(
+        "Connecting {} at socket={} to {} at socket={}",
+        A::get_bin_name(),
+        socket_a,
+        B::get_bin_name(),
+        socket_b
+    );
 
     a.add_peer(socket_b)?;
 
@@ -170,7 +183,14 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
             // or for v1 fallback to complete if v2 fails, then re-verify.
             thread::sleep(CONNECTION_INTERVAL * 4);
             if is_connected()? {
-                debug!("Connected socket={} to socket={}", socket_a, socket_b);
+                info!(
+                    "Connecting {} at socket={} to {} at socket={}",
+                    A::get_bin_name(),
+                    socket_a,
+                    B::get_bin_name(),
+                    socket_b
+                );
+
                 return Ok(());
             }
         }
@@ -203,6 +223,8 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
         if node.get_chain_tip().unwrap_or(0) >= height {
+            info!("{} to reached height={}", N::get_name(), height);
+
             return Ok(());
         }
         thread::sleep(N::poll_interval());
@@ -225,10 +247,10 @@ pub fn wait_for_height_with_timeout<N: Node>(
     timeout: Duration,
 ) -> Result<(), Error> {
     debug!(
-        "Waiting for {} to reach height={} (timeout={:?})",
+        "Waiting for {} to reach height={} with timeout={}seconds)",
         N::get_name(),
         height,
-        timeout
+        timeout.as_secs()
     );
 
     let start = Instant::now();
@@ -248,7 +270,7 @@ pub fn wait_for_height_with_timeout<N: Node>(
 /// Throws an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
 pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
     debug!(
-        "Waiting for {} to reach filter height={}",
+        "Waiting for {} to reach filter_height={}",
         N::get_name(),
         filter_height
     );
@@ -256,6 +278,11 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
     let start = Instant::now();
     while start.elapsed() < N::wait_timeout() {
         if node.get_filter_tip().unwrap_or(0) >= filter_height {
+            info!(
+                "{} to reached filter_height={}",
+                N::get_name(),
+                filter_height
+            );
             return Ok(());
         }
         thread::sleep(N::poll_interval());
@@ -275,6 +302,7 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
 /// Used to pipe a child [`BitcoinD`]/[`UtreexoD`]/[`ElectrsD`] process `stdout`/`stderr`
 /// into [`tracing`]. The thread exits on EOF, which happens when the process
 /// dies and its pipe is closed.
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
     thread::spawn(move || {
         let mut lines = BufReader::new(reader).lines();
@@ -354,15 +382,19 @@ pub enum Error {
     BothDirsSpecified,
 
     /// [`BitcoinD`] is unresponsive (it's probably not running).
+    #[cfg(feature = "bitcoind")]
     UnresponsiveBitcoinD(corepc_client::client_sync::Error),
 
     /// [`UtreexoD`] is unresponsive (it's probably not running).
+    #[cfg(feature = "utreexod")]
     UnresponsiveUtreexoD(corepc_client::client_sync::Error),
 
     /// [`electrsd::ElectrsD`] is unresponsive (it's probably not running).
+    #[cfg(feature = "electrs")]
     UnresponsiveElectrsD(electrum_client::Error),
 
     /// Timed out whilst waiting for [`electrsd::ElectrsD`] to index expected data.
+    #[cfg(feature = "electrs")]
     ElectrsDIndexTimeout((String, Duration)),
 
     /// Timed out whilst waiting for the cookie file to be generated.
@@ -397,9 +429,13 @@ impl fmt::Display for Error {
             JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
             PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
             BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
+            #[cfg(feature = "bitcoind")]
             UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
+            #[cfg(feature = "utreexod")]
             UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
+            #[cfg(feature = "electrs")]
             UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
+            #[cfg(feature = "electrs")]
             ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
             CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
