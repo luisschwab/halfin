@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # BitcoinD: spawn and interact with a `bitcoind` process
+//! # `BitcoinD`: spawn and interact with a `bitcoind` process
 //!
 //! A utility crate for spinning up `bitcoind` processes in
 //! **regtest**, useful for integration testing Bitcoin applications.
@@ -24,7 +24,9 @@
 //! cleaned up when the instance is dropped. Pass a `staticdir` in
 //! [`BitcoinDConf`] to keep data between runs.
 
+/// Version-specific RPC client aliases for the bundled `bitcoind`.
 mod client_versions;
+/// Bundled `bitcoind` version metadata.
 mod versions;
 
 use core::net::SocketAddr;
@@ -69,6 +71,10 @@ const BITCOIND_WALLET: &str = "wallet";
 /// The path is resolved at compile time from the `HALFIN_BITCOIND_PATH`
 /// environment variable, which is set by `build.rs` after downloading
 /// and extracting the binary.
+///
+/// # Errors
+///
+/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
 pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
     let bin_name = BitcoinD::get_bin_name().to_string();
     #[allow(unused_mut)]
@@ -200,20 +206,32 @@ impl BitcoinD {
     /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with the default [`BitcoinDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
-    pub fn new() -> Result<BitcoinD, Error> {
-        BitcoinD::from_bin(get_bitcoind_path()?)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be located or the node cannot be started.
+    pub fn new() -> Result<Self, Error> {
+        Self::from_bin(get_bitcoind_path()?)
     }
 
     /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with a custom [`BitcoinDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
-    pub fn new_with_conf(conf: &BitcoinDConf) -> Result<BitcoinD, Error> {
-        BitcoinD::from_bin_with_conf(get_bitcoind_path()?, conf)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be located, the configuration is invalid, or the node cannot be started.
+    pub fn new_with_conf(conf: &BitcoinDConf) -> Result<Self, Error> {
+        Self::from_bin_with_conf(get_bitcoind_path()?, conf)
     }
 
     /// Create a [`BitcoinD`] instance running the binary at [`Path`] with the default [`BitcoinDConf`].
-    pub fn from_bin<P: AsRef<Path>>(bitcoind_bin: P) -> Result<BitcoinD, Error> {
-        BitcoinD::from_bin_with_conf(bitcoind_bin, &BitcoinDConf::default())
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `bitcoind_bin` is invalid or the node cannot be started.
+    pub fn from_bin<P: AsRef<Path>>(bitcoind_bin: P) -> Result<Self, Error> {
+        Self::from_bin_with_conf(bitcoind_bin, &BitcoinDConf::default())
     }
 
     /// Create a [`BitcoinD`] instance running the binary at [`Path`] with a custom [`BitcoinDConf`].
@@ -225,24 +243,28 @@ impl BitcoinD {
     /// 4. Creates or loads the default wallet and builds an RPC client.
     /// 5. Waits for the node to become responsive (up to 5 seconds).
     ///
-    /// Returns an error if all attempts are exhausted.
+    /// # Errors
+    ///
+    /// Returns an error if the binary path is invalid, the working directory
+    /// cannot be created, RPC setup fails, or all attempts are exhausted.
+    #[allow(clippy::too_many_lines)]
     pub fn from_bin_with_conf<P: AsRef<Path>>(
         bitcoind_bin: P,
         conf: &BitcoinDConf,
-    ) -> Result<BitcoinD, Error> {
+    ) -> Result<Self, Error> {
         // Validate the `bitcoind_bin` path
         let bitcoind_bin = bitcoind_bin.as_ref();
         // The path must be absolute
         if !bitcoind_bin.is_absolute() {
             return Err(Error::BinaryPathNotAbsolute {
-                bin_name: BitcoinD::get_bin_name().to_string(),
+                bin_name: Self::get_bin_name().to_string(),
                 path: bitcoind_bin.display().to_string(),
             });
         }
         // The path must be a file
         if !bitcoind_bin.is_file() {
             return Err(Error::BinaryPathNotFile {
-                bin_name: BitcoinD::get_bin_name().to_string(),
+                bin_name: Self::get_bin_name().to_string(),
                 path: bitcoind_bin.display().to_string(),
             });
         }
@@ -267,7 +289,7 @@ impl BitcoinD {
 
             debug!(
                 "Spawning {} [RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
-                BitcoinD::get_name(),
+                Self::get_name(),
                 rpc_socket,
                 p2p_socket,
                 working_directory.path().display()
@@ -292,7 +314,7 @@ impl BitcoinD {
                 Ok(Some(_)) | Err(_) => {
                     debug!(
                         "{} exited immediately, retrying with fresh ports",
-                        BitcoinD::get_name()
+                        Self::get_name()
                     );
                     let _ = process.kill();
                     continue;
@@ -351,14 +373,14 @@ impl BitcoinD {
 
             debug!(
                 "Started {} [PID={}, RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
-                BitcoinD::get_name(),
+                Self::get_name(),
                 process.id(),
                 rpc_socket,
                 p2p_socket,
                 working_directory.path().display()
             );
 
-            return Ok(BitcoinD {
+            return Ok(Self {
                 process,
                 client,
                 working_directory,
@@ -377,12 +399,12 @@ impl BitcoinD {
     /// kills the process automatically.  It is provided for cases where you
     /// need the exit status or want to ensure the node has fully shut down
     /// before proceeding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC stop call fails or the child process cannot be waited on.
     pub fn stop(&mut self) -> Result<ExitStatus, Error> {
-        debug!(
-            "Stopping {} [PID={}]",
-            BitcoinD::get_name(),
-            self.process.id()
-        );
+        debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         // Send a `stop` over RPC.
         let _ = self.client.stop().map_err(Error::FailedToStop)?;
         // Wait for the process to terminate and get its exit status.
@@ -395,7 +417,7 @@ impl BitcoinD {
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
-        debug!("{}: got pid={}", BitcoinD::get_name(), pid);
+        debug!("{}: got pid={}", Self::get_name(), pid);
 
         pid
     }
@@ -406,7 +428,7 @@ impl BitcoinD {
 
         debug!(
             "{}: got working directory at path={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             working_directory.display()
         );
 
@@ -419,7 +441,7 @@ impl BitcoinD {
     pub fn get_p2p_socket(&self) -> SocketAddr {
         debug!(
             "{}: got p2p socket at socket={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             self.p2p_socket
         );
 
@@ -430,7 +452,7 @@ impl BitcoinD {
     pub fn get_rpc_client(&self) -> &Client {
         debug!(
             "{}: got rpc client for socket={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             self.rpc_socket
         );
 
@@ -441,7 +463,7 @@ impl BitcoinD {
     pub fn rpc_socket(&self) -> SocketAddr {
         debug!(
             "{}: got rpc socket at socket={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             self.rpc_socket
         );
 
@@ -452,7 +474,7 @@ impl BitcoinD {
     pub fn cookie_file(&self) -> &Path {
         debug!(
             "{}: got cookie file at path={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             self.cookie_file.display()
         );
 
@@ -462,20 +484,24 @@ impl BitcoinD {
     // ----> RPC CALL WRAPPERS
 
     /// Get the current chain height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON-RPC call fails.
     pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let response = self.client.get_blockchain_info().map_err(Error::JsonRpc)?;
         let height = response.blocks as u32;
 
-        debug!(
-            "{}: got chain tip at height={}",
-            BitcoinD::get_name(),
-            height
-        );
+        debug!("{}: got chain tip at height={}", Self::get_name(), height);
 
         Ok(height)
     }
 
     /// Get the current filter height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON-RPC call fails or the block filter index is unavailable.
     pub fn get_filter_tip(&self) -> Result<u32, Error> {
         let response = self.client.get_index_info().map_err(Error::JsonRpc)?;
         let filter_height = response
@@ -490,7 +516,7 @@ impl BitcoinD {
 
         debug!(
             "{}: got filter tip at height={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             filter_height
         );
 
@@ -498,10 +524,14 @@ impl BitcoinD {
     }
 
     /// Get the [`BlockHash`] of the block at height `height`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON-RPC call fails or the response is not a valid block hash.
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self
             .client
-            .get_block_hash(height as u64)
+            .get_block_hash(u64::from(height))
             .map_err(Error::JsonRpc)?
             .0
             .parse::<BlockHash>()
@@ -509,7 +539,7 @@ impl BitcoinD {
 
         debug!(
             "{}: got block hash at height={} hash={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             height,
             hash
         );
@@ -518,6 +548,10 @@ impl BitcoinD {
     }
 
     /// Check whether this [`BitcoinD`] has a peer with a specific [`SocketAddr`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the peer-info JSON-RPC call fails.
     pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
         let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?;
         let has_peer = peers
@@ -527,7 +561,7 @@ impl BitcoinD {
 
         debug!(
             "{}: checked peer connection at socket={} connected={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             socket,
             has_peer
         );
@@ -538,13 +572,12 @@ impl BitcoinD {
     /// Connect this [`BitcoinD`] to a peer at [`socket`](SocketAddr)
     /// and wait until the connection is established.
     ///
-    /// Returns an error if the peer does not appear in `getpeerinfo` within the timeout.
+    /// # Errors
+    ///
+    /// Returns an error if the add-node RPC call fails or the peer does not
+    /// appear in `getpeerinfo` within the timeout.
     pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
-        debug!(
-            "{}: adding peer with socket={}",
-            BitcoinD::get_name(),
-            socket
-        );
+        debug!("{}: adding peer with socket={}", Self::get_name(), socket);
 
         self.client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
@@ -560,11 +593,7 @@ impl BitcoinD {
                 .iter()
                 .any(|p| p.address.contains(&socket.to_string()))
             {
-                debug!(
-                    "{}: connected peer at socket={}",
-                    BitcoinD::get_name(),
-                    socket
-                );
+                debug!("{}: connected peer at socket={}", Self::get_name(), socket);
                 return Ok(());
             }
             thread::sleep(delay);
@@ -578,15 +607,15 @@ impl BitcoinD {
     }
 
     /// Get [`BitcoinD`]'s peer count.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the peer-info JSON-RPC call fails.
     pub fn get_peer_count(&self) -> Result<u32, Error> {
         let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?.0;
         let peer_count = peers.len() as u32;
 
-        debug!(
-            "{}: got peer count value={}",
-            BitcoinD::get_name(),
-            peer_count
-        );
+        debug!("{}: got peer count value={}", Self::get_name(), peer_count);
 
         Ok(peer_count)
     }
@@ -594,12 +623,12 @@ impl BitcoinD {
     /// Generate `count` blocks.
     ///
     /// Returns the block hashes as a [`Vec<BlockHash>`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if address generation, block generation, or block-hash parsing fails.
     pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
-        debug!(
-            "{}: generating count={} block(s)",
-            BitcoinD::get_name(),
-            count
-        );
+        debug!("{}: generating count={} block(s)", Self::get_name(), count);
 
         let address = self.client.new_address().map_err(Error::JsonRpc)?;
         let hashes = self
@@ -620,6 +649,10 @@ impl BitcoinD {
     /// [`Address`] as the coinbase output [`Address`].
     ///
     /// Returns the block hashes as a [`Vec<BlockHash>`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block generation or block-hash parsing fails.
     pub fn generate_to_address(
         &self,
         count: u32,
@@ -627,7 +660,7 @@ impl BitcoinD {
     ) -> Result<Vec<BlockHash>, Error> {
         debug!(
             "{}: generating count={} block(s) to address={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             count,
             address
         );
@@ -647,10 +680,14 @@ impl BitcoinD {
     }
 
     /// Invalidates `count` [`Block`](corepc_client::bitcoin::Block)s from [`BitcoinD`]'s chain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a JSON-RPC call fails or a returned hash cannot be parsed.
     pub fn invalidate_blocks(&self, count: u32) -> Result<(), Error> {
         debug!(
             "{}: invalidating count={} block(s)",
-            BitcoinD::get_name(),
+            Self::get_name(),
             count,
         );
 
@@ -658,9 +695,9 @@ impl BitcoinD {
             let hash = self
                 .client
                 .get_best_block_hash()
-                .unwrap()
+                .map_err(Error::JsonRpc)?
                 .block_hash()
-                .unwrap();
+                .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
 
             let height = self
                 .client
@@ -668,10 +705,10 @@ impl BitcoinD {
                 .map_err(Error::JsonRpc)?
                 .blocks as u32;
 
-            self.client.invalidate_block(hash).unwrap();
+            self.client.invalidate_block(hash).map_err(Error::JsonRpc)?;
             debug!(
                 "{}: invalidated block at height={} and hash={}",
-                BitcoinD::get_name(),
+                Self::get_name(),
                 height,
                 hash
             );
@@ -771,7 +808,7 @@ impl Drop for BitcoinD {
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
-            BitcoinD::get_name(),
+            Self::get_name(),
             self.process.id()
         );
         if let DataDir::Persistent(_) = self.working_directory {

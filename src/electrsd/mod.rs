@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # ElectrsD: spawn and interact with an `electrs` process
+//! # `ElectrsD`: spawn and interact with an `electrs` process
 //!
 //! A utility crate for spinning up `electrs` processes connected to a local
 //! [`BitcoinD`] process in **regtest**, useful for integration testing Electrum
@@ -60,6 +60,7 @@ use crate::POLL_INTERVAL;
 use crate::get_available_port;
 use crate::pipe_to_tracing;
 
+/// Bundled `electrs` version metadata.
 mod versions;
 
 /// The default timeout for [`ElectrsD`] indexing helpers.
@@ -70,6 +71,10 @@ pub const ELECTRS_INDEXING_TIMEOUT: Duration = Duration::from_secs(30);
 /// The path is resolved at compile time from the `HALFIN_ELECTRS_PATH`
 /// environment variable, which is set by `build.rs` after reading and
 /// extracting the local archive.
+///
+/// # Errors
+///
+/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
 pub fn get_electrs_path() -> Result<PathBuf, Error> {
     let bin_name = ElectrsD::get_bin_name().to_string();
     #[allow(unused_mut)]
@@ -184,23 +189,35 @@ impl ElectrsD {
     /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with the default [`ElectrsDConf`].
     ///
     /// The indexer connects to the supplied [`BitcoinD`] process.
-    pub fn new(bitcoind: &BitcoinD) -> Result<ElectrsD, Error> {
-        ElectrsD::from_bin(get_electrs_path()?, bitcoind)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be located, `bitcoind` is not ready,
+    /// or the indexer cannot be started.
+    pub fn new(bitcoind: &BitcoinD) -> Result<Self, Error> {
+        Self::from_bin(get_electrs_path()?, bitcoind)
     }
 
     /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with a custom [`ElectrsDConf`].
     ///
     /// The indexer connects to the supplied [`BitcoinD`] process.
-    pub fn new_with_conf(bitcoind: &BitcoinD, conf: &ElectrsDConf) -> Result<ElectrsD, Error> {
-        ElectrsD::from_bin_with_conf(get_electrs_path()?, bitcoind, conf)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be located, the configuration is
+    /// invalid, `bitcoind` is not ready, or the indexer cannot be started.
+    pub fn new_with_conf(bitcoind: &BitcoinD, conf: &ElectrsDConf) -> Result<Self, Error> {
+        Self::from_bin_with_conf(get_electrs_path()?, bitcoind, conf)
     }
 
     /// Create an [`ElectrsD`] instance running the binary at [`Path`] with the default [`ElectrsDConf`].
-    pub fn from_bin<P: AsRef<Path>>(
-        electrs_bin: P,
-        bitcoind: &BitcoinD,
-    ) -> Result<ElectrsD, Error> {
-        ElectrsD::from_bin_with_conf(electrs_bin, bitcoind, &ElectrsDConf::default())
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `electrs_bin` is invalid, `bitcoind` is not ready,
+    /// or the indexer cannot be started.
+    pub fn from_bin<P: AsRef<Path>>(electrs_bin: P, bitcoind: &BitcoinD) -> Result<Self, Error> {
+        Self::from_bin_with_conf(electrs_bin, bitcoind, &ElectrsDConf::default())
     }
 
     /// Create an [`ElectrsD`] instance running the binary at [`Path`] with a custom [`ElectrsDConf`].
@@ -212,25 +229,28 @@ impl ElectrsD {
     /// 2. Spawns `electrs` pointed at the supplied [`BitcoinD`]'s RPC and P2P sockets.
     /// 3. Waits for the Electrum RPC server to become responsive (up to 10 s).
     ///
-    /// Returns an error if all attempts are exhausted.
+    /// # Errors
+    ///
+    /// Returns an error if the binary path is invalid, the backing [`BitcoinD`]
+    /// is not ready, the working directory cannot be created, or all attempts are exhausted.
     pub fn from_bin_with_conf<P: AsRef<Path>>(
         electrs_bin: P,
         bitcoind: &BitcoinD,
         conf: &ElectrsDConf,
-    ) -> Result<ElectrsD, Error> {
+    ) -> Result<Self, Error> {
         // Validate the `electrs_bin` path.
         let electrs_bin = electrs_bin.as_ref();
         // The path must be absolute.
         if !electrs_bin.is_absolute() {
             return Err(Error::BinaryPathNotAbsolute {
-                bin_name: ElectrsD::get_bin_name().to_string(),
+                bin_name: Self::get_bin_name().to_string(),
                 path: electrs_bin.display().to_string(),
             });
         }
         // The path must be a file.
         if !electrs_bin.is_file() {
             return Err(Error::BinaryPathNotFile {
-                bin_name: ElectrsD::get_bin_name().to_string(),
+                bin_name: Self::get_bin_name().to_string(),
                 path: electrs_bin.display().to_string(),
             });
         }
@@ -247,7 +267,11 @@ impl ElectrsD {
             let monitoring_socket =
                 SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, monitoring_port));
 
-            let mut args: Vec<String> = conf.args.iter().map(|arg| arg.to_string()).collect();
+            let mut args: Vec<String> = conf
+                .args
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             args.extend([
                 "--db-dir".to_string(),
                 working_directory.path().display().to_string(),
@@ -267,7 +291,7 @@ impl ElectrsD {
 
             debug!(
                 "Spawning {} [ELECTRUM_SOCKET={}, MONITORING_SOCKET={}, DATADIR={}]",
-                ElectrsD::get_name(),
+                Self::get_name(),
                 electrum_socket,
                 monitoring_socket,
                 working_directory.path().display()
@@ -299,7 +323,7 @@ impl ElectrsD {
                 Ok(Some(_)) | Err(_) => {
                     debug!(
                         "{} exited immediately, retrying with fresh ports",
-                        ElectrsD::get_name()
+                        Self::get_name()
                     );
                     let _ = process.kill();
                     continue;
@@ -307,32 +331,29 @@ impl ElectrsD {
                 Ok(None) => {}
             }
 
-            match Self::wait_for_client(electrum_socket, &mut process, Duration::from_secs(10)) {
-                Ok(client) => {
-                    sleep(Duration::from_millis(200));
+            if let Ok(client) =
+                Self::wait_for_client(electrum_socket, &mut process, Duration::from_secs(10))
+            {
+                sleep(Duration::from_millis(200));
 
-                    debug!(
-                        "Started {} [PID={}, ELECTRUM_SOCKET={}, MONITORING_SOCKET={}, DATADIR={}]",
-                        ElectrsD::get_name(),
-                        process.id(),
-                        electrum_socket,
-                        monitoring_socket,
-                        working_directory.path().display()
-                    );
+                debug!(
+                    "Started {} [PID={}, ELECTRUM_SOCKET={}, MONITORING_SOCKET={}, DATADIR={}]",
+                    Self::get_name(),
+                    process.id(),
+                    electrum_socket,
+                    monitoring_socket,
+                    working_directory.path().display()
+                );
 
-                    return Ok(ElectrsD {
-                        process,
-                        client,
-                        working_directory,
-                        electrum_socket,
-                        monitoring_socket,
-                    });
-                }
-                Err(_) => {
-                    let _ = process.kill();
-                    continue;
-                }
+                return Ok(Self {
+                    process,
+                    client,
+                    working_directory,
+                    electrum_socket,
+                    monitoring_socket,
+                });
             }
+            let _ = process.kill();
         }
 
         Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
@@ -341,11 +362,15 @@ impl ElectrsD {
     /// Send `SIGUSR1` to trigger a rescan on Unix-derived platforms.
     ///
     /// This is a no-op on Windows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the signal command cannot be run or exits unsuccessfully.
     #[cfg(not(target_os = "windows"))]
     pub fn trigger(&self) -> Result<(), Error> {
         debug!(
             "{}: triggering rescan pid={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             self.process.id()
         );
 
@@ -355,7 +380,7 @@ impl ElectrsD {
             .status()
             .map_err(Error::Io)?;
         if status.success() {
-            debug!("{}: triggered rescan", ElectrsD::get_name());
+            debug!("{}: triggered rescan", Self::get_name());
 
             Ok(())
         } else {
@@ -366,6 +391,10 @@ impl ElectrsD {
     }
 
     /// No-op rescan trigger on Windows.
+    ///
+    /// # Errors
+    ///
+    /// This implementation currently never returns an error.
     #[cfg(target_os = "windows")]
     pub fn trigger(&self) -> Result<(), Error> {
         debug!(
@@ -382,12 +411,12 @@ impl ElectrsD {
     /// kills the process automatically. It is provided for cases where you
     /// need the exit status or want to ensure the indexer has fully shut down
     /// before proceeding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the child process cannot be waited on.
     pub fn stop(&mut self) -> Result<std::process::ExitStatus, Error> {
-        debug!(
-            "Stopping {} [PID={}]",
-            ElectrsD::get_name(),
-            self.process.id()
-        );
+        debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         let _ = self.process.kill();
         self.process.wait().map_err(Error::Io)
     }
@@ -396,7 +425,7 @@ impl ElectrsD {
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
-        debug!("{}: got pid={}", ElectrsD::get_name(), pid);
+        debug!("{}: got pid={}", Self::get_name(), pid);
 
         pid
     }
@@ -407,7 +436,7 @@ impl ElectrsD {
 
         debug!(
             "{}: got working directory at path={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             working_directory.display()
         );
 
@@ -418,7 +447,7 @@ impl ElectrsD {
     pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
         debug!(
             "{}: got electrum client for socket={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             self.electrum_socket
         );
 
@@ -429,7 +458,7 @@ impl ElectrsD {
     pub fn electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             self.electrum_socket
         );
 
@@ -442,7 +471,7 @@ impl ElectrsD {
 
         debug!(
             "{}: got electrum url at url={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             electrum_url
         );
 
@@ -453,7 +482,7 @@ impl ElectrsD {
     pub fn monitoring_socket(&self) -> SocketAddr {
         debug!(
             "{}: got monitoring socket at socket={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             self.monitoring_socket
         );
 
@@ -464,6 +493,11 @@ impl ElectrsD {
     ///
     /// Both the tip height and block hash are verified. Pass `None` to use
     /// [`ELECTRS_INDEXING_TIMEOUT`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing node cannot be queried or the indexer
+    /// does not catch up before the timeout.
     pub fn wait_until_caught_up(
         &self,
         bitcoind: &BitcoinD,
@@ -474,7 +508,7 @@ impl ElectrsD {
 
         debug!(
             "{}: waiting until caught up height={} hash={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             height,
             hash
         );
@@ -486,6 +520,11 @@ impl ElectrsD {
     ///
     /// The block hash at `exp_height` is verified against `exp_hash`.
     /// Pass `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the indexer cannot be queried or does not reach the
+    /// expected tip before the timeout.
     pub fn wait_until_tip(
         &self,
         exp_height: u32,
@@ -494,7 +533,7 @@ impl ElectrsD {
     ) -> Result<(), Error> {
         debug!(
             "{}: waiting until tip height={} hash={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             exp_height,
             exp_hash
         );
@@ -505,6 +544,11 @@ impl ElectrsD {
     /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for `spk`.
     ///
     /// If `timeout` is `None`, the default [`ELECTRS_INDEXING_TIMEOUT`] will be used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Electrum subscription/history calls fail or the
+    /// transaction does not appear before the timeout.
     pub fn wait_until_mempool_tx(
         &self,
         spk: &Script,
@@ -513,7 +557,7 @@ impl ElectrsD {
     ) -> Result<(), Error> {
         debug!(
             "{}: waiting until mempool transaction txid={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             txid
         );
 
@@ -528,7 +572,7 @@ impl ElectrsD {
             if initial_status.is_some() && self.script_history_has_mempool_tx(spk, txid)? {
                 debug!(
                     "{}: found mempool transaction with txid={}",
-                    ElectrsD::get_name(),
+                    Self::get_name(),
                     txid
                 );
 
@@ -549,7 +593,7 @@ impl ElectrsD {
                 {
                     debug!(
                         "{}: found mempool transaction with txid={}",
-                        ElectrsD::get_name(),
+                        Self::get_name(),
                         txid
                     );
 
@@ -585,7 +629,7 @@ impl ElectrsD {
 
                 debug!(
                     "{}: checked script mempool transaction with txid={} found={}",
-                    ElectrsD::get_name(),
+                    Self::get_name(),
                     txid,
                     has_tx
                 );
@@ -621,7 +665,7 @@ impl ElectrsD {
         let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
         debug!(
             "{}: waiting until indexed {} timeout={:?}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             description,
             timeout
         );
@@ -642,12 +686,8 @@ impl ElectrsD {
                 continue;
             };
 
-            if electrs_header_matches(client, notification, exp_height, exp_hash)? {
-                debug!(
-                    "{}: finished indexing {}",
-                    ElectrsD::get_name(),
-                    description
-                );
+            if electrs_header_matches(client, &notification, exp_height, exp_hash)? {
+                debug!("{}: finished indexing {}", Self::get_name(), description);
 
                 return Ok(());
             }
@@ -668,7 +708,7 @@ impl ElectrsD {
 
         debug!(
             "{}: checked backing bitcoind readiness initial_block_download={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             initial_block_download
         );
 
@@ -742,9 +782,7 @@ impl ElectrsD {
             thread::sleep(Duration::from_millis(200));
         }
 
-        Err(last_error
-            .map(Error::UnresponsiveElectrsD)
-            .unwrap_or(Error::RpcClientSetupTimeout))
+        Err(last_error.map_or(Error::RpcClientSetupTimeout, Error::UnresponsiveElectrsD))
     }
 }
 
@@ -755,7 +793,7 @@ impl Drop for ElectrsD {
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
-            ElectrsD::get_name(),
+            Self::get_name(),
             self.process.id()
         );
         let _ = self.process.kill();
@@ -768,7 +806,7 @@ impl Drop for ElectrsD {
 /// so `exp_hash` can still be verified.
 fn electrs_header_matches(
     client: &RawClient<ElectrumPlaintextStream>,
-    notification: HeaderNotification,
+    notification: &HeaderNotification,
     exp_height: u32,
     exp_hash: Option<BlockHash>,
 ) -> Result<bool, Error> {
@@ -790,7 +828,5 @@ fn electrs_header_matches(
             .map_err(Error::UnresponsiveElectrsD)?
     };
 
-    Ok(exp_hash
-        .map(|exp_hash| header.block_hash() == exp_hash)
-        .unwrap_or(true))
+    Ok(exp_hash.is_none_or(|exp_hash| header.block_hash() == exp_hash))
 }

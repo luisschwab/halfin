@@ -1,54 +1,75 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+//! Build script for fetching and exposing binaries.
+//!
+//! The script downloads `bitcoind`, `electrsd`, and `electrs` archives
+//! when their features are enabled, verifies their checksums, extracts
+//! the needed binaries, and publishes their paths through Cargo compile-time
+//! environment variables.
+
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::collections::hash_map::RandomState;
 use std::env;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::ffi::OsStr;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::fs;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::fs::File;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::hash::BuildHasher;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::io;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::io::BufRead;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::io::BufReader;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::io::Cursor;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::path::Path;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::path::PathBuf;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use std::str::FromStr;
 
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use bitcoin_hashes::sha256;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use bitreq::Method;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use bitreq::Request;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use bitreq::Url;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use flate2::read::GzDecoder;
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 use tar::Archive;
 
+/// Per-request timeout, in seconds, for binary archive downloads.
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 const BIN_DOWNLOAD_TIMEOUT: u64 = 60;
+
+/// Base URLs tried when downloading cached binary archives.
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 const BIN_DOWNLOAD_MIRRORS: &[&str] =
     &["https://bin.luisschwab.net", "https://bin.lab.vinteum.org"];
 
 fn main() {
-    // Skip downloading when docs.rs is building documentation
-    if env::var("DOCS_RS").is_ok() {
-        return;
-    }
-
-    // Skip if the `bitcoind` feature is not enabled.
-    if cfg!(feature = "bitcoind") {
-        // Check if `bitcoind` is cached, and download it if not.
+    if env::var("DOCS_RS").is_err() {
+        #[cfg(feature = "bitcoind")]
         bitcoind::download();
-    }
-    // Skip if the `utreexod` feature is not enabled.
-    if cfg!(feature = "utreexod") {
-        // Check if `utreexod` is cached, and download it if not.
+
+        #[cfg(feature = "utreexod")]
         utreexod::download();
-    }
-    // Skip if the `electrs` feature is not enabled.
-    if cfg!(feature = "electrs") {
-        // Check if `electrs` is cached, and download it if not.
+
+        #[cfg(feature = "electrs")]
         electrs::download();
     }
 }
 
 /// Return the root directory used to cache extracted binaries.
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 fn download_directory() -> PathBuf {
     if let Ok(path) = env::var("HALFIN_BIN_DIR") {
         PathBuf::from(path)
@@ -58,18 +79,20 @@ fn download_directory() -> PathBuf {
 }
 
 /// Mark extracted Unix executables as runnable.
-fn set_executable(_file: &File) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
+#[cfg(all(
+    unix,
+    any(feature = "bitcoind", feature = "utreexod", feature = "electrs")
+))]
+fn set_executable(file: &File) {
+    use std::os::unix::fs::PermissionsExt;
 
-        let mut perms = _file.metadata().unwrap().permissions();
-        perms.set_mode(0o755);
-        _file.set_permissions(perms).unwrap();
-    }
+    let mut perms = file.metadata().unwrap().permissions();
+    perms.set_mode(0o755);
+    file.set_permissions(perms).unwrap();
 }
 
 /// Build-time metadata needed to fetch, verify, cache, and expose a binary.
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 struct Binary {
     /// Name of the executable inside the downloaded archive.
     name: &'static str,
@@ -86,9 +109,11 @@ struct Binary {
     /// Platform-specific archive selected by the binary module.
     archive_filename: PathBuf,
     /// Whether macOS aarch64 builds should ad-hoc sign the extracted binary.
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     codesign_on_macos_aarch64: bool,
 }
 
+#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 impl Binary {
     /// Return the versioned directory name used for this binary.
     fn destination_dir_name(&self) -> String {
@@ -163,8 +188,8 @@ impl Binary {
 
         let existing_path = self.existing_path(&download_directory);
         if existing_path.exists() {
-            println!(
-                "cargo:warning=Found cached `{}` @ v{} at `{}`, skipping download...",
+            eprintln!(
+                "Found cached `{}` @ v{} at `{}`, skipping download...",
                 self.name,
                 self.version,
                 existing_path.display(),
@@ -176,6 +201,7 @@ impl Binary {
         self.verify_archive_hash(&archive_bytes, expected_hash);
         self.extract_archive(&archive_bytes, &download_directory);
 
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         if self.codesign_on_macos_aarch64 {
             self.codesign_on_macos_aarch64(&destination_path);
         }
@@ -223,8 +249,8 @@ impl Binary {
             let base_url = BIN_DOWNLOAD_MIRRORS[(start + offset) % BIN_DOWNLOAD_MIRRORS.len()];
             let download_url: Url = self.download_url(base_url, &archive_filename);
 
-            println!(
-                "cargo:warning=Downloading `{}` @ v{} from `{}`",
+            eprintln!(
+                "Downloading `{}` @ v{} from `{}`",
                 self.name, self.version, download_url,
             );
 
@@ -307,6 +333,7 @@ impl Binary {
                 let destination_path = destination_directory.join(self.name);
                 let mut output_file = self.create_binary_file(&destination_path);
                 io::copy(&mut entry, &mut output_file).unwrap();
+                #[cfg(unix)]
                 set_executable(&output_file);
                 return;
             }
@@ -352,38 +379,38 @@ impl Binary {
     }
 
     /// Sign macOS aarch64 binaries ad hoc if they are not already accepted by `codesign -v`.
-    fn codesign_on_macos_aarch64(&self, _destination_path: &Path) {
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        {
-            use std::process::Command;
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    fn codesign_on_macos_aarch64(&self, destination_path: &Path) {
+        use std::process::Command;
 
-            let signing_status = Command::new("codesign")
-                .arg("-v")
-                .arg(_destination_path)
+        let signing_status = Command::new("codesign")
+            .arg("-v")
+            .arg(destination_path)
+            .status()
+            .map_err(|e| format!("Failed to run `codesign -v` on `{}`: {}", self.name, e))
+            .unwrap();
+
+        if !signing_status.success() {
+            Command::new("codesign")
+                .arg("-s")
+                .arg("-")
+                .arg(destination_path)
                 .status()
-                .map_err(|e| format!("Failed to run `codesign -v` on `{}`: {}", self.name, e))
+                .map_err(|e| format!("Failed to run `codesign -s` on `{}`: {}", self.name, e))
                 .unwrap();
-
-            if !signing_status.success() {
-                Command::new("codesign")
-                    .arg("-s")
-                    .arg("-")
-                    .arg(_destination_path)
-                    .status()
-                    .map_err(|e| format!("Failed to run `codesign -s` on `{}`: {}", self.name, e))
-                    .unwrap();
-            }
         }
     }
 }
 
 /// Downloads and verifies the `bitcoind` binary based on the enabled version feature.
+#[cfg(feature = "bitcoind")]
 mod bitcoind {
     use super::Binary;
     use super::PathBuf;
 
     include!("src/bitcoind/versions.rs");
 
+    /// Compile-time environment variable containing the extracted `bitcoind` path.
     const HALFIN_BITCOIND_PATH: &str = "HALFIN_BITCOIND_PATH";
 
     /// Return the platform-specific tarball filename for this version of `bitcoind`.
@@ -426,6 +453,7 @@ mod bitcoind {
             )),
             remote_path: PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: true,
         }
         .download_and_install();
@@ -433,12 +461,14 @@ mod bitcoind {
 }
 
 /// Downloads and verifies the `utreexod` binary based on the enabled version feature.
+#[cfg(feature = "utreexod")]
 mod utreexod {
     use super::Binary;
     use super::PathBuf;
 
     include!("src/utreexod/versions.rs");
 
+    /// Compile-time environment variable containing the extracted `utreexod` path.
     const HALFIN_UTREEXOD_PATH: &str = "HALFIN_UTREEXOD_PATH";
 
     /// Return the platform-specific tarball filename for this version of `utreexod`.
@@ -481,6 +511,7 @@ mod utreexod {
             )),
             remote_path: PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: true,
         }
         .download_and_install();
@@ -488,12 +519,14 @@ mod utreexod {
 }
 
 /// Downloads and verifies the `electrs` binary based on the enabled version feature.
+#[cfg(feature = "electrs")]
 mod electrs {
     use super::Binary;
     use super::PathBuf;
 
     include!("src/electrsd/versions.rs");
 
+    /// Compile-time environment variable containing the extracted `electrs` path.
     const HALFIN_ELECTRS_PATH: &str = "HALFIN_ELECTRS_PATH";
 
     /// Return the platform-specific archive filename for this version of `electrs`.
@@ -539,6 +572,7 @@ mod electrs {
             )),
             remote_path: PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: false,
         }
         .download_and_install();
