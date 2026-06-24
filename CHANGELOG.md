@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Bump `cargo-rbmt` to v0.4.1
 * Bump `cargo-rbmt` to v0.4.0
 * Bump `utreexod` to v0.6.0
 * Add [`bin.lab.vinteum.org`](https://bin.lab.vinteum.org) binary download mirror
