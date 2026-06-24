@@ -63,6 +63,10 @@ toolchains:
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-stable
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-nightly
 
+[doc: "Install cargo-rbmt tools"]
+tools:
+    RBMT_LOG_LEVEL=progress cargo rbmt tools
+
 [doc: "Run ShellCheck"]
 shellcheck:
     @command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck was not found on \$PATH" && exit 1; }
@@ -70,11 +74,12 @@ shellcheck:
 
 [doc: "Run Zizmor Static Analysis"]
 zizmor:
-    uvx zizmor .
+   zizmor .
 
 [doc: "Run pre-push checks"]
 pre-push:
     @just lock
+    @just tools
     @just check
     @just doc
     @just test

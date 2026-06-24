@@ -31,13 +31,14 @@ jobs:
               with:
                   persist-credentials: false
 
-            - name: Setup Build Cache
+            - name: Setup Rust Cache
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
             - name: Setup cargo-rbmt
               uses: ./.github/actions/setup-rbmt
 
             - name: Run ${{ matrix.task }}
+              shell: bash
               run: cargo rbmt ${{ matrix.task }}
 
     test:
@@ -70,4 +71,5 @@ jobs:
               uses: ./.github/actions/setup-rbmt
 
             - name: Run Tests
+              shell: bash
               run: cargo rbmt test --toolchain ${{ matrix.toolchain }} --lockfile ${{ matrix.lockfile }}
