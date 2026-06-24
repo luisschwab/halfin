@@ -47,6 +47,10 @@ bench = false
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[package.metadata.rbmt.tools]
+cargo-audit = "=0.22.2"
+zizmor = "=1.26.1"
+
 [package.metadata.rbmt.toolchains]
 stable = "1.96.0"
 nightly = "nightly-2026-06-23"
@@ -54,7 +58,6 @@ nightly = "nightly-2026-06-23"
 [package.metadata.rbmt.test]
 sample_strategy = "all"
 
-# Allow packages of different versions in the dependency tree.
 [package.metadata.rbmt.lint]
 allowed_duplicates = [
     "base64",

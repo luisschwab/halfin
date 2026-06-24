@@ -2,7 +2,7 @@ name: Cross-Testing
 
 on:
     push:
-      branches: [ master ]
+        branches: [ master ]
     pull_request:
     workflow_dispatch:
 
@@ -12,7 +12,7 @@ env:
     RUST_BACKTRACE: 1
 
 jobs:
-    build:
+    cross:
         name: ${{ matrix.os }} + ${{ matrix.arch }}
         runs-on: ${{ matrix.runner }}
         strategy:
@@ -41,38 +41,16 @@ jobs:
 
         steps:
             - name: Checkout Repository
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v4.3.0
+              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
               with:
                   persist-credentials: false
 
-            - name: Setup Build Cache
+            - name: Setup Rust Cache
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-            - name: Install Rust Toolchain
-              if: runner.os == 'Windows'
-              uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # v1.94.1
-              with:
-                  toolchain: stable
-                  targets: ${{ matrix.target }}
-
             - name: Setup cargo-rbmt
-              if: runner.os != 'Windows'
               uses: ./.github/actions/setup-rbmt
 
-            - name: Install ${{ matrix.target }} Toolchain
-              if: runner.os != 'Windows'
+            - name: Run Tests
               shell: bash
-              run: rustup target add --toolchain "$(cargo rbmt toolchains --stable)" ${{ matrix.target }}
-
-            - name: Run Tests for ${{ matrix.target }} Target
-              if: runner.os != 'Windows'
-              run: cargo rbmt test --toolchain stable --lockfile recent -- --target ${{ matrix.target }}
-
-            - name: Run Tests for ${{ matrix.target }} Target
-              if: runner.os == 'Windows'
-              env:
-                  TEMPDIR_ROOT: ${{ github.workspace }}\target\test-tmp
-              run: >
-                  New-Item -ItemType Directory -Force $env:TEMPDIR_ROOT;
-                  cargo test --target ${{ matrix.target }} --no-fail-fast --no-default-features --features bitcoind,utreexod
-                  && cargo test --target ${{ matrix.target }} --no-fail-fast --no-default-features --features bitcoind,electrs
+              run: cargo rbmt test

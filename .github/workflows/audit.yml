@@ -13,11 +13,12 @@ env:
     CARGO_TERM_COLOR: always
 
 jobs:
-    audit:
+    cargo-audit:
         name: Cargo Audit - ${{ matrix.name }}
         runs-on: ubuntu-latest
         permissions:
             contents: read
+            checks: write
             issues: write
         strategy:
             fail-fast: false
@@ -36,15 +37,24 @@ jobs:
               with:
                   persist-credentials: false
 
-            - name: Setup Build Cache
+            - name: Setup Rust Cache
               uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+            - name: Setup cargo-rbmt
+              uses: ./.github/actions/setup-rbmt
+
+            - name: Install cargo-rbmt Tools
+              shell: bash
+              run: cargo rbmt tools
 
             - name: Generate Fresh Lockfile
               if: ${{ matrix.lockfile == 'Cargo.lock' }}
+              shell: bash
               run: cargo generate-lockfile
 
             - name: Select Lockfile
               if: ${{ matrix.lockfile != 'Cargo.lock' }}
+              shell: bash
               run: cp ${{ matrix.lockfile }} Cargo.lock
 
             - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
@@ -61,6 +71,7 @@ jobs:
                   persist-credentials: false
 
             - name: Run ShellCheck
+              shell: bash
               run: find . -name '*.sh' -print -exec shellcheck {} +
 
     zizmor:
@@ -71,10 +82,18 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
               with:
-                persist-credentials: false
+                  persist-credentials: false
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+            - name: Setup Rust Cache
+              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+            - name: Setup cargo-rbmt
+              uses: ./.github/actions/setup-rbmt
+
+            - name: Install cargo-rbmt Tools
+              shell: bash
+              run: cargo rbmt tools
 
             - name: Run Zizmor
-              run: uvx zizmor .
+              shell: bash
+              run: zizmor .
