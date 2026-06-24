@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # UtreexoD: spawn and interact with a `utreexod` process
+//! # `UtreexoD`: spawn and interact with a `utreexod` process
 //!
 //! A utility for spinning up `utreexod` processes in **regtest**,
 //! useful for integration testing Bitcoin applications that rely on
@@ -49,6 +49,7 @@ use crate::WAIT_TIMEOUT;
 use crate::get_available_port;
 use crate::pipe_to_tracing;
 
+/// Bundled `utreexod` version metadata.
 mod versions;
 
 /// Username for RPC authentication.
@@ -62,6 +63,10 @@ const RPC_PASS: &str = "halfin";
 /// The path is resolved at compile time from the `HALFIN_UTREEXOD_PATH`
 /// environment variable, which is set by `build.rs` after downloading
 /// and extracting the binary.
+///
+/// # Errors
+///
+/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
 pub fn get_utreexod_path() -> Result<PathBuf, Error> {
     let bin_name = UtreexoD::get_bin_name().to_string();
     #[allow(unused_mut)]
@@ -213,20 +218,32 @@ impl UtreexoD {
     /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with the default [`UtreexoDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
-    pub fn new() -> Result<UtreexoD, Error> {
-        UtreexoD::from_bin(get_utreexod_path()?)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be located or the node cannot be started.
+    pub fn new() -> Result<Self, Error> {
+        Self::from_bin(get_utreexod_path()?)
     }
 
     /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with a custom [`UtreexoDConf`].
     ///
     /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
-    pub fn new_with_conf(conf: &UtreexoDConf) -> Result<UtreexoD, Error> {
-        UtreexoD::from_bin_with_conf(get_utreexod_path()?, conf)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be located, the configuration is invalid, or the node cannot be started.
+    pub fn new_with_conf(conf: &UtreexoDConf) -> Result<Self, Error> {
+        Self::from_bin_with_conf(get_utreexod_path()?, conf)
     }
 
     /// Create a [`UtreexoD`] instance running the binary at [`Path`] with the default [`UtreexoDConf`].
-    pub fn from_bin<P: AsRef<Path>>(utreexod_bin: P) -> Result<UtreexoD, Error> {
-        UtreexoD::from_bin_with_conf(utreexod_bin, &UtreexoDConf::default())
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `utreexod_bin` is invalid or the node cannot be started.
+    pub fn from_bin<P: AsRef<Path>>(utreexod_bin: P) -> Result<Self, Error> {
+        Self::from_bin_with_conf(utreexod_bin, &UtreexoDConf::default())
     }
 
     /// Create a [`UtreexoD`] instance running the binary at [`Path`] with a custom [`UtreexoDConf`].
@@ -238,24 +255,28 @@ impl UtreexoD {
     /// 2. Spawns `utreexod` with those ports and a fresh data directory.
     /// 3. Waits for the RPC server to become responsive (up to 10 s).
     ///
-    /// Returns an error if all attempts are exhausted.
+    /// # Errors
+    ///
+    /// Returns an error if the binary path is invalid, the working directory
+    /// cannot be created, RPC setup fails, or all attempts are exhausted.
+    #[allow(clippy::too_many_lines)]
     pub fn from_bin_with_conf<P: AsRef<Path>>(
         utreexod_bin: P,
         conf: &UtreexoDConf,
-    ) -> Result<UtreexoD, Error> {
+    ) -> Result<Self, Error> {
         // Validate the `bitcoind_bin` path
         let utreexod_bin = utreexod_bin.as_ref();
         // The path must be absolute
         if !utreexod_bin.is_absolute() {
             return Err(Error::BinaryPathNotAbsolute {
-                bin_name: UtreexoD::get_bin_name().to_string(),
+                bin_name: Self::get_bin_name().to_string(),
                 path: utreexod_bin.display().to_string(),
             });
         }
         // The path must be a file
         if !utreexod_bin.is_file() {
             return Err(Error::BinaryPathNotFile {
-                bin_name: UtreexoD::get_bin_name().to_string(),
+                bin_name: Self::get_bin_name().to_string(),
                 path: utreexod_bin.display().to_string(),
             });
         }
@@ -282,7 +303,7 @@ impl UtreexoD {
 
             debug!(
                 "Spawning {} [RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
-                UtreexoD::get_name(),
+                Self::get_name(),
                 rpc_socket,
                 p2p_socket,
                 working_directory.path().display()
@@ -314,7 +335,7 @@ impl UtreexoD {
                     let output = process.wait_with_output().map_err(Error::Io)?;
                     eprintln!(
                         "{} exited immediately with status={status}; stdout={}; stderr={}",
-                        UtreexoD::get_name(),
+                        Self::get_name(),
                         String::from_utf8_lossy(&output.stdout).trim(),
                         String::from_utf8_lossy(&output.stderr).trim(),
                     );
@@ -323,7 +344,7 @@ impl UtreexoD {
                 Err(err) => {
                     debug!(
                         "{} status check failed, retrying with fresh ports: {}",
-                        UtreexoD::get_name(),
+                        Self::get_name(),
                         err
                     );
                     let _ = process.kill();
@@ -343,32 +364,27 @@ impl UtreexoD {
             }
 
             let auth = Auth::UserPass(RPC_USER.to_string(), RPC_PASS.to_string());
-            match Self::wait_for_client(&rpc_url, &auth, Duration::from_secs(10)) {
-                Ok(client) => {
-                    sleep(Duration::from_millis(200));
+            if let Ok(client) = Self::wait_for_client(&rpc_url, &auth, Duration::from_secs(10)) {
+                sleep(Duration::from_millis(200));
 
-                    debug!(
-                        "Started {} [PID={}, RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
-                        UtreexoD::get_name(),
-                        process.id(),
-                        rpc_socket,
-                        p2p_socket,
-                        working_directory.path().display()
-                    );
+                debug!(
+                    "Started {} [PID={}, RPC_SOCKET={}, P2P_SOCKET={}, DATADIR={}]",
+                    Self::get_name(),
+                    process.id(),
+                    rpc_socket,
+                    p2p_socket,
+                    working_directory.path().display()
+                );
 
-                    return Ok(UtreexoD {
-                        process,
-                        client,
-                        working_directory,
-                        rpc_socket,
-                        p2p_socket,
-                    });
-                }
-                Err(_) => {
-                    let _ = process.kill();
-                    continue;
-                }
+                return Ok(Self {
+                    process,
+                    client,
+                    working_directory,
+                    rpc_socket,
+                    p2p_socket,
+                });
             }
+            let _ = process.kill();
         }
 
         Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
@@ -380,12 +396,12 @@ impl UtreexoD {
     /// kills the process automatically. It is provided for cases where you
     /// need the exit status or want to ensure the node has fully shut down
     /// before proceeding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC stop call fails or the child process cannot be waited on.
     pub fn stop(&mut self) -> Result<ExitStatus, Error> {
-        debug!(
-            "Stopping {} [PID={}]",
-            UtreexoD::get_name(),
-            self.process.id()
-        );
+        debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
 
         // Send a `stop` over RPC.
         let _ = self.client.stop().map_err(Error::FailedToStop)?;
@@ -399,7 +415,7 @@ impl UtreexoD {
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
-        debug!("{}: got pid={}", UtreexoD::get_name(), pid);
+        debug!("{}: got pid={}", Self::get_name(), pid);
 
         pid
     }
@@ -410,7 +426,7 @@ impl UtreexoD {
 
         debug!(
             "{}: got working directory at path={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             working_directory.display()
         );
 
@@ -421,7 +437,7 @@ impl UtreexoD {
     pub fn get_rpc_client(&self) -> &Client {
         debug!(
             "{}: got rpc client for socket={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             self.rpc_socket
         );
 
@@ -432,7 +448,7 @@ impl UtreexoD {
     pub fn get_rpc_socket(&self) -> SocketAddr {
         debug!(
             "{}: got rpc socket at socket={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             self.rpc_socket
         );
 
@@ -445,7 +461,7 @@ impl UtreexoD {
     pub fn get_p2p_socket(&self) -> SocketAddr {
         debug!(
             "{}: got p2p socket at socket={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             self.p2p_socket
         );
 
@@ -455,6 +471,10 @@ impl UtreexoD {
     // ----> RPC CALL WRAPPERS
 
     /// Get the current chain height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON-RPC call fails or the response does not contain a block height.
     pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self
             .client
@@ -465,16 +485,16 @@ impl UtreexoD {
                 "getblockchaininfo returned no `blocks` field".to_string(),
             ))? as u32;
 
-        debug!(
-            "{}: got chain tip at height={}",
-            UtreexoD::get_name(),
-            height
-        );
+        debug!("{}: got chain tip at height={}", Self::get_name(), height);
 
         Ok(height)
     }
 
     /// Get the current filter height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the chain tip, block hash, or compact-filter RPC call fails.
     pub fn get_filter_tip(&self) -> Result<u32, Error> {
         let height = self.get_chain_tip()?;
         let hash = self.get_block_hash(height)?;
@@ -483,22 +503,22 @@ impl UtreexoD {
             .call::<serde_json::Value>(
                 "getcfilterheader",
                 &[
-                    serde_json::to_value(hash.to_string()).unwrap(),
+                    serde_json::Value::String(hash.to_string()),
                     serde_json::Value::Number(0.into()),
                 ],
             )
             .map_err(Error::JsonRpc)?;
 
-        debug!(
-            "{}: got filter tip at height={}",
-            UtreexoD::get_name(),
-            height
-        );
+        debug!("{}: got filter tip at height={}", Self::get_name(), height);
 
         Ok(height)
     }
 
     /// Get the [`BlockHash`] of the block at height `height`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON-RPC call fails or the response is not a valid block hash.
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self
             .client
@@ -513,7 +533,7 @@ impl UtreexoD {
 
         debug!(
             "{}: got block hash at height={} hash={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             height,
             hash
         );
@@ -523,10 +543,15 @@ impl UtreexoD {
 
     // TODO(@luisschwab): return a `rustreexo::proof::Proof`
     /// Get the Utreexo proof for the block at height `height`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block hash lookup fails, the proof RPC call fails,
+    /// or the response is not a string.
     pub fn get_block_uproof(&self, height: u32) -> Result<String, Error> {
         debug!(
             "{}: fetching utreexo proof for height={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             height
         );
 
@@ -543,42 +568,41 @@ impl UtreexoD {
         Ok(proof_hex)
     }
 
-    // Check whether this [`UtreexoD`] has a peer with a specific [`SocketAddr`].
+    /// Check whether this [`UtreexoD`] has a peer with a specific [`SocketAddr`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the peer-info JSON-RPC call fails.
     pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
         let peers = self
             .client
             .call::<serde_json::Value>("getpeerinfo", &[])
             .map_err(Error::JsonRpc)?;
 
-        let has_peer = peers
-            .as_array()
-            .map(|v| {
-                v.iter().any(|p| {
-                    let inbound = p["inbound"].as_bool().unwrap_or(false);
-                    if inbound {
-                        // For inbound connections, `addr` is the peer's ephemeral port
-                        // and `addrlocal` is our own listening port — neither gives us
-                        // the peer's listening port, so we can't match on socket directly.
-                        // Instead, match on `addrlocal` == our own socket as a proxy
-                        // for confirming the connection is established.
-                        p["addrlocal"]
-                            .as_str()
-                            .map(|a| a.contains(&self.p2p_socket.to_string()))
-                            .unwrap_or(false)
-                    } else {
-                        // For outbound connections, `addr` is the peer's listening port.
-                        p["addr"]
-                            .as_str()
-                            .map(|a| a.contains(&socket.to_string()))
-                            .unwrap_or(false)
-                    }
-                })
+        let has_peer = peers.as_array().is_some_and(|v| {
+            v.iter().any(|p| {
+                let inbound = p["inbound"].as_bool().unwrap_or(false);
+                if inbound {
+                    // For inbound connections, `addr` is the peer's ephemeral port
+                    // and `addrlocal` is our own listening port — neither gives us
+                    // the peer's listening port, so we can't match on socket directly.
+                    // Instead, match on `addrlocal` == our own socket as a proxy
+                    // for confirming the connection is established.
+                    p["addrlocal"]
+                        .as_str()
+                        .is_some_and(|a| a.contains(&self.p2p_socket.to_string()))
+                } else {
+                    // For outbound connections, `addr` is the peer's listening port.
+                    p["addr"]
+                        .as_str()
+                        .is_some_and(|a| a.contains(&socket.to_string()))
+                }
             })
-            .unwrap_or(false);
+        });
 
         debug!(
             "{}: checked peer connection at socket={} connected={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             socket,
             has_peer
         );
@@ -589,13 +613,12 @@ impl UtreexoD {
     /// Connect this [`UtreexoD`] to a peer at [`socket`](SocketAddr) and
     /// wait until the connection is established (up to 5 seconds with exponential back-off).
     ///
-    /// Returns an error if the peer does not appear in `getpeerinfo` within the timeout.
+    /// # Errors
+    ///
+    /// Returns an error if the add-node RPC call fails or the peer does not
+    /// appear in `getpeerinfo` within the timeout.
     pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
-        debug!(
-            "{}: adding peer with socket={}",
-            UtreexoD::get_name(),
-            socket
-        );
+        debug!("{}: adding peer with socket={}", Self::get_name(), socket);
 
         self.client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
@@ -609,23 +632,14 @@ impl UtreexoD {
                 .client
                 .call::<serde_json::Value>("getpeerinfo", &[])
                 .map_err(Error::JsonRpc)?;
-            if peers
-                .as_array()
-                .map(|v| {
-                    v.iter().any(|p| {
-                        p["addr"]
-                            .as_str()
-                            .map(|a| a.contains(&socket.to_string()))
-                            .unwrap_or(false)
-                    })
+            if peers.as_array().is_some_and(|v| {
+                v.iter().any(|p| {
+                    p["addr"]
+                        .as_str()
+                        .is_some_and(|a| a.contains(&socket.to_string()))
                 })
-                .unwrap_or(false)
-            {
-                debug!(
-                    "{}: connected peer at socket={}",
-                    UtreexoD::get_name(),
-                    socket
-                );
+            }) {
+                debug!("{}: connected peer at socket={}", Self::get_name(), socket);
                 return Ok(());
             }
             thread::sleep(delay);
@@ -639,6 +653,10 @@ impl UtreexoD {
     }
 
     /// Get [`UtreexoD`]'s peer count.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the peer-info JSON-RPC call fails or returns a non-array response.
     pub fn get_peer_count(&self) -> Result<u32, Error> {
         let peers = self
             .client
@@ -651,11 +669,7 @@ impl UtreexoD {
             ))?
             .len() as u32;
 
-        debug!(
-            "{}: got peer count value={}",
-            UtreexoD::get_name(),
-            peer_count
-        );
+        debug!("{}: got peer count value={}", Self::get_name(), peer_count);
 
         Ok(peer_count)
     }
@@ -663,16 +677,16 @@ impl UtreexoD {
     /// Generate `count` blocks.
     ///
     /// Returns the block hashes as a [`Vec<BlockHash>`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block generation fails or the response contains an invalid block hash.
     pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
-        debug!(
-            "{}: generating count={} block(s)",
-            UtreexoD::get_name(),
-            count
-        );
+        debug!("{}: generating count={} block(s)", Self::get_name(), count);
 
         let hashes = self
             .client
-            .call::<serde_json::Value>("generate", &[serde_json::to_value(count).unwrap()])
+            .call::<serde_json::Value>("generate", &[serde_json::Value::Number(count.into())])
             .map_err(Error::JsonRpc)?
             .as_array()
             .ok_or(Error::UnexpectedResponse(
@@ -797,7 +811,7 @@ impl Drop for UtreexoD {
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
-            UtreexoD::get_name(),
+            Self::get_name(),
             self.process.id()
         );
         let _ = self.process.kill();

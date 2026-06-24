@@ -23,7 +23,10 @@ use std::process::Command;
 use xshell::Shell;
 use xshell::cmd;
 
+/// Upstream `electrs` repository used as the release source.
 const ELECTRS_REPO: &str = "https://github.com/romanz/electrs";
+
+/// Upstream `electrs` version packaged by this builder.
 const ELECTRS_VERSION: &str = "0.11.1";
 
 /// Build backend used for a target triple.
@@ -173,10 +176,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Clone or reuse the upstream checkout and reset it to the pinned tag.
 fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let source_dir_s = path_string(source_dir);
 
-    if !source_dir.exists() {
+    if source_dir.exists() {
+        log_step(format!(
+            "using existing electrs checkout {}",
+            source_dir.display()
+        ));
+    } else {
         log_step(format!(
             "cloning electrs {} into {}",
             ELECTRS_VERSION,
@@ -184,11 +193,6 @@ fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::erro
         ));
         let repo = ELECTRS_REPO;
         cmd!(sh, "git clone {repo} {source_dir_s}").run_echo()?;
-    } else {
-        log_step(format!(
-            "using existing electrs checkout {}",
-            source_dir.display()
-        ));
     }
 
     let sh = sh.with_current_dir(source_dir);
@@ -222,6 +226,7 @@ fn parse_args() -> Result<bool, Box<dyn std::error::Error>> {
     Ok(force)
 }
 
+/// Ensure all Rust target triples needed for published artifacts are installed.
 fn install_targets(sh: &Shell) -> Result<(), Box<dyn std::error::Error>> {
     for target in TARGETS {
         let triple = target.triple;
@@ -231,6 +236,7 @@ fn install_targets(sh: &Shell) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Build one target with its configured backend.
 fn build_target(
     sh: &Shell,
     target: &Target,
@@ -303,6 +309,7 @@ fn build_target(
     Ok(())
 }
 
+/// Package a built target binary into its published archive.
 fn package_target(
     sh: &Shell,
     target: &Target,
@@ -336,6 +343,7 @@ fn package_target(
     Ok(())
 }
 
+/// Remove stale host bindgen artifacts that can break later cross builds.
 fn clean_stale_cross_bindgen_artifacts(
     source_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -384,6 +392,7 @@ fn remove_matching_entries(
     Ok(())
 }
 
+/// Write the release `SHA256SUMS` file for all packaged artifacts.
 fn write_sha256sums(dist_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut lines = Vec::new();
     for target in TARGETS {
@@ -448,6 +457,7 @@ fn sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
         .ok_or_else(|| format!("failed to parse sha256sum output for {}", path.display()).into())
 }
 
+/// Require every named command-line tool to be available on `PATH`.
 fn require_tools(tools: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     for tool in tools {
         require_tool(tool)?;
@@ -455,6 +465,7 @@ fn require_tools(tools: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Require one command-line tool to be available on `PATH`.
 fn require_tool(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
     if has_tool(tool) {
         Ok(())
@@ -463,6 +474,7 @@ fn require_tool(tool: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Require at least one command-line tool from `tools` to be available on `PATH`.
 fn require_any_tool(tools: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     if tools.iter().any(|tool| has_tool(tool)) {
         Ok(())
@@ -475,6 +487,7 @@ fn require_any_tool(tools: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Return the available container engine used by `cross`.
 fn require_container_engine() -> Result<String, Box<dyn std::error::Error>> {
     if has_tool("docker") && command_succeeds(Command::new("docker").arg("info")) {
         return Ok("docker".to_string());
@@ -490,6 +503,7 @@ fn require_container_engine() -> Result<String, Box<dyn std::error::Error>> {
     )
 }
 
+/// Require a Cargo subcommand executable such as `cargo-xwin`.
 fn require_cargo_subcommand(subcommand: &str) -> Result<(), Box<dyn std::error::Error>> {
     let cargo_bin_name = format!("cargo-{}", subcommand);
     if has_tool(&cargo_bin_name) {
@@ -503,6 +517,7 @@ fn require_cargo_subcommand(subcommand: &str) -> Result<(), Box<dyn std::error::
     }
 }
 
+/// Return whether `tool` resolves on `PATH`.
 fn has_tool(tool: &str) -> bool {
     Command::new("sh")
         .arg("-c")
@@ -513,6 +528,7 @@ fn has_tool(tool: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Run `command` quietly and return whether it exits successfully.
 fn command_succeeds(command: &mut Command) -> bool {
     command
         .stdout(std::process::Stdio::null())
@@ -521,10 +537,12 @@ fn command_succeeds(command: &mut Command) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+/// Return whether the host can execute binaries for `target` directly.
 fn host_can_run(target: &str) -> bool {
     target == host_target_triple()
 }
 
+/// Return the Rust target triple for the current host when known.
 fn host_target_triple() -> &'static str {
     match (env::consts::OS, env::consts::ARCH) {
         ("macos", "aarch64") => "aarch64-apple-darwin",
@@ -537,6 +555,7 @@ fn host_target_triple() -> &'static str {
     }
 }
 
+/// Run `command` and return UTF-8 `stdout` if it succeeds.
 fn output(command: &mut Command) -> Result<String, Box<dyn std::error::Error>> {
     let output = command.output()?;
     if !output.status.success() {
@@ -552,6 +571,7 @@ fn output(command: &mut Command) -> Result<String, Box<dyn std::error::Error>> {
     Ok(String::from_utf8(output.stdout)?)
 }
 
+/// Run `command` and return stdout, treating missing or unsuccessful commands as `None`.
 fn optional_output(command: &mut Command) -> Result<Option<String>, Box<dyn std::error::Error>> {
     match command.output() {
         Ok(output) if output.status.success() => Ok(Some(String::from_utf8(output.stdout)?)),
@@ -561,14 +581,17 @@ fn optional_output(command: &mut Command) -> Result<Option<String>, Box<dyn std:
     }
 }
 
+/// Convert a path to an owned lossy string for shell command interpolation.
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// Print a high-level build step.
 fn log_step(message: impl AsRef<str>) {
     eprintln!("==> {}", message.as_ref());
 }
 
+/// Print a target-scoped build step.
 fn log_target(target: &Target, message: impl AsRef<str>) {
     eprintln!("==> [{}] {}", target.triple, message.as_ref());
 }

@@ -106,12 +106,24 @@ pub trait Node {
     fn get_bin_name() -> &'static str;
 
     /// Get the [`Node`]'s current chain height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node cannot report its current chain height.
     fn get_chain_tip(&self) -> Result<u32, Error>;
 
     /// Get the [`Node`]'s current CBF height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node cannot report its current compact-filter height.
     fn get_filter_tip(&self) -> Result<u32, Error>;
 
-    // Get the [`BlockHash`] of the block at `height`.
+    /// Get the [`BlockHash`] of the block at `height`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the block hash cannot be fetched or parsed.
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
 
     /// Call a JSON-RPC `method` with the given `args` list.
@@ -120,18 +132,34 @@ pub trait Node {
     ///
     /// It's up to the caller to parse the returned
     /// [`Value`](serde_json::Value) into a meaningful type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON-RPC call fails.
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
 
     /// Get the [`Node`]'s P2P [`SocketAddr`].
     fn get_p2p_socket(&self) -> SocketAddr;
 
     /// Check whether the [`Node`] is connected to a peer with a specific [`SocketAddr`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node cannot query its peer state.
     fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error>;
 
     /// Connect this [`Node`] to a peer at `socket` over P2P.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node cannot add or confirm the peer connection.
     fn add_peer(&self, socket: SocketAddr) -> Result<(), Error>;
 
     /// Get this [`Node`]' s peer count.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node cannot query its peer count.
     fn get_peer_count(&self) -> Result<u32, Error>;
 
     /// How long to sleep between `get_chain_tip` RPC calls.
@@ -155,6 +183,11 @@ pub trait Node {
 }
 
 /// Connect [`Node`] A to [`Node`] B.
+///
+/// # Errors
+///
+/// Returns an error if either node cannot add or confirm the peer connection
+/// before [`CONNECTION_TIMEOUT`].
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     let socket_a = a.get_p2p_socket();
     let socket_b = b.get_p2p_socket();
@@ -201,6 +234,11 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 }
 
 /// Connect [`Node`] A to [`Node`] B and wait for them to synchronize chains.
+///
+/// # Errors
+///
+/// Returns an error if the nodes cannot connect, either chain height cannot be
+/// queried, or either node fails to reach the shared height before its timeout.
 pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     connect(a, b)?;
 
@@ -216,7 +254,9 @@ pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 
 /// Poll a [`Node`] until its chain reaches `height`.
 ///
-/// Throws an error if the node does not reach `height` within [`Node::wait_timeout`].
+/// # Errors
+///
+/// Returns an error if the node does not reach `height` within [`Node::wait_timeout`].
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     debug!("Waiting for {} to reach height={}", N::get_name(), height);
 
@@ -240,7 +280,9 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
 
 /// Poll a [`Node`] until its chain reaches `height` with a custom `timeout`.
 ///
-/// Throws an error if the node does not reach `height` within `timeout`.
+/// # Errors
+///
+/// Returns an error if the node does not reach `height` within `timeout`.
 pub fn wait_for_height_with_timeout<N: Node>(
     node: &N,
     height: u32,
@@ -267,7 +309,9 @@ pub fn wait_for_height_with_timeout<N: Node>(
 
 /// Poll a [`Node`] until its Compact Block Filters reach `height`.
 ///
-/// Throws an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
+/// # Errors
+///
+/// Returns an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
 pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
     debug!(
         "Waiting for {} to reach filter_height={}",
@@ -316,6 +360,10 @@ pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'sta
 }
 
 /// Ask the OS for an available port, immediately unbind and return it.
+///
+/// # Panics
+///
+/// Panics if the OS cannot bind a localhost ephemeral port or report the local socket address.
 #[inline]
 pub fn get_available_port() -> u16 {
     TcpListener::bind((IPV4_LOCALHOST, 0))
@@ -349,13 +397,24 @@ impl DataDir {
     }
 }
 
+/// Errors returned by node and indexer process management helpers.
 #[derive(Debug)]
 pub enum Error {
     /// The binary path is not absolute.
-    BinaryPathNotAbsolute { bin_name: String, path: String },
+    BinaryPathNotAbsolute {
+        /// Name of the binary whose path was rejected.
+        bin_name: String,
+        /// Rejected filesystem path.
+        path: String,
+    },
 
     /// The binary path is not a file.
-    BinaryPathNotFile { bin_name: String, path: String },
+    BinaryPathNotFile {
+        /// Name of the binary whose path was rejected.
+        bin_name: String,
+        /// Rejected filesystem path.
+        path: String,
+    },
 
     /// The binary was not found at the expected location.
     BinaryNotFound((String, PathBuf)),
@@ -416,36 +475,34 @@ pub enum Error {
 #[rustfmt::skip]
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Error::*;
-
         match self {
-            BinaryPathNotAbsolute { bin_name, path } => write!(f, "The `{}` binary path is not absolute (path={})", bin_name, path),
-            BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
-            BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
-            FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
-            ExhaustedNodeBuildingAttempts(retries) => write!(f, "Failed to instantiate the node after {} attempts", retries),
-            FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
-            Io(err) => write!(f, "I/O Error: {err:?}"),
-            JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
-            PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
-            BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
+            Self::BinaryPathNotAbsolute { bin_name, path } => write!(f, "The `{}` binary path is not absolute (path={})", bin_name, path),
+            Self::BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
+            Self::BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
+            Self::FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
+            Self::ExhaustedNodeBuildingAttempts(retries) => write!(f, "Failed to instantiate the node after {} attempts", retries),
+            Self::FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
+            Self::Io(err) => write!(f, "I/O Error: {err:?}"),
+            Self::JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
+            Self::PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
+            Self::BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
             #[cfg(feature = "bitcoind")]
-            UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
+            Self::UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
             #[cfg(feature = "utreexod")]
-            UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
+            Self::UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
             #[cfg(feature = "electrs")]
-            UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
+            Self::UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
             #[cfg(feature = "electrs")]
-            ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
-            CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
-            RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
-            UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
-            ChainSyncTimeOut((target_height, current_height, timeout)) => write!(
+            Self::ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
+            Self::CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
+            Self::RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
+            Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
+            Self::ChainSyncTimeOut((target_height, current_height, timeout)) => write!(
                 f,
                 "Timed out after {} seconds whilst waiting for the node's chain to synchronize to height={} (current height={})",
                 target_height, current_height, timeout.as_secs()
             ),
-            ConnectionTimeout(timeout) => write!(
+            Self::ConnectionTimeout(timeout) => write!(
                 f,
                 "Timed out after {} seconds whilst waiting for the nodes to connect to each other",
                 timeout.as_secs()

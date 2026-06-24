@@ -64,7 +64,7 @@ fn test_bitcoind_generate_to_address() {
 
     assert_eq!(
         Amount::from_btc(address_balance).unwrap(),
-        Amount::from_int_btc(BLOCK_COUNT as u64 * 50)
+        Amount::from_int_btc(u64::from(BLOCK_COUNT) * 50)
     );
 }
 
