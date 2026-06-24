@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Increase dependabot's cooldown to 60 days
 * Bump `cargo-rbmt` to v0.4.1
 * Bump `cargo-rbmt` to v0.4.0
 * Bump `utreexod` to v0.6.0
