@@ -1,5 +1,5 @@
 name: Setup cargo-rbmt
-description: Install cargo-rbmt from crates.io
+description: Install cargo-rbmt from crates.io or GitHub
 
 runs:
     using: "composite"
@@ -7,7 +7,20 @@ runs:
     steps:
         - name: Install cargo-rbmt
           shell: bash
-          run: cargo install cargo-rbmt --version "$(cat rbmt-version)" --locked
+          run: |
+              RBMT_VERSION="$(
+                  cargo metadata --no-deps --format-version 1 |
+                  jq -r '.packages[0].metadata.rbmt.version'
+              )"
+
+              if [ -n "$RBMT_VERSION" ] && [ "$RBMT_VERSION" != "null" ]; then
+                  cargo install cargo-rbmt --version "$RBMT_VERSION" --locked
+              else
+                  cargo install \
+                      --git https://github.com/rust-bitcoin/rust-bitcoin-maintainer-tools \
+                      cargo-rbmt \
+                      --locked
+              fi
 
         - name: Install Rust Toolchains
           shell: bash
