@@ -39,7 +39,6 @@ use std::process::Child;
 use std::process::Command;
 use std::process::ExitStatus;
 use std::process::Stdio;
-use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
@@ -307,7 +306,7 @@ impl BitcoinD {
 
             // Add a small timeout to let `bitcoind` fail
             // and retry in the case of a port collision.
-            thread::sleep(NODE_BUILDING_INTERVAL);
+            sleep(NODE_BUILDING_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
@@ -361,7 +360,7 @@ impl BitcoinD {
                         break client;
                     }
                 }
-                thread::sleep(Duration::from_millis(200));
+                sleep(Duration::from_millis(200));
             };
 
             if Self::wait_for_client(&client, Duration::from_secs(5)).is_err() {
@@ -596,7 +595,7 @@ impl BitcoinD {
                 debug!("{}: connected peer at socket={}", Self::get_name(), socket);
                 return Ok(());
             }
-            thread::sleep(delay);
+            sleep(delay);
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
@@ -761,7 +760,7 @@ impl BitcoinD {
             if let Ok(client) = Client::new_with_auth(rpc_url, auth.clone()) {
                 return Ok(client);
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
         let client =
             Client::new_with_auth(rpc_url, auth.clone()).map_err(Error::UnresponsiveBitcoinD)?;
@@ -778,7 +777,7 @@ impl BitcoinD {
             if cookie_file.exists() {
                 return Ok(());
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
         Err(Error::CookieFileTimeout(cookie_file.into()))
     }
@@ -792,7 +791,7 @@ impl BitcoinD {
             if rpc_client.get_blockchain_info().is_ok() {
                 return Ok(());
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
 
         Err(Error::RpcClientSetupTimeout)
