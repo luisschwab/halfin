@@ -14,8 +14,8 @@ edition = "2024"
 [features]
 default = ["bitcoind", "utreexod"]
 bitcoind = []
-utreexod = []
 electrs = ["bitcoind", "dep:electrum-client"]
+utreexod = []
 
 [[example]]
 name = "cross-compile-electrs"
@@ -48,8 +48,16 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.rbmt]
-toolchains = { stable = "1.96.0", nightly = "nightly-2026-06-23" }
-tools = { cargo-audit = "=0.22.2", zizmor = "=1.26.1" }
+toolchains = {
+    stable = "1.96.0",
+    nightly = "nightly-2026-06-23"
+}
+tools = {
+    cargo-audit = "=0.22.2",
+    cargo-public-api = "=0.52.0",
+    cargo-semver-checks = "=0.48.0",
+    zizmor = "=1.26.1",
+}
 test = { sample_strategy = "all" }
 lint = { allowed_duplicates = ["base64"] }
 
