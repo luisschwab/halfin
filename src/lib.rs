@@ -1,21 +1,21 @@
-//! # Halfin
+//! # halfin
 //!
-//! A bitcoin node running utility for integration testing.
+//! A bitcoin node and indexer running utility for integration testing.
 //!
 //! > A {regtest} bitcoin node runner 🏃‍♂️
 //!
 //! This crate makes it simple to run regtest [`bitcoind`], [`utreexod`],
-//! and [`electrs`] instances from Rust code, useful in integration test contexts.
+//! [`electrs`], and [`electrumx`] instances from Rust code,
+//! useful in integration test contexts.
 //!
 //! ## Supported Implementations
 //!
-//! | Implementation | Version   | Feature Flag     | Default Feature |
-//! |----------------|-----------|------------------|-----------------|
-//! | [`bitcoind`]   | `v31.0`   | `bitcoind`       | Yes             |
-//! |                |           |                  |                 |
-//! | [`electrs`]    | `v0.11.1` | `electrs`        | No              |
-//! |                |           |                  |                 |
-//! | [`utreexod`]   | `v0.6.0`  | `utreexod`       | Yes             |
+//! | Kind    | Implementation | Version   | Feature Flag | Default Feature |
+//! |---------|----------------|-----------|--------------|-----------------|
+//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |
+//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |
+//! |         |                |                          |                 |
+//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |
 //!
 //! ## Example
 //!
@@ -36,28 +36,32 @@
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
-//! [`electrs`]: <https://github.com/romanz/electrs>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
+//! [`electrs`]: <https://github.com/romanz/electrs>
+//! [`electrumx`]: <https://github.com/spesmilo/electrumx>
 
-use core::error;
-use core::fmt;
 use core::net::Ipv4Addr;
-use core::net::SocketAddr;
-use corepc_client::bitcoin::BlockHash;
-#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
+
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
 use std::io::{BufRead, BufReader, Read};
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::thread;
 use std::time::Duration;
-use std::time::Instant;
-use tempfile::TempDir;
-use tracing::debug;
-use tracing::info;
-#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
-use tracing::trace;
 
 pub use serde_json;
+use tempfile::TempDir;
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+use tracing::info;
 
 #[allow(unused)]
 #[cfg(feature = "bitcoind")]
@@ -66,298 +70,45 @@ pub(crate) use bitcoind::BitcoinD;
 #[cfg(feature = "electrs")]
 pub(crate) use electrsd::ElectrsD;
 #[allow(unused)]
+#[cfg(feature = "electrumx")]
+pub(crate) use electrumxd::ElectrumxD;
+#[allow(unused)]
 #[cfg(feature = "utreexod")]
 pub(crate) use utreexod::UtreexoD;
+
+pub use crate::error::Error;
 
 #[cfg(feature = "bitcoind")]
 pub mod bitcoind;
 #[cfg(feature = "electrs")]
 pub mod electrsd;
+#[cfg(feature = "electrumx")]
+pub mod electrumxd;
+pub mod error;
+pub mod node;
 #[cfg(feature = "utreexod")]
 pub mod utreexod;
 
 /// IPv4 localhost address.
 const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
-/// Maximum number of attempts at instantiating a [`Node`] process.
-pub const NODE_BUILDING_ATTEMPTS: u8 = 5;
+/// Maximum number of attempts at spawning a process.
+pub const SPAWN_ATTEMPTS: u8 = 5;
 
-/// Period between attempts at instantiating a [`Node`] process.
-pub const NODE_BUILDING_INTERVAL: Duration = Duration::from_millis(500);
+/// Period between attempts at spawning a process.
+pub const SPAWN_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Period between polls for [`connect`] and [`wait_for_height`].
+/// Period between polls for [`connect`](crate::node::connect) and [`wait_for_height`](crate::node::wait_for_height).
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Timeout for [`connect`] and [`wait_for_height`].
+/// Timeout for [`connect`](crate::node::connect) and [`wait_for_height`](crate::node::wait_for_height).
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Period between successive attempts of [`Node`] connection.
+/// Period between successive attempts of [`Node`](crate::node::Node) connection.
 pub const CONNECTION_INTERVAL: Duration = Duration::from_millis(150);
 
-/// Timeout for [`Node`] connection.
+/// Timeout for [`Node`](crate::node::Node) connection.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// Common interface across all node implementations ([`BitcoinD`]/[`UtreexoD`]).
-pub trait Node {
-    /// The [`Node`]'s human-readable name.
-    fn get_name() -> &'static str;
-
-    /// The [`Node`]'s binary name.
-    fn get_bin_name() -> &'static str;
-
-    /// Get the [`Node`]'s current chain height.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node cannot report its current chain height.
-    fn get_chain_tip(&self) -> Result<u32, Error>;
-
-    /// Get the [`Node`]'s current CBF height.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node cannot report its current compact-filter height.
-    fn get_filter_tip(&self) -> Result<u32, Error>;
-
-    /// Get the [`BlockHash`] of the block at `height`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the block hash cannot be fetched or parsed.
-    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
-
-    /// Call a JSON-RPC `method` with the given `args` list.
-    ///
-    /// Response deserialization is not implemented for this method.
-    ///
-    /// It's up to the caller to parse the returned
-    /// [`Value`](serde_json::Value) into a meaningful type.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the JSON-RPC call fails.
-    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
-
-    /// Get the [`Node`]'s P2P [`SocketAddr`].
-    fn get_p2p_socket(&self) -> SocketAddr;
-
-    /// Check whether the [`Node`] is connected to a peer with a specific [`SocketAddr`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node cannot query its peer state.
-    fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error>;
-
-    /// Connect this [`Node`] to a peer at `socket` over P2P.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node cannot add or confirm the peer connection.
-    fn add_peer(&self, socket: SocketAddr) -> Result<(), Error>;
-
-    /// Get this [`Node`]' s peer count.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the node cannot query its peer count.
-    fn get_peer_count(&self) -> Result<u32, Error>;
-
-    /// How long to sleep between `get_chain_tip` RPC calls.
-    ///
-    /// Defaults to [`POLL_INTERVAL`].
-    ///
-    /// Override for nodes that need a longer settling time between RPC calls.
-    fn poll_interval() -> Duration {
-        POLL_INTERVAL
-    }
-
-    /// How long `wait_for_height` will poll before giving up.
-    ///
-    /// Defaults to [`WAIT_TIMEOUT`].
-    ///
-    /// Override for nodes that need more time to process blocks
-    /// (e.g. [`UtreexoD`] needs more time to build the Merkle forest).
-    fn wait_timeout() -> Duration {
-        WAIT_TIMEOUT
-    }
-}
-
-/// Connect [`Node`] A to [`Node`] B.
-///
-/// # Errors
-///
-/// Returns an error if either node cannot add or confirm the peer connection
-/// before [`CONNECTION_TIMEOUT`].
-pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
-    let socket_a = a.get_p2p_socket();
-    let socket_b = b.get_p2p_socket();
-
-    debug!(
-        "Connecting {} at socket={} to {} at socket={}",
-        A::get_bin_name(),
-        socket_a,
-        B::get_bin_name(),
-        socket_b
-    );
-
-    a.add_peer(socket_b)?;
-
-    let is_connected =
-        || -> Result<bool, Error> { Ok(a.has_peer(socket_b)? || b.has_peer(socket_a)?) };
-
-    // Wait for either side to confirm the connection by listening port.
-    // We check both because `utreexod` does not expose the peer's listening
-    // port in `getpeerinfo` for inbound connections, so only one side may
-    // be able to verify by socket address.
-    let start = Instant::now();
-    while start.elapsed() < CONNECTION_TIMEOUT {
-        if is_connected()? {
-            // Allow time for v2 transport negotiation to settle,
-            // or for v1 fallback to complete if v2 fails, then re-verify.
-            thread::sleep(CONNECTION_INTERVAL * 4);
-            if is_connected()? {
-                info!(
-                    "Connecting {} at socket={} to {} at socket={}",
-                    A::get_bin_name(),
-                    socket_a,
-                    B::get_bin_name(),
-                    socket_b
-                );
-
-                return Ok(());
-            }
-        }
-        thread::sleep(CONNECTION_INTERVAL);
-    }
-
-    Err(Error::ConnectionTimeout(CONNECTION_TIMEOUT))
-}
-
-/// Connect [`Node`] A to [`Node`] B and wait for them to synchronize chains.
-///
-/// # Errors
-///
-/// Returns an error if the nodes cannot connect, either chain height cannot be
-/// queried, or either node fails to reach the shared height before its timeout.
-pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
-    connect(a, b)?;
-
-    let height_a = a.get_chain_tip()?;
-    let height_b = b.get_chain_tip()?;
-
-    let max_height = std::cmp::max(height_a, height_b);
-    wait_for_height(a, max_height)?;
-    wait_for_height(b, max_height)?;
-
-    Ok(())
-}
-
-/// Poll a [`Node`] until its chain reaches `height`.
-///
-/// # Errors
-///
-/// Returns an error if the node does not reach `height` within [`Node::wait_timeout`].
-pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
-    debug!("Waiting for {} to reach height={}", N::get_name(), height);
-
-    let start = Instant::now();
-    while start.elapsed() < N::wait_timeout() {
-        if node.get_chain_tip().unwrap_or(0) >= height {
-            info!("{} to reached height={}", N::get_name(), height);
-
-            return Ok(());
-        }
-        thread::sleep(N::poll_interval());
-    }
-
-    let curr_height = node.get_chain_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((
-        height,
-        curr_height,
-        N::wait_timeout(),
-    )))
-}
-
-/// Poll a [`Node`] until its chain reaches `height` with a custom `timeout`.
-///
-/// # Errors
-///
-/// Returns an error if the node does not reach `height` within `timeout`.
-pub fn wait_for_height_with_timeout<N: Node>(
-    node: &N,
-    height: u32,
-    timeout: Duration,
-) -> Result<(), Error> {
-    debug!(
-        "Waiting for {} to reach height={} with timeout={}seconds)",
-        N::get_name(),
-        height,
-        timeout.as_secs()
-    );
-
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        if node.get_chain_tip().unwrap_or(0) >= height {
-            return Ok(());
-        }
-        thread::sleep(N::poll_interval());
-    }
-
-    let curr_height = node.get_chain_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((height, curr_height, timeout)))
-}
-
-/// Poll a [`Node`] until its Compact Block Filters reach `height`.
-///
-/// # Errors
-///
-/// Returns an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
-pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
-    debug!(
-        "Waiting for {} to reach filter_height={}",
-        N::get_name(),
-        filter_height
-    );
-
-    let start = Instant::now();
-    while start.elapsed() < N::wait_timeout() {
-        if node.get_filter_tip().unwrap_or(0) >= filter_height {
-            info!(
-                "{} to reached filter_height={}",
-                N::get_name(),
-                filter_height
-            );
-            return Ok(());
-        }
-        thread::sleep(N::poll_interval());
-    }
-
-    let curr_filter_height = node.get_filter_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((
-        filter_height,
-        curr_filter_height,
-        N::wait_timeout(),
-    )))
-}
-
-/// Spawn a background thread that reads `reader` line by line and re-emits
-/// each line as a [`trace!`] event, prefixed with `source`.
-///
-/// Used to pipe a child [`BitcoinD`]/[`UtreexoD`]/[`ElectrsD`] process `stdout`/`stderr`
-/// into [`tracing`]. The thread exits on EOF, which happens when the process
-/// dies and its pipe is closed.
-#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
-pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
-    thread::spawn(move || {
-        let mut lines = BufReader::new(reader).lines();
-        while let Some(Ok(line)) = lines.next() {
-            // Skip blank lines so the trace stream mirrors the node's output.
-            if !line.trim().is_empty() {
-                trace!("{source}: {line}");
-            }
-        }
-    });
-}
 
 /// Ask the OS for an available port, immediately unbind and return it.
 ///
@@ -371,6 +122,30 @@ pub fn get_available_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+/// Spawn a background thread that reads `reader` line by line and re-emits
+/// each line as an [`info!`] event, prefixed with `source`.
+///
+/// Used to pipe a child process' `stdout`/`stderr`
+/// into [`tracing`]. The thread exits on EOF, which happens when the process
+/// dies and its pipe is closed.
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
+    std::thread::spawn(move || {
+        let mut lines = BufReader::new(reader).lines();
+        while let Some(Ok(line)) = lines.next() {
+            // Skip blank lines so the log stream mirrors the node's output.
+            if !line.trim().is_empty() {
+                info!("{source}: {line}");
+            }
+        }
+    });
 }
 
 /// Owns a node's working directory, either as a temporary or a persistent path.
@@ -396,118 +171,3 @@ impl DataDir {
         }
     }
 }
-
-/// Errors returned by node and indexer process management helpers.
-#[derive(Debug)]
-pub enum Error {
-    /// The binary path is not absolute.
-    BinaryPathNotAbsolute {
-        /// Name of the binary whose path was rejected.
-        bin_name: String,
-        /// Rejected filesystem path.
-        path: String,
-    },
-
-    /// The binary path is not a file.
-    BinaryPathNotFile {
-        /// Name of the binary whose path was rejected.
-        bin_name: String,
-        /// Rejected filesystem path.
-        path: String,
-    },
-
-    /// The binary was not found at the expected location.
-    BinaryNotFound((String, PathBuf)),
-
-    /// Failed to spawn a [process](std::process::Child) for a [`Node`] or Electrum Server.
-    FailedToSpawn(std::io::Error),
-
-    /// Failed to instantiate a node or indexer after [`NODE_BUILDING_ATTEMPTS`] attempts.
-    ExhaustedNodeBuildingAttempts(u8),
-
-    /// Failed to stop [`BitcoinD`] or [`UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
-    FailedToStop(corepc_client::client_sync::Error),
-
-    /// I/O errors.
-    Io(std::io::Error),
-
-    /// JSON-RPC Errors.
-    JsonRpc(corepc_client::client_sync::Error),
-
-    /// Timed out whilst waiting for peer connection to succeed.
-    PeerConnectionTimeout((SocketAddr, SocketAddr)),
-
-    /// Both `tmpdir` and `workdir` were specified.
-    BothDirsSpecified,
-
-    /// [`BitcoinD`] is unresponsive (it's probably not running).
-    #[cfg(feature = "bitcoind")]
-    UnresponsiveBitcoinD(corepc_client::client_sync::Error),
-
-    /// [`UtreexoD`] is unresponsive (it's probably not running).
-    #[cfg(feature = "utreexod")]
-    UnresponsiveUtreexoD(corepc_client::client_sync::Error),
-
-    /// [`electrsd::ElectrsD`] is unresponsive (it's probably not running).
-    #[cfg(feature = "electrs")]
-    UnresponsiveElectrsD(electrum_client::Error),
-
-    /// Timed out whilst waiting for [`electrsd::ElectrsD`] to index expected data.
-    #[cfg(feature = "electrs")]
-    ElectrsDIndexTimeout((String, Duration)),
-
-    /// Timed out whilst waiting for the cookie file to be generated.
-    CookieFileTimeout(PathBuf),
-
-    /// Timed out whilst waiting for the JSON-RPC client to be ready.
-    RpcClientSetupTimeout,
-
-    /// Received an unexpected response from the JSON-RPC server
-    UnexpectedResponse(String),
-
-    /// Timed out whilst waiting for the [`Node`]'s chain to synchronize up to `height`
-    ChainSyncTimeOut((u32, u32, Duration)), // (current_height, target_height, timeout)
-
-    /// Timed out whilst waiting for the [`Node`]'s to connect to each other.
-    ConnectionTimeout(Duration),
-}
-
-#[rustfmt::skip]
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BinaryPathNotAbsolute { bin_name, path } => write!(f, "The `{}` binary path is not absolute (path={})", bin_name, path),
-            Self::BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
-            Self::BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
-            Self::FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
-            Self::ExhaustedNodeBuildingAttempts(retries) => write!(f, "Failed to instantiate the node after {} attempts", retries),
-            Self::FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
-            Self::Io(err) => write!(f, "I/O Error: {err:?}"),
-            Self::JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
-            Self::PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
-            Self::BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
-            #[cfg(feature = "bitcoind")]
-            Self::UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
-            #[cfg(feature = "utreexod")]
-            Self::UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
-            #[cfg(feature = "electrs")]
-            Self::UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
-            #[cfg(feature = "electrs")]
-            Self::ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
-            Self::CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
-            Self::RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
-            Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
-            Self::ChainSyncTimeOut((target_height, current_height, timeout)) => write!(
-                f,
-                "Timed out after {} seconds whilst waiting for the node's chain to synchronize to height={} (current height={})",
-                target_height, current_height, timeout.as_secs()
-            ),
-            Self::ConnectionTimeout(timeout) => write!(
-                f,
-                "Timed out after {} seconds whilst waiting for the nodes to connect to each other",
-                timeout.as_secs()
-            ),
-        }
-    }
-}
-impl error::Error for Error {}

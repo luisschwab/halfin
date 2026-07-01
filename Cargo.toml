@@ -1,11 +1,11 @@
 [package]
 name = "halfin"
 version = "0.4.0"
-description = "A {regtest} bitcoin node runner 🏃‍♂️"
+description = "A {regtest} bitcoin node and indexer runner 🏃‍♂️"
 authors = ["Luis Schwab <dev@luisschwab.net"]
 documentation = "https://docs.rs/halfin"
 repository = "https://github.com/luisschwab/halfin"
-keywords = ["bitcoin", "runner", "testing"]
+keywords = ["bitcoin", "electrum", "runner", "testing"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 rust-version = "1.85.0" # MSRV
@@ -16,10 +16,17 @@ default = ["bitcoind", "utreexod"]
 bitcoind = []
 utreexod = []
 electrs = ["bitcoind", "dep:electrum-client"]
+electrumx = ["bitcoind", "dep:electrum-client"]
 
 [[example]]
 name = "cross-compile-electrs"
 path = "contrib/compile_electrs/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "cross-compile-electrumx"
+path = "contrib/compile_electrumx/build.rs"
 test = false
 bench = false
 
@@ -54,7 +61,10 @@ test = { sample_strategy = "all" }
 lint = { allowed_duplicates = ["base64"] }
 
 [lints.rust]
+missing_debug_implementations = "warn"
 missing_docs = "warn"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
 
 # Copied over from `rust-bitcoin`
 [lints.clippy]

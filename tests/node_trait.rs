@@ -4,9 +4,9 @@
 
 #![cfg(all(feature = "bitcoind", feature = "utreexod"))]
 
-use halfin::Node;
 use halfin::bitcoind::BitcoinD;
-use halfin::connect;
+use halfin::node::Node;
+use halfin::node::connect;
 use halfin::utreexod::UtreexoD;
 
 /// Verify that [`Node::call`] works by calling `uptime`.

@@ -13,24 +13,22 @@
     <a href="https://github.com/luisschwab/halfin/actions/workflows/cross.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/cross.yml/badge.svg"></a>
 </p>
 
-> A {regtest} bitcoin node runner 🏃‍♂️
+> A {regtest} bitcoin node and indexer runner 🏃‍♂️
 
 This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin),
-[`utreexod`](https://github.com/utreexo/utreexod), and [`electrs`](https://github.com/romanz/electrs)
-instances from Rust code, useful in integration test contexts.
-
-_Heavily_ inspired by the [`bitcoind`](https://crates.io/crates/bitcoind)
-and [`electrsd`](https://crates.io/crates/electrsd) crates.
+[`utreexod`](https://github.com/utreexo/utreexod), [`electrs`](https://github.com/romanz/electrs),
+and [`electrumx`](https://github.com/spesmilo/electrumx) instances from Rust code,
+useful in integration test contexts.
 
 ## Supported Implementations
 
-| Implementation | Version   | Feature Flag | Default Feature |
-|----------------|-----------|--------------|-----------------|
-| `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |
-|                |           |              |                 |
-| `electrs`      | `v0.11.1` | `electrs`    | No              |
-|                |           |              |                 |
-| `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |
+| Kind    | Implementation | Version   | Feature Flag | Default Feature |
+|---------|----------------|-----------|--------------|-----------------|
+| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |
+| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |
+|         |                |           |              |                 |
+| Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |
+| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              |
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 

@@ -13,6 +13,13 @@
 //! as a single-file archive, and writes a `SHA256SUMS`
 //! file suitable for publishing.
 
+// Keep the builder pinned to the same
+// `electrs` release that the crate downloads.
+include!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/src/electrsd/versions.rs"
+));
+
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -25,9 +32,6 @@ use xshell::cmd;
 
 /// Upstream `electrs` repository used as the release source.
 const ELECTRS_REPO: &str = "https://github.com/romanz/electrs";
-
-/// Upstream `electrs` version packaged by this builder.
-const ELECTRS_VERSION: &str = "0.11.1";
 
 /// Build backend used for a target triple.
 ///

@@ -7,9 +7,9 @@
 //! Integration tests between [`BitcoinD`] and [`UtreexoD`].
 
 use halfin::bitcoind::BitcoinD;
-use halfin::connect;
+use halfin::node::connect;
+use halfin::node::wait_for_height;
 use halfin::utreexod::UtreexoD;
-use halfin::wait_for_height;
 
 /// Verify that [`BitcoinD`] and [`UtreexoD`] can connect to each other.
 #[test]

@@ -39,7 +39,6 @@ use std::process::Child;
 use std::process::Command;
 use std::process::ExitStatus;
 use std::process::Stdio;
-use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
@@ -57,10 +56,10 @@ use crate::CONNECTION_TIMEOUT;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
-use crate::NODE_BUILDING_ATTEMPTS;
-use crate::NODE_BUILDING_INTERVAL;
-use crate::Node;
+use crate::SPAWN_ATTEMPTS;
+use crate::SPAWN_INTERVAL;
 use crate::get_available_port;
+use crate::node::Node;
 use crate::pipe_to_tracing;
 
 /// Name of the wallet created (or loaded) inside every [`BitcoinD`] instance.
@@ -127,17 +126,22 @@ pub struct BitcoinDConf<'a> {
     /// How many times to retry spawning `bitcoind` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_ATTEMPTS`].
+    /// errors are automatically recovered from. Defaults to [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
 impl Default for BitcoinDConf<'_> {
     fn default() -> Self {
         BitcoinDConf {
-            args: vec!["-regtest", "-fallbackfee=0.0001", "-blockfilterindex=1"],
+            args: vec![
+                "-regtest",
+                "-fallbackfee=0.0001",
+                "-blockfilterindex=1",
+                "-txindex=1",
+            ],
             tmpdir: None,
             staticdir: None,
-            max_retries: NODE_BUILDING_ATTEMPTS,
+            max_retries: SPAWN_ATTEMPTS,
         }
     }
 }
@@ -177,9 +181,9 @@ pub struct BitcoinD {
 
 #[rustfmt::skip]
 impl Node for BitcoinD {
-    fn get_name() -> &'static str { "BitcoinD" }
+    fn get_name() -> &'static str { versions::BITCOIND_NAME }
 
-    fn get_bin_name() -> &'static str { "bitcoind_v_31_0" }
+    fn get_bin_name() -> &'static str { versions::BITCOIND_BIN_NAME }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
@@ -307,7 +311,7 @@ impl BitcoinD {
 
             // Add a small timeout to let `bitcoind` fail
             // and retry in the case of a port collision.
-            thread::sleep(NODE_BUILDING_INTERVAL);
+            sleep(SPAWN_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
@@ -361,7 +365,7 @@ impl BitcoinD {
                         break client;
                     }
                 }
-                thread::sleep(Duration::from_millis(200));
+                sleep(Duration::from_millis(200));
             };
 
             if Self::wait_for_client(&client, Duration::from_secs(5)).is_err() {
@@ -596,7 +600,7 @@ impl BitcoinD {
                 debug!("{}: connected peer at socket={}", Self::get_name(), socket);
                 return Ok(());
             }
-            thread::sleep(delay);
+            sleep(delay);
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
@@ -761,7 +765,7 @@ impl BitcoinD {
             if let Ok(client) = Client::new_with_auth(rpc_url, auth.clone()) {
                 return Ok(client);
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
         let client =
             Client::new_with_auth(rpc_url, auth.clone()).map_err(Error::UnresponsiveBitcoinD)?;
@@ -778,7 +782,7 @@ impl BitcoinD {
             if cookie_file.exists() {
                 return Ok(());
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
         Err(Error::CookieFileTimeout(cookie_file.into()))
     }
@@ -792,7 +796,7 @@ impl BitcoinD {
             if rpc_client.get_blockchain_info().is_ok() {
                 return Ok(());
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
 
         Err(Error::RpcClientSetupTimeout)

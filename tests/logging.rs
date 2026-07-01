@@ -14,8 +14,8 @@ use std::thread;
 use std::time::Duration;
 
 use halfin::bitcoind::BitcoinD;
-use halfin::connect;
 use halfin::electrsd::ElectrsD;
+use halfin::node::connect;
 use halfin::utreexod::UtreexoD;
 use tracing::Level;
 

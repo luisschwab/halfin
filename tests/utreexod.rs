@@ -4,11 +4,11 @@
 
 #![cfg(feature = "utreexod")]
 
-use halfin::connect;
+use halfin::node::connect;
+use halfin::node::wait_for_filter_height;
+use halfin::node::wait_for_height;
 use halfin::utreexod::UtreexoD;
 use halfin::utreexod::get_utreexod_path;
-use halfin::wait_for_filter_height;
-use halfin::wait_for_height;
 
 /// Verify that [`UtreexoD`] starts successfully and
 /// exposes its PID, working directory, and P2P socket.
