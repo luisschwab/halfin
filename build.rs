@@ -80,8 +80,11 @@ mod binary {
         /// Bundled SHA256SUMS file for this binary's archives.
         pub(crate) checksum_file: PathBuf,
 
-        /// Remote directory path for the binary.
-        pub(crate) remote_path: PathBuf,
+        /// Top-level remote directory for this binary on the mirror.
+        pub(crate) remote_dir: &'static str,
+
+        /// Version-specific remote directory for this binary on the mirror.
+        pub(crate) remote_version_dir: PathBuf,
 
         /// Platform-specific archive selected by the binary module.
         pub(crate) archive_filename: PathBuf,
@@ -118,9 +121,10 @@ mod binary {
         /// Return the URL for this binary's selected platform archive on the selected mirror.
         fn download_url(&self, base_url: &str, archive_filename: &str) -> Url {
             Url::parse(&format!(
-                "{}/{}/{}",
+                "{}/{}/{}/{}",
                 base_url,
-                self.remote_path.display(),
+                self.remote_dir,
+                self.remote_version_dir.display(),
                 archive_filename
             ))
             .unwrap()
@@ -128,7 +132,13 @@ mod binary {
 
         /// Randomly select a mirror from [`BIN_DOWNLOAD_MIRRORS`].
         fn random_download_base_url_index(&self) -> usize {
-            RandomState::new().hash_one((self.name, self.version, &self.archive_filename)) as usize
+            RandomState::new().hash_one((
+                self.name,
+                self.version,
+                self.remote_dir,
+                &self.remote_version_dir,
+                &self.archive_filename,
+            )) as usize
                 % BIN_DOWNLOAD_MIRRORS.len()
         }
 
@@ -458,7 +468,8 @@ mod bitcoind {
                 "sha256/bitcoind/bitcoin-core-{}-SHA256SUMS",
                 BITCOIND_VERSION
             )),
-            remote_path: PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
+            remote_dir: "bitcoind",
+            remote_version_dir: PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: true,
@@ -516,7 +527,8 @@ mod utreexod {
                 "sha256/utreexod/utreexod-{}-SHA256SUMS",
                 UTREEXOD_VERSION
             )),
-            remote_path: PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
+            remote_dir: "utreexod",
+            remote_version_dir: PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: true,
@@ -577,7 +589,8 @@ mod electrs {
                 "sha256/electrsd/electrs-{}-SHA256SUMS",
                 ELECTRS_VERSION
             )),
-            remote_path: PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
+            remote_dir: "electrs",
+            remote_version_dir: PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: false,
@@ -638,7 +651,8 @@ mod electrumx {
                 "sha256/electrumxd/electrumx-{}-SHA256SUMS",
                 ELECTRUMX_VERSION
             )),
-            remote_path: PathBuf::from(format!("electrumx-{}", ELECTRUMX_VERSION)),
+            remote_dir: "electrumx",
+            remote_version_dir: PathBuf::from(format!("electrumx-{}", ELECTRUMX_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: false,
