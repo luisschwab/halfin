@@ -4,9 +4,15 @@ use std::env;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fs;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread::sleep;
+use std::time::Duration;
+use std::time::Instant;
 
 const ELECTRUMX_VERSION: &str = "1.20.0";
 const EMBEDDED_WHEELHOUSE: &[u8] = include_bytes!("../embedded_wheelhouse.bin");
@@ -20,29 +26,56 @@ const DEFAULT_PYTHON_COMMAND: &str = "py -3.10";
 const DEFAULT_PYTHON_COMMAND: &str = "py -3.11";
 
 fn main() {
-    if let Err(err) = run() {
-        eprintln!("electrumx: {err}");
-        std::process::exit(1);
-    }
+    let code = match run() {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("electrumx: {err}");
+            1
+        }
+    };
+    std::process::exit(code);
 }
 
-fn run() -> Result<(), String> {
+fn run() -> Result<i32, String> {
     let exe = env::current_exe().map_err(|err| format!("failed to locate executable: {err}"))?;
     let here = exe
         .parent()
         .ok_or_else(|| format!("failed to determine directory for {}", exe.display()))?;
     let runtime_dir = here.join(format!(".electrumx-{ELECTRUMX_VERSION}"));
     let wheelhouse = runtime_dir.join("wheelhouse");
-    let venv = runtime_dir.join("venv");
+    let run_dir = runtime_dir
+        .join("runs")
+        .join(std::process::id().to_string());
+    let venv = run_dir.join("venv");
     let entrypoint = electrumx_server(&venv);
 
+    fs::create_dir_all(&runtime_dir).map_err(|err| {
+        format!(
+            "failed to create runtime directory {}: {err}",
+            runtime_dir.display()
+        )
+    })?;
+    fs::create_dir_all(&run_dir).map_err(|err| {
+        format!(
+            "failed to create run directory {}: {err}",
+            run_dir.display()
+        )
+    })?;
+    let _run_dir = RunDir::new(run_dir);
+
+    if !wheelhouse_has_wheels(&wheelhouse)? {
+        let _lock = WheelhouseLock::acquire(&runtime_dir)?;
+        if !wheelhouse_has_wheels(&wheelhouse)? {
+            extract_wheelhouse(&wheelhouse)?;
+        }
+    }
+
     if !entrypoint.is_file() {
-        extract_wheelhouse(&wheelhouse)?;
         create_venv(&venv)?;
         install_electrumx(&wheelhouse, &venv)?;
     }
 
-    exec_electrumx(&entrypoint)
+    run_electrumx(&entrypoint)
 }
 
 fn extract_wheelhouse(wheelhouse: &Path) -> Result<(), String> {
@@ -77,6 +110,10 @@ fn extract_wheelhouse(wheelhouse: &Path) -> Result<(), String> {
 }
 
 fn wheelhouse_has_wheels(wheelhouse: &Path) -> Result<bool, String> {
+    if !wheelhouse.is_dir() {
+        return Ok(false);
+    }
+
     let entries = fs::read_dir(wheelhouse)
         .map_err(|err| format!("failed to read wheelhouse {}: {err}", wheelhouse.display()))?;
     for entry in entries {
@@ -130,32 +167,17 @@ fn install_electrumx(wheelhouse: &Path, venv: &Path) -> Result<(), String> {
     )
 }
 
-fn exec_electrumx(entrypoint: &Path) -> Result<(), String> {
+fn run_electrumx(entrypoint: &Path) -> Result<i32, String> {
     let mut command = Command::new(entrypoint);
     command.args(apply_flag_env()?);
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-
-        Err(command.exec()).map_err(|err| {
-            format!(
-                "failed to execute ElectrumX entrypoint {}: {err}",
-                entrypoint.display()
-            )
-        })
-    }
-
-    #[cfg(not(unix))]
-    {
-        let status = command.status().map_err(|err| {
-            format!(
-                "failed to execute ElectrumX entrypoint {}: {err}",
-                entrypoint.display()
-            )
-        })?;
-        std::process::exit(status.code().unwrap_or(1));
-    }
+    let status = command.status().map_err(|err| {
+        format!(
+            "failed to execute ElectrumX entrypoint {}: {err}",
+            entrypoint.display()
+        )
+    })?;
+    Ok(status.code().unwrap_or(1))
 }
 
 fn apply_flag_env() -> Result<Vec<OsString>, String> {
@@ -270,6 +292,62 @@ fn display_arg(arg: &OsStr) -> String {
         format!("{arg:?}")
     } else {
         arg.into_owned()
+    }
+}
+
+struct RunDir {
+    path: PathBuf,
+}
+
+impl RunDir {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl Drop for RunDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+struct WheelhouseLock {
+    path: PathBuf,
+    _file: File,
+}
+
+impl WheelhouseLock {
+    fn acquire(runtime_dir: &Path) -> Result<Self, String> {
+        let path = runtime_dir.join("wheelhouse.lock");
+        let start = Instant::now();
+        let timeout = Duration::from_secs(120);
+
+        loop {
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(file) => return Ok(Self { path, _file: file }),
+                Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+                    if start.elapsed() >= timeout {
+                        return Err(format!(
+                            "timed out waiting for ElectrumX wheelhouse lock {}",
+                            path.display()
+                        ));
+                    }
+                    sleep(Duration::from_millis(100));
+                }
+                Err(err) => {
+                    return Err(format!(
+                        "failed to create ElectrumX wheelhouse lock {}: {err}",
+                        path.display()
+                    ));
+                }
+            }
+        }
+    }
+}
+
+impl Drop for WheelhouseLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
     }
 }
 

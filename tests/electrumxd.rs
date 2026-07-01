@@ -4,6 +4,8 @@
 
 #![cfg(all(feature = "bitcoind", feature = "electrumx"))]
 
+use std::sync::Mutex;
+
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;
 use halfin::bitcoind::BitcoinD;
@@ -12,9 +14,13 @@ use halfin::electrumxd::ElectrumxD;
 use tracing::Level;
 use tracing::info;
 
+static ELECTRUMX_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 /// Verify that [`ElectrumxD`] starts and accepts Electrum requests.
 #[test]
 fn test_electrumxd_spawns() {
+    let _guard = ELECTRUMX_TEST_LOCK.lock().unwrap();
+
     let _ = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .with_test_writer()
@@ -42,6 +48,8 @@ fn test_electrumxd_spawns() {
 #[test]
 fn test_electrumxd_sees_mempool_transactions() {
     const BLOCK_COUNT: u32 = 101;
+
+    let _guard = ELECTRUMX_TEST_LOCK.lock().unwrap();
 
     let _ = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
@@ -81,6 +89,8 @@ fn test_electrumxd_syncs_blocks() {
     const BLOCK_COUNT: u32 = 1;
     const SYNC_STRESS_BLOCK_BATCHES: &[u32] = &[1, 2, 5];
 
+    let _guard = ELECTRUMX_TEST_LOCK.lock().unwrap();
+
     let _ = tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .with_test_writer()
@@ -110,6 +120,8 @@ fn test_electrumxd_syncs_blocks() {
 #[test]
 #[ignore = "ElectrumX same-height reorg handling is shitty"]
 fn test_electrumxd_reindexes_reorgs() {
+    let _guard = ELECTRUMX_TEST_LOCK.lock().unwrap();
+
     let bitcoind = BitcoinD::new().unwrap();
     let electrumxd = ElectrumxD::new(&bitcoind).unwrap();
 

@@ -648,7 +648,7 @@ mod electrumx {
             env_var: HALFIN_ELECTRUMX_PATH,
             destination_dir_prefix: "electrumx",
             checksum_file: PathBuf::from(format!(
-                "sha256/electrumxd/electrumx-{}-SHA256SUMS",
+                "sha256/electrumx/electrumx-{}-SHA256SUMS",
                 ELECTRUMX_VERSION
             )),
             remote_dir: "electrumx",
