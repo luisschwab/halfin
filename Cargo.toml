@@ -54,7 +54,10 @@ test = { sample_strategy = "all" }
 lint = { allowed_duplicates = ["base64"] }
 
 [lints.rust]
+missing_debug_implementations = "warn"
 missing_docs = "warn"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
 
 # Copied over from `rust-bitcoin`
 [lints.clippy]

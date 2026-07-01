@@ -34,7 +34,6 @@ use std::path::PathBuf;
 use std::process::Child;
 use std::process::Command;
 use std::process::Stdio;
-use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
@@ -157,6 +156,7 @@ impl Default for ElectrsDConf<'_> {
 /// OS's ephemeral range at startup. Use [`electrum_socket`](ElectrsD::electrum_socket)
 /// and [`monitoring_socket`](ElectrsD::monitoring_socket) to discover them after
 /// construction.
+#[derive(Debug)]
 pub struct ElectrsD {
     /// Handle to the spawned `electrs` child process.
     process: Child,
@@ -267,11 +267,7 @@ impl ElectrsD {
             let monitoring_socket =
                 SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, monitoring_port));
 
-            let mut args: Vec<String> = conf
-                .args
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect();
+            let mut args: Vec<String> = conf.args.iter().map(ToString::to_string).collect();
             args.extend([
                 "--db-dir".to_string(),
                 working_directory.path().display().to_string(),
@@ -316,7 +312,7 @@ impl ElectrsD {
 
             // Add a small timeout to let `electrs` fail
             // and retry in the case of a port collision.
-            thread::sleep(NODE_BUILDING_INTERVAL);
+            sleep(NODE_BUILDING_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
@@ -600,7 +596,7 @@ impl ElectrsD {
                     return Ok(());
                 }
 
-                thread::sleep(2 * POLL_INTERVAL);
+                sleep(2 * POLL_INTERVAL);
             }
 
             Err(Error::ElectrsDIndexTimeout((
@@ -682,7 +678,7 @@ impl ElectrsD {
                     .map_err(Error::UnresponsiveElectrsD)?,
             };
             let Some(notification) = notification else {
-                thread::sleep(2 * POLL_INTERVAL);
+                sleep(2 * POLL_INTERVAL);
                 continue;
             };
 
@@ -692,7 +688,7 @@ impl ElectrsD {
                 return Ok(());
             }
 
-            thread::sleep(2 * POLL_INTERVAL);
+            sleep(2 * POLL_INTERVAL);
         }
 
         Err(Error::ElectrsDIndexTimeout((description, timeout)))
@@ -779,7 +775,7 @@ impl ElectrsD {
                 },
                 Err(err) => last_error = Some(err),
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
 
         Err(last_error.map_or(Error::RpcClientSetupTimeout, Error::UnresponsiveElectrsD))

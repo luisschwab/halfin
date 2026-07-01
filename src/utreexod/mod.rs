@@ -25,7 +25,6 @@ use std::process::Child;
 use std::process::Command;
 use std::process::ExitStatus;
 use std::process::Stdio;
-use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
@@ -327,7 +326,7 @@ impl UtreexoD {
 
             // Add a small timeout to let `bitcoind` fail
             // and retry in the case of a port collision.
-            thread::sleep(NODE_BUILDING_INTERVAL);
+            sleep(NODE_BUILDING_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {
@@ -642,7 +641,7 @@ impl UtreexoD {
                 debug!("{}: connected peer at socket={}", Self::get_name(), socket);
                 return Ok(());
             }
-            thread::sleep(delay);
+            sleep(delay);
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
@@ -797,7 +796,7 @@ impl UtreexoD {
                     return Ok(client);
                 }
             }
-            thread::sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(200));
         }
 
         Err(Error::RpcClientSetupTimeout)
