@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+* Kill orphaned `electrumx.exe` processes on Windows
+
 ## [0.5.0] – 2026-07-01
 
 * ElectrumX support
@@ -28,4 +30,4 @@
 
 [Unreleased]: https://github.com/luisschwab/halfin/compare/v0.5.0...HEAD
 
-[0.5.0]: https://github.com/luisschwab/halfin/compare/v0.4.1...v0.5.0
+[0.5.0]: https://github.com/luisschwab/halfin/compare/v0.4.0...v0.5.0

@@ -748,7 +748,17 @@ impl Drop for ElectrumxD {
             Self::get_name(),
             self.process.id()
         );
-        let _ = self.process.kill();
+
+        if cfg!(target_os = "windows") {
+            let _ = Command::new("taskkill")
+                .args(["/PID", &self.process.id().to_string(), "/T", "/F"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        } else {
+            let _ = self.process.kill();
+        }
+        let _ = self.process.wait();
     }
 }
 

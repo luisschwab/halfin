@@ -38,10 +38,7 @@ fn main() {
 
 fn run() -> Result<i32, String> {
     let exe = env::current_exe().map_err(|err| format!("failed to locate executable: {err}"))?;
-    let here = exe
-        .parent()
-        .ok_or_else(|| format!("failed to determine directory for {}", exe.display()))?;
-    let runtime_dir = here.join(format!(".electrumx-{ELECTRUMX_VERSION}"));
+    let runtime_dir = runtime_dir(&exe);
     let wheelhouse = runtime_dir.join("wheelhouse");
     let run_dir = runtime_dir
         .join("runs")
@@ -76,6 +73,25 @@ fn run() -> Result<i32, String> {
     }
 
     run_electrumx(&entrypoint)
+}
+
+fn runtime_dir(exe: &Path) -> PathBuf {
+    env::temp_dir()
+        .join("halfin-electrumx")
+        .join(ELECTRUMX_VERSION)
+        .join(format!("{:016x}", stable_path_hash(exe)))
+}
+
+fn stable_path_hash(path: &Path) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for byte in path.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }
 
 fn extract_wheelhouse(wheelhouse: &Path) -> Result<(), String> {
