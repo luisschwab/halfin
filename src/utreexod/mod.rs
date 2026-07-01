@@ -40,12 +40,12 @@ use crate::CONNECTION_TIMEOUT;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
-use crate::NODE_BUILDING_ATTEMPTS;
-use crate::NODE_BUILDING_INTERVAL;
-use crate::Node;
 use crate::POLL_INTERVAL;
+use crate::SPAWN_ATTEMPTS;
+use crate::SPAWN_INTERVAL;
 use crate::WAIT_TIMEOUT;
 use crate::get_available_port;
+use crate::node::Node;
 use crate::pipe_to_tracing;
 
 /// Bundled `utreexod` version metadata.
@@ -117,7 +117,7 @@ pub struct UtreexoDConf<'a> {
     /// How many times to retry spawning `utreexod` before giving up.
     ///
     /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`NODE_BUILDING_ATTEMPTS`].
+    /// errors are automatically recovered from. Defaults to [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -135,7 +135,7 @@ impl Default for UtreexoDConf<'_> {
             ],
             tmpdir: None,
             staticdir: None,
-            max_retries: NODE_BUILDING_ATTEMPTS,
+            max_retries: SPAWN_ATTEMPTS,
         }
     }
 }
@@ -175,9 +175,9 @@ pub struct UtreexoD {
 
 #[rustfmt::skip]
 impl Node for UtreexoD {
-    fn get_name() -> &'static str { "UtreexoD" }
+    fn get_name() -> &'static str { versions::UTREEXOD_NAME }
 
-    fn get_bin_name() -> &'static str { "utreexod_v_0_6_0" }
+    fn get_bin_name() -> &'static str { versions::UTREEXOD_BIN_NAME }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
@@ -326,7 +326,7 @@ impl UtreexoD {
 
             // Add a small timeout to let `bitcoind` fail
             // and retry in the case of a port collision.
-            sleep(NODE_BUILDING_INTERVAL);
+            sleep(SPAWN_INTERVAL);
 
             // If the process exited immediately, try again with new ports.
             match process.try_wait() {

@@ -1,6 +1,6 @@
 //! # Error
 //!
-//! Error types returned by [`Node`](crate::Node)
+//! Error types returned by [`Node`](crate::node::Node)
 //! and indexer process management helpers.
 
 use core::error;
@@ -31,10 +31,10 @@ pub enum Error {
     /// The binary was not found at the expected location.
     BinaryNotFound((String, PathBuf)),
 
-    /// Failed to spawn a [process](std::process::Child) for a [`crate::Node`] or Electrum Server.
+    /// Failed to spawn a [process](std::process::Child) for a [`Node`](crate::node::Node) or Electrum Server.
     FailedToSpawn(std::io::Error),
 
-    /// Failed to instantiate a node or indexer after [`crate::NODE_BUILDING_ATTEMPTS`] attempts.
+    /// Failed to instantiate a node or indexer after [`crate::SPAWN_ATTEMPTS`] attempts.
     ExhaustedNodeBuildingAttempts(u8),
 
     /// Failed to stop [`crate::bitcoind::BitcoinD`] or [`crate::utreexod::UtreexoD`] over JSON-RPC (e.g. `bitcoin-cli -regtest stop`).
@@ -77,10 +77,10 @@ pub enum Error {
     /// Received an unexpected response from the JSON-RPC server
     UnexpectedResponse(String),
 
-    /// Timed out whilst waiting for the [`crate::Node`]'s chain to synchronize up to `height`
+    /// Timed out whilst waiting for the [`Node`](crate::node::Node)'s chain to synchronize up to `height`
     ChainSyncTimeOut((u32, u32, Duration)), // (current_height, target_height, timeout)
 
-    /// Timed out whilst waiting for the [`crate::Node`]'s to connect to each other.
+    /// Timed out whilst waiting for the [`Node`](crate::node::Node)'s to connect to each other.
     ConnectionTimeout(Duration),
 }
 

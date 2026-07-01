@@ -7,9 +7,9 @@
 use corepc_client::bitcoin::Amount;
 use halfin::bitcoind::BitcoinD;
 use halfin::bitcoind::get_bitcoind_path;
-use halfin::connect;
-use halfin::wait_for_filter_height;
-use halfin::wait_for_height;
+use halfin::node::connect;
+use halfin::node::wait_for_filter_height;
+use halfin::node::wait_for_height;
 
 /// Verify that [`BitcoinD`] starts successfully and
 /// exposes its PID, working directory, and P2P socket.
