@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Enable `txindex` on `BitcoinD` by default
 * Use `ELECTRS_VERSION` from `electrsd/versions.rs` on the binary building script
 * Move errors to `error.rs`
 * Add and apply `rust-bitcoin` lints
