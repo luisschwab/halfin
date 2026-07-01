@@ -148,8 +148,10 @@ mod binary {
         /// or `<HALFIN_BIN_DIR>/<destination-dir-prefix>-<VERSION>/<name>` if the
         /// `HALFIN_BIN_DIR` environment variable is set.
         ///
-        /// Download is skipped if the binary is already cached from a previous build.
+        /// Download is skipped if the binary is already cached from the expected archive.
         pub(crate) fn download_and_install(self) {
+            println!("cargo:rerun-if-changed={}", self.checksum_file.display());
+
             let download_directory = download_directory();
             fs::create_dir_all(&download_directory)
                 .map_err(|e| {
@@ -175,17 +177,48 @@ mod binary {
 
             let existing_path = self.existing_path(&download_directory);
             if existing_path.exists() {
+                if self.cached_archive_hash_matches(&download_directory, expected_hash) {
+                    println!(
+                        "cargo:warning=Found cached `{}` @ v{} at `{}`, skipping download...",
+                        self.name,
+                        self.version,
+                        existing_path.display(),
+                    );
+                    return;
+                }
+
                 println!(
-                    "cargo:warning=Found cached `{}` @ v{} at `{}`, skipping download...",
+                    "cargo:warning=Cached `{}` @ v{} at `{}` is stale, re-downloading...",
                     self.name,
                     self.version,
                     existing_path.display(),
                 );
-                return;
             }
 
             let archive_bytes = self.download_archive();
             self.install_archive(&archive_bytes, &download_directory, expected_hash);
+        }
+
+        /// Return the directory that stores this binary and its cache metadata.
+        fn destination_directory(&self, download_directory: &Path) -> PathBuf {
+            download_directory.join(self.destination_dir_name())
+        }
+
+        /// Return the sidecar file recording the archive hash used for the extracted binary.
+        fn archive_hash_marker_path(&self, download_directory: &Path) -> PathBuf {
+            self.destination_directory(download_directory)
+                .join(".archive.sha256")
+        }
+
+        /// Return whether the cached binary was extracted from the expected archive hash.
+        fn cached_archive_hash_matches(
+            &self,
+            download_directory: &Path,
+            expected_hash: sha256::Hash,
+        ) -> bool {
+            let marker_path = self.archive_hash_marker_path(download_directory);
+            fs::read_to_string(&marker_path)
+                .is_ok_and(|hash| hash.trim() == expected_hash.to_string())
         }
 
         /// Look up the expected SHA256 hash for this binary's archive.
@@ -290,11 +323,34 @@ mod binary {
                 let destination_path = self.destination_path(download_directory);
                 self.codesign_on_macos_aarch64(&destination_path);
             }
+
+            let marker_path = self.archive_hash_marker_path(download_directory);
+            fs::write(&marker_path, format!("{expected_hash}\n"))
+                .map_err(|e| {
+                    format!(
+                        "Cannot write `{}` archive hash marker at={}: {}",
+                        self.name,
+                        marker_path.display(),
+                        e
+                    )
+                })
+                .unwrap();
         }
 
         /// Extract the selected archive format into this binary's destination directory.
         fn extract_archive(&self, archive_bytes: &[u8], download_directory: &Path) {
-            let destination_directory = download_directory.join(self.destination_dir_name());
+            let destination_directory = self.destination_directory(download_directory);
+            if destination_directory.exists() {
+                fs::remove_dir_all(&destination_directory)
+                    .map_err(|e| {
+                        format!(
+                            "Cannot remove stale destination directory={}: {}",
+                            destination_directory.display(),
+                            e
+                        )
+                    })
+                    .unwrap();
+            }
             fs::create_dir_all(&destination_directory)
                 .map_err(|e| {
                     format!(
