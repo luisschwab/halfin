@@ -7,7 +7,12 @@
 //! the needed binaries, and publishes their paths through Cargo compile-time
 //! environment variables.
 
-#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
 /// Shared binary download and extraction helpers.
 mod binary {
     use std::collections::hash_map::RandomState;
@@ -62,18 +67,25 @@ mod binary {
     pub(crate) struct Binary {
         /// Name of the executable inside the downloaded archive.
         pub(crate) name: &'static str,
+
         /// Version displayed in build warnings and used in destination paths.
         pub(crate) version: &'static str,
+
         /// Compile-time environment variable that exposes the extracted binary path.
         pub(crate) env_var: &'static str,
+
         /// Prefix for the versioned directory that stores this binary.
         pub(crate) destination_dir_prefix: &'static str,
+
         /// Bundled SHA256SUMS file for this binary's archives.
         pub(crate) checksum_file: PathBuf,
+
         /// Remote directory path for the binary.
         pub(crate) remote_path: PathBuf,
+
         /// Platform-specific archive selected by the binary module.
         pub(crate) archive_filename: PathBuf,
+
         /// Whether macOS aarch64 builds should ad-hoc sign the extracted binary.
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         pub(crate) codesign_on_macos_aarch64: bool,
@@ -153,8 +165,8 @@ mod binary {
 
             let existing_path = self.existing_path(&download_directory);
             if existing_path.exists() {
-                eprintln!(
-                    "Found cached `{}` @ v{} at `{}`, skipping download...",
+                println!(
+                    "cargo:warning=Found cached `{}` @ v{} at `{}`, skipping download...",
                     self.name,
                     self.version,
                     existing_path.display(),
@@ -163,13 +175,7 @@ mod binary {
             }
 
             let archive_bytes = self.download_archive();
-            self.verify_archive_hash(&archive_bytes, expected_hash);
-            self.extract_archive(&archive_bytes, &download_directory);
-
-            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-            if self.codesign_on_macos_aarch64 {
-                self.codesign_on_macos_aarch64(&destination_path);
-            }
+            self.install_archive(&archive_bytes, &download_directory, expected_hash);
         }
 
         /// Look up the expected SHA256 hash for this binary's archive.
@@ -214,8 +220,8 @@ mod binary {
                 let base_url = BIN_DOWNLOAD_MIRRORS[(start + offset) % BIN_DOWNLOAD_MIRRORS.len()];
                 let download_url: Url = self.download_url(base_url, &archive_filename);
 
-                eprintln!(
-                    "Downloading `{}` @ v{} from `{}`",
+                println!(
+                    "cargo:warning=Downloading `{}` @ v{} from `{}`",
                     self.name, self.version, download_url,
                 );
 
@@ -257,6 +263,23 @@ mod binary {
                 "Downloaded {} archive hash does not match expected hash: downloaded={} != expected={}",
                 self.name, downloaded_hash, expected_hash
             );
+        }
+
+        /// Verify and extract archive bytes into the cache directory.
+        fn install_archive(
+            &self,
+            archive_bytes: &[u8],
+            download_directory: &Path,
+            expected_hash: sha256::Hash,
+        ) {
+            self.verify_archive_hash(archive_bytes, expected_hash);
+            self.extract_archive(archive_bytes, download_directory);
+
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            if self.codesign_on_macos_aarch64 {
+                let destination_path = self.destination_path(download_directory);
+                self.codesign_on_macos_aarch64(&destination_path);
+            }
         }
 
         /// Extract the selected archive format into this binary's destination directory.
@@ -380,6 +403,9 @@ fn main() {
 
         #[cfg(feature = "electrs")]
         electrs::download();
+
+        #[cfg(feature = "electrumx")]
+        electrumx::download();
     }
 }
 
@@ -552,6 +578,67 @@ mod electrs {
                 ELECTRS_VERSION
             )),
             remote_path: PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
+            archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            codesign_on_macos_aarch64: false,
+        }
+        .download_and_install();
+    }
+}
+
+/// Downloads and verifies the `ElectrumX` launcher based on the enabled version feature.
+#[cfg(feature = "electrumx")]
+mod electrumx {
+    use super::binary::Binary;
+    use super::binary::PathBuf;
+
+    include!("src/electrumxd/versions.rs");
+
+    /// Compile-time environment variable containing the extracted `ElectrumX` launcher path.
+    const HALFIN_ELECTRUMX_PATH: &str = "HALFIN_ELECTRUMX_PATH";
+
+    /// Return the platform-specific archive filename for this version of `ElectrumX`.
+    ///
+    /// Panics if the current OS/architecture combination is not supported.
+    fn get_download_filename() -> String {
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            return "electrumx-darwin-arm64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            return "electrumx-darwin-amd64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            return "electrumx-linux-amd64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            return "electrumx-linux-arm64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+            return "electrumx-windows-amd64.zip".to_string();
+        }
+        if cfg!(all(target_os = "windows", target_arch = "aarch64")) {
+            return "electrumx-windows-arm64.zip".to_string();
+        }
+        panic!("No download file for this OS+Architecture combination");
+    }
+
+    /// Download, verify, and extract the `ElectrumX` launcher into
+    /// `<OUT_DIR>/bin/electrumx-<VERSION>/electrumx`, or
+    /// `<HALFIN_BIN_DIR>/electrumx-<VERSION>/electrumx` if the
+    /// `HALFIN_BIN_DIR` environment variable is set.
+    ///
+    /// Skips the download if the binary is already cached from a previous build.
+    pub(crate) fn download() {
+        Binary {
+            name: "electrumx",
+            version: ELECTRUMX_VERSION,
+            env_var: HALFIN_ELECTRUMX_PATH,
+            destination_dir_prefix: "electrumx",
+            checksum_file: PathBuf::from(format!(
+                "sha256/electrumxd/electrumx-{}-SHA256SUMS",
+                ELECTRUMX_VERSION
+            )),
+            remote_path: PathBuf::from(format!("electrumx-{}", ELECTRUMX_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: false,
