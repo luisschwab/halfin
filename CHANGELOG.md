@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Move errors to `error.rs`
 * Add and apply `rust-bitcoin` lints
 * Condense RBMT metadata
 * Add CI job to assert PR bisectability
