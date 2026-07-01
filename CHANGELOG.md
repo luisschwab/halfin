@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.0] – 2026-07-01
+
 * ElectrumX support
 * Enable `txindex` on `BitcoinD` by default
 * Use `ELECTRS_VERSION` from `electrsd/versions.rs` on the binary building script
@@ -23,3 +25,7 @@
 * Replace `ElectrsD` free-function wait helpers with `ElectrsD::wait_until_*` methods that an optional `timeout` parameter.
 * Make `ElectrsD` block waits verify both expected height and block hash using Electrum header notifications.
 * Add `ElectrsD` reorg coverage to verify the indexer follows replacement chain tips.
+
+[Unreleased]: https://github.com/luisschwab/halfin/compare/v0.5.0...HEAD
+
+[0.5.0]: https://github.com/luisschwab/halfin/compare/v0.4.1...v0.5.0
