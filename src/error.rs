@@ -64,9 +64,17 @@ pub enum Error {
     #[cfg(feature = "electrs")]
     UnresponsiveElectrsD(electrum_client::Error),
 
+    /// [`crate::electrumxd::ElectrumxD`] is unresponsive (it's probably not running).
+    #[cfg(feature = "electrumx")]
+    UnresponsiveElectrumxD(electrum_client::Error),
+
     /// Timed out whilst waiting for [`crate::electrsd::ElectrsD`] to index expected data.
     #[cfg(feature = "electrs")]
     ElectrsDIndexTimeout((String, Duration)),
+
+    /// Timed out whilst waiting for [`crate::electrumxd::ElectrumxD`] to index expected data.
+    #[cfg(feature = "electrumx")]
+    ElectrumxDIndexTimeout((String, Duration)),
 
     /// Timed out whilst waiting for the cookie file to be generated.
     CookieFileTimeout(PathBuf),
@@ -104,8 +112,12 @@ impl fmt::Display for Error {
             Self::UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
             #[cfg(feature = "electrs")]
             Self::UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
+            #[cfg(feature = "electrumx")]
+            Self::UnresponsiveElectrumxD(err) => write!(f, "`ElectrumxD` is unresponsive to Electrum requests: {err:?}"),
             #[cfg(feature = "electrs")]
             Self::ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
+            #[cfg(feature = "electrumx")]
+            Self::ElectrumxDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrumxD` to index {description}", timeout.as_secs()),
             Self::CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             Self::RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
             Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),

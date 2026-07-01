@@ -16,10 +16,17 @@ default = ["bitcoind", "utreexod"]
 bitcoind = []
 utreexod = []
 electrs = ["bitcoind", "dep:electrum-client"]
+electrumx = ["bitcoind", "dep:electrum-client"]
 
 [[example]]
 name = "cross-compile-electrs"
 path = "contrib/compile_electrs/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "cross-compile-electrumx"
+path = "contrib/compile_electrumx/build.rs"
 test = false
 bench = false
 

@@ -2,8 +2,8 @@
 
 //! # `Node` trait
 //!
-//! This module implements the `Node` trait, with common methods
-//! and utilities across all Bitcoin node implementations.
+//! This module implements the [`Node`] trait, with common methods
+//! and utilities across all Bitcoin [`Node`] implementations.
 
 use crate::CONNECTION_INTERVAL;
 use crate::CONNECTION_TIMEOUT;
@@ -18,7 +18,7 @@ use std::time::Instant;
 use tracing::debug;
 use tracing::info;
 
-/// Common interface across all node implementations ([`BitcoinD`](crate::bitcoind::BitcoinD)/[`UtreexoD`](crate::utreexod::UtreexoD)).
+/// Common interface across all [`Node`] implementations.
 pub trait Node {
     /// The [`Node`]'s human-readable name.
     fn get_name() -> &'static str;

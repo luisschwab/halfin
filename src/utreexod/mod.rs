@@ -67,7 +67,6 @@ const RPC_PASS: &str = "halfin";
 ///
 /// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
 pub fn get_utreexod_path() -> Result<PathBuf, Error> {
-    let bin_name = UtreexoD::get_bin_name().to_string();
     #[allow(unused_mut)]
     let mut bin_path = PathBuf::from(option_env!("HALFIN_UTREEXOD_PATH").unwrap_or(""));
 
@@ -77,6 +76,7 @@ pub fn get_utreexod_path() -> Result<PathBuf, Error> {
         bin_path.set_extension("exe");
     }
 
+    let bin_name = UtreexoD::get_bin_name().to_string();
     match bin_path.exists() {
         true => Ok(bin_path),
         false => Err(Error::BinaryNotFound((bin_name, bin_path))),

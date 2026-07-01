@@ -5,7 +5,8 @@
 //! > A {regtest} bitcoin node runner 🏃‍♂️
 //!
 //! This crate makes it simple to run regtest [`bitcoind`], [`utreexod`],
-//! and [`electrs`] instances from Rust code, useful in integration test contexts.
+//! [`electrs`], and [`electrumx`] instances from Rust code,
+//! useful in integration test contexts.
 //!
 //! ## Supported Implementations
 //!
@@ -35,12 +36,18 @@
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
-//! [`electrs`]: <https://github.com/romanz/electrs>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
+//! [`electrs`]: <https://github.com/romanz/electrs>
+//! [`electrumx`]: <https://github.com/spesmilo/electrumx>
 
 use core::net::Ipv4Addr;
 
-#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
 use std::io::{BufRead, BufReader, Read};
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -48,7 +55,12 @@ use std::time::Duration;
 
 pub use serde_json;
 use tempfile::TempDir;
-#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
 use tracing::trace;
 
 #[allow(unused)]
@@ -57,6 +69,9 @@ pub(crate) use bitcoind::BitcoinD;
 #[allow(unused)]
 #[cfg(feature = "electrs")]
 pub(crate) use electrsd::ElectrsD;
+#[allow(unused)]
+#[cfg(feature = "electrumx")]
+pub(crate) use electrumxd::ElectrumxD;
 #[allow(unused)]
 #[cfg(feature = "utreexod")]
 pub(crate) use utreexod::UtreexoD;
@@ -67,6 +82,8 @@ pub use crate::error::Error;
 pub mod bitcoind;
 #[cfg(feature = "electrs")]
 pub mod electrsd;
+#[cfg(feature = "electrumx")]
+pub mod electrumxd;
 pub mod error;
 pub mod node;
 #[cfg(feature = "utreexod")]
@@ -93,25 +110,6 @@ pub const CONNECTION_INTERVAL: Duration = Duration::from_millis(150);
 /// Timeout for [`Node`](crate::node::Node) connection.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Spawn a background thread that reads `reader` line by line and re-emits
-/// each line as a [`trace!`] event, prefixed with `source`.
-///
-/// Used to pipe a child [`BitcoinD`]/[`UtreexoD`]/[`ElectrsD`] process `stdout`/`stderr`
-/// into [`tracing`]. The thread exits on EOF, which happens when the process
-/// dies and its pipe is closed.
-#[cfg(any(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
-pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
-    std::thread::spawn(move || {
-        let mut lines = BufReader::new(reader).lines();
-        while let Some(Ok(line)) = lines.next() {
-            // Skip blank lines so the trace stream mirrors the node's output.
-            if !line.trim().is_empty() {
-                trace!("{source}: {line}");
-            }
-        }
-    });
-}
-
 /// Ask the OS for an available port, immediately unbind and return it.
 ///
 /// # Panics
@@ -124,6 +122,30 @@ pub fn get_available_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+/// Spawn a background thread that reads `reader` line by line and re-emits
+/// each line as a [`trace!`] event, prefixed with `source`.
+///
+/// Used to pipe a child process' `stdout`/`stderr`
+/// into [`tracing`]. The thread exits on EOF, which happens when the process
+/// dies and its pipe is closed.
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
+    std::thread::spawn(move || {
+        let mut lines = BufReader::new(reader).lines();
+        while let Some(Ok(line)) = lines.next() {
+            // Skip blank lines so the trace stream mirrors the node's output.
+            if !line.trim().is_empty() {
+                trace!("{source}: {line}");
+            }
+        }
+    });
 }
 
 /// Owns a node's working directory, either as a temporary or a persistent path.

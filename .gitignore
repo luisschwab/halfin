@@ -5,3 +5,7 @@ Cargo.lock.backup
 
 contrib/compile_electrs/dist/
 contrib/compile_electrs/tmp/
+
+contrib/compile_electrumx/dist/
+contrib/compile_electrumx/tmp/
+contrib/compile_electrumx/local_wheels/
