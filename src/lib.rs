@@ -61,7 +61,7 @@ use tempfile::TempDir;
     feature = "electrs",
     feature = "electrumx"
 ))]
-use tracing::trace;
+use tracing::info;
 
 #[allow(unused)]
 #[cfg(feature = "bitcoind")]
@@ -125,7 +125,7 @@ pub fn get_available_port() -> u16 {
 }
 
 /// Spawn a background thread that reads `reader` line by line and re-emits
-/// each line as a [`trace!`] event, prefixed with `source`.
+/// each line as an [`info!`] event, prefixed with `source`.
 ///
 /// Used to pipe a child process' `stdout`/`stderr`
 /// into [`tracing`]. The thread exits on EOF, which happens when the process
@@ -140,9 +140,9 @@ pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'sta
     std::thread::spawn(move || {
         let mut lines = BufReader::new(reader).lines();
         while let Some(Ok(line)) = lines.next() {
-            // Skip blank lines so the trace stream mirrors the node's output.
+            // Skip blank lines so the log stream mirrors the node's output.
             if !line.trim().is_empty() {
-                trace!("{source}: {line}");
+                info!("{source}: {line}");
             }
         }
     });
