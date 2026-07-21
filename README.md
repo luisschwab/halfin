@@ -101,23 +101,23 @@ to manage everything related to `cargo`, such as formatting, linting, testing an
 A `justfile` is provided for convenience. Run `just` to see available commands:
 
 ```shell
-~$ just
 > halfin
 > A regtest runner for `bitcoind` and `utreexod`
 
 Available recipes:
-    audit      # Run `cargo audit` on all lockfiles and prune ignored advisories [alias: a]
+    audit      # Run cargo-audit across all lockfiles and prune stale advisories [alias: a]
     build      # Build `halfin` [alias: b]
-    check      # Check code formatting, compilation, and linting [alias: c]
-    check-sigs # Checks whether all commits in this branch are signed [alias: cs]
-    doc        # Generate documentation [alias: d]
-    doc-open   # Generate and open documentation [alias: do]
-    fmt        # Format code [alias: f]
-    lock       # Regenerate Cargo-recent.lock and Cargo-minimal.lock [alias: l]
+    check      # Check Formatting, Linting and Documentation [alias: c]
+    doc        # Generate Documentation [alias: d]
+    doc-open   # Generate and Open Documentation [alias: do]
+    fmt        # Format Code [alias: f]
+    lock       # Regenerate Lockfiles [alias: l]
     pre-push   # Run pre-push checks [alias: p]
     shellcheck # Run ShellCheck [alias: sc]
-    test       # Run tests with relevant toolchain and lockfile combinations [alias: t]
-    toolchains # Install and/or Update `cargo-rbmt` and Stable and Nightly toolchains
+    test       # Run Tests [alias: t]
+    test-all   # Run Tests with Lockfile and Toolchain Combos
+    toolchains # Update Stable and Nightly Toolchains
+    tools      # Install cargo-rbmt Tools
     zizmor     # Run Zizmor Static Analysis [alias: z]
 ```
 

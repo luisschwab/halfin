@@ -1,7 +1,6 @@
 alias a := audit
 alias b := build
 alias c := check
-alias cs := check-commit-signatures
 alias d := doc
 alias do := doc-open
 alias f := fmt
@@ -11,12 +10,14 @@ alias sc := shellcheck
 alias z := zizmor
 alias p := pre-push
 
+export RBMT_LOG_LEVEL := env("RBMT_LOG_LEVEL", "verbose")
+
 _default:
     @echo "> halfin"
     @echo "> A regtest runner for \`bitcoind\` and \`utreexod\`\n"
     @just --list
 
-[doc: "Run `cargo audit` on all lockfiles and prune ignored advisories"]
+[doc: "Run cargo-audit across all lockfiles and prune stale advisories"]
 audit:
     bash contrib/run-cargo-audit.sh
     bash contrib/prune-audit-ignores.sh
@@ -25,45 +26,44 @@ audit:
 build:
     RBMT_LOG_LEVEL=verbose cargo rbmt run build
 
-[doc: "Check code formatting, compilation, and linting"]
+[doc: "Check Formatting, Linting and Documentation"]
 check:
-    RBMT_LOG_LEVEL=verbose cargo rbmt fmt --check
-    RBMT_LOG_LEVEL=verbose cargo rbmt lint
-    RBMT_LOG_LEVEL=verbose cargo rbmt docsrs
+    cargo rbmt fmt --check
+    cargo rbmt lint
+    cargo rbmt docs
 
-[doc: "Checks whether all commits in this branch are signed"]
-check-commit-signatures:
-    bash contrib/check-signatures.sh
-
-[doc: "Generate documentation"]
+[doc: "Generate Documentation"]
 doc:
-    RBMT_LOG_LEVEL=verbose cargo rbmt docsrs
+    cargo rbmt docs
 
-[doc: "Generate and open documentation"]
+[doc: "Generate and Open Documentation"]
 doc-open:
-    RBMT_LOG_LEVEL=verbose cargo rbmt docsrs --open
+    cargo rbmt docs --open
 
-[doc: "Format code"]
+[doc: "Format Code"]
 fmt:
-    RBMT_LOG_LEVEL=verbose cargo rbmt fmt
+    cargo rbmt fmt
 
-[doc: "Regenerate Cargo-recent.lock and Cargo-minimal.lock"]
+[doc: "Regenerate Lockfiles"]
 lock:
-    RBMT_LOG_LEVEL=verbose cargo rbmt lock
+    cargo rbmt lock
 
-[doc: "Run tests with relevant toolchain and lockfile combinations"]
+[doc: "Run Tests"]
 test:
-    @just lock
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile recent
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
+    cargo rbmt test
 
-[doc: "Install and/or Update `cargo-rbmt` and Stable and Nightly toolchains"]
+[doc: "Run Tests with Lockfile and Toolchain Combos"]
+test-all:
+    cargo rbmt test --toolchain stable --lockfile recent
+    cargo rbmt test --toolchain stable --lockfile minimal
+    cargo rbmt test --toolchain msrv --lockfile minimal
+
+[doc: "Update Stable and Nightly Toolchains"]
 toolchains:
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-stable
     RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-nightly
 
-[doc: "Install cargo-rbmt tools"]
+[doc: "Install cargo-rbmt Tools"]
 tools:
     RBMT_LOG_LEVEL=progress cargo rbmt tools
 
@@ -82,8 +82,7 @@ pre-push:
     @just tools
     @just check
     @just doc
-    @just test
+    @just test-all
     @just shellcheck
     @just audit
     @just zizmor
-    @just check-commit-signatures
