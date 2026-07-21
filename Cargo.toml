@@ -30,6 +30,10 @@ path = "contrib/compile_electrumx/build.rs"
 test = false
 bench = false
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 corepc-client = { version = "=0.16.0", features = ["client-sync"] }
 electrum-client = { version = "=0.25.0", default-features = false, optional = true }
@@ -47,14 +51,12 @@ zip = { version = "=7.2.0", default-features = false, features = ["bzip2", "defl
 
 [dev-dependencies]
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
-lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
 xshell = { version = "=0.3.0-pre.2" }
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+# Transitive dependency pins:
+lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
 
 [package.metadata.rbmt]
+version = "0.5.1"
 toolchains = { stable = "1.97.0", nightly = "nightly-2026-07-14" }
 tools = { cargo-audit = "=0.22.2", zizmor = "=1.26.1" }
 test = { sample_strategy = "all" }

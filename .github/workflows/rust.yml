@@ -62,12 +62,12 @@ jobs:
             fail-fast: false
             matrix:
                 include:
+                    - name: Documentation
+                      task: docs
                     - name: Formatting
                       task: fmt --check
                     - name: Linting
                       task: lint
-                    - name: Documentation
-                      task: docsrs
 
         steps:
             - name: Checkout Repository
