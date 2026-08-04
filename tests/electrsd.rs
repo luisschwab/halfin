@@ -12,16 +12,23 @@ use halfin::electrsd::ElectrsD;
 use tracing::Level;
 use tracing::info;
 
-/// Verify that [`ElectrsD`] starts and accepts Electrum requests.
+/// Verify that [`ElectrsD`] connects to `BitcoinD`'s non-standard P2P port and
+/// accepts Electrum requests.
 #[test]
 fn test_electrsd_spawns() {
+    const REGTEST_DEFAULT_P2P_PORT: u16 = 18_444;
+
     let _ = tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .with_test_writer()
         .try_init();
 
     let bitcoind = BitcoinD::new().unwrap();
+    assert_ne!(bitcoind.get_p2p_socket().port(), REGTEST_DEFAULT_P2P_PORT);
+    assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
+
     let electrsd = ElectrsD::new(&bitcoind).unwrap();
+    assert_eq!(bitcoind.get_peer_count().unwrap(), 1);
 
     electrsd.client.ping().unwrap();
 

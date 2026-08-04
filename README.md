@@ -13,40 +13,42 @@
     <a href="https://github.com/luisschwab/halfin/actions/workflows/cross.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/cross.yml/badge.svg"></a>
 </p>
 
-> A {regtest} bitcoin node and indexer runner 🏃‍♂️
+> A runner for bitcoin nodes and indexers 🏃‍♂️
 
-This crate makes it simple to run regtest [`bitcoind`](https://github.com/bitcoin/bitcoin),
+This crate makes it simple to run [`bitcoind`](https://github.com/bitcoin/bitcoin),
 [`utreexod`](https://github.com/utreexo/utreexod), [`electrs`](https://github.com/romanz/electrs),
-and [`electrumx`](https://github.com/spesmilo/electrumx) instances from Rust code,
-useful in integration test contexts.
+and [`electrumx`](https://github.com/spesmilo/electrumx) instances from Rust code, useful in
+integration test contexts.
 
 ## Supported Implementations
 
-| Kind    | Implementation | Version   | Feature Flag | Default Feature |
-|---------|----------------|-----------|--------------|-----------------|
-| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |
-| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |
-|         |                |           |              |                 |
-| Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |
-| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              |
+| Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
+|---------|----------------|-----------|--------------|-----------------|-------------------|
+| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
+| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
+|         |                |           |              |                 |                   |
+| Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
+| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              | Needs Python 3.10 |
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
 ### BitcoinD
 
 ```rs
-use halfin::connect;
+use std::path::PathBuf;
+
 use halfin::bitcoind::BitcoinD;
+use halfin::node::{connect, wait_for_height};
 
 // Use a downloaded binary
 let bitcoind_alpha = BitcoinD::new().unwrap();
 
 // Use a local binary
-let bin_path = PathBuf::from_str("/usr/local/bin/bitcoind").unwrap();
+let bin_path = PathBuf::from("/usr/local/bin/bitcoind");
 let bitcoind_beta = BitcoinD::from_bin(&bin_path).unwrap();
 
 // Connect peers
-connect(&bitcoind_alpha, &bitcoind_beta).unwrap()
+connect(&bitcoind_alpha, &bitcoind_beta).unwrap();
 
 // Mine blocks
 bitcoind_alpha.generate(100).unwrap();
@@ -104,19 +106,64 @@ bitcoind_conf.args.network = Network::Signet;
 bitcoind_conf.args.txindex = false;
 bitcoind_conf.args.prune = PruneMode::Automatic(1_024);
 bitcoind_conf.bitcoind_args.fallback_fee_rate = FeeRate::from_sat_per_vb_u32(2);
-bitcoind_conf.raw_args.push("-debug=net");
+bitcoind_conf.raw_args.push("-debug=net".to_string());
 let bitcoind = BitcoinD::new_with_conf(&bitcoind_conf).unwrap();
 
 let mut utreexod_conf = UtreexoDConf::default();
 utreexod_conf.args.txindex = true;
 utreexod_conf.utreexo_args.proof_index_max_memory_mib = 512;
 utreexod_conf.utreexo_args.dns_seed = true;
+utreexod_conf
+    .raw_args
+    .push("--debuglevel=info".to_string());
 let utreexod = UtreexoD::new_with_conf(&utreexod_conf).unwrap();
 ```
 
 Raw arguments that duplicate typed settings are rejected. For example,
-`bitcoind_conf.raw_args.push("-txindex=0")` conflicts with
+`bitcoind_conf.raw_args.push("-txindex=0".to_string())` conflicts with
 `bitcoind_conf.args.txindex`; mutate the typed field instead.
+
+## Indexer Configuration
+
+`ElectrsD` and `ElectrumxD` accept an `&impl Node`, so their network and RPC
+authentication are derived from the backing node. Of the bundled nodes, only
+`BitcoinD` is currently supported. `UtreexoD` is rejected until its
+indexer-facing P2P and RPC compatibility issues are fixed; the Electrs P2P
+issue is documented [here](docs/utreexod-electrs-p2p-bug.md).
+ElectrumX-specific options use `ElectrumxDArgs`, while `raw_args` remains
+available for unmodeled options:
+
+```rust
+use halfin::bitcoind::BitcoinD;
+use halfin::electrsd::{ElectrsD, ElectrsDConf};
+use halfin::electrumxd::{ElectrumxD, ElectrumxDConf};
+use halfin::indexer::Indexer;
+
+let mut electrsd_conf = ElectrsDConf::default();
+electrsd_conf
+    .raw_args
+    .push("--log-filters=debug".to_string());
+let bitcoind = BitcoinD::new().unwrap();
+let electrsd = ElectrsD::new_with_conf(&bitcoind, &electrsd_conf).unwrap();
+
+let mut electrumxd_conf = ElectrumxDConf::default();
+electrumxd_conf.electrumx_args.coin = "Bitcoin".to_string();
+let electrumxd = ElectrumxD::new_with_conf(&bitcoind, &electrumxd_conf).unwrap();
+
+fn electrum_url<I: Indexer>(indexer: &I) -> String {
+    indexer.electrum_url()
+}
+
+assert_eq!(electrum_url(&electrsd), electrsd.electrum_url());
+assert_eq!(electrum_url(&electrumxd), electrumxd.electrum_url());
+```
+
+The BitcoinD backing node must be unpruned for `electrs` and must have
+`txindex` enabled for ElectrumX. Raw arguments cannot override the
+network, RPC authentication, addresses, or directories owned by `halfin`; for
+example, `electrsd_conf.raw_args.push("--network=signet".to_string())` is
+rejected.
+Configure the network through the backing node's `args` instead.
 
 ## Developing
 

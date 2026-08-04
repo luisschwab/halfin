@@ -14,7 +14,7 @@ export RBMT_LOG_LEVEL := env("RBMT_LOG_LEVEL", "verbose")
 
 _default:
     @echo "> halfin"
-    @echo "> A regtest runner for \`bitcoind\` and \`utreexod\`\n"
+    @echo "> A runner for bitcoin nodes and indexers\n"
     @just --list
 
 [doc: "Run cargo-audit across all lockfiles and prune stale advisories"]
@@ -70,11 +70,11 @@ tools:
 [doc: "Run ShellCheck"]
 shellcheck:
     @command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck was not found on \$PATH" && exit 1; }
-    find . -name '*.sh' -print -exec shellcheck {} +
+    git ls-files -z '*.sh' | xargs -0 shellcheck
 
 [doc: "Run Zizmor Static Analysis"]
 zizmor:
-   zizmor .
+   zizmor .github/workflows
 
 [doc: "Run pre-push checks"]
 pre-push:

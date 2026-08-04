@@ -2,26 +2,27 @@
 //!
 //! A bitcoin node and indexer running utility for integration testing.
 //!
-//! > A {regtest} bitcoin node runner 🏃‍♂️
+//! > A runner for bitcoin nodes and indexers 🏃‍♂️
 //!
-//! This crate makes it simple to run regtest [`bitcoind`], [`utreexod`],
-//! [`electrs`], and [`electrumx`] instances from Rust code,
-//! useful in integration test contexts.
+//! This crate makes it simple to run [`bitcoind`], [`utreexod`], [`electrs`],
+//! and [`electrumx`] instances from Rust code, useful in integration test
+//! contexts.
 //!
 //! ## Supported Implementations
 //!
-//! | Kind    | Implementation | Version   | Feature Flag | Default Feature |
-//! |---------|----------------|-----------|--------------|-----------------|
-//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |
-//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |
-//! |         |                |                          |                 |
-//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |
+//! | Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
+//! |---------|----------------|-----------|--------------|-----------------|-------------------|
+//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
+//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
+//! |         |                |           |              |                 |                   |
+//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
+//! | Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              | Needs Python 3.10 |
 //!
 //! ## Example
 //!
 //! ```rust,ignore
 //! use halfin::bitcoind::BitcoinD;
-//! use halfin::connect;
+//! use halfin::node::connect;
 //! use halfin::utreexod::UtreexoD;
 //!
 //! let bitcoind = BitcoinD::new().unwrap();
@@ -48,8 +49,29 @@ use core::net::Ipv4Addr;
     feature = "electrs",
     feature = "electrumx"
 ))]
+use std::env;
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+use std::fs;
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
 use std::io::{BufRead, BufReader, Read};
 use std::net::TcpListener;
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -86,6 +108,8 @@ pub mod electrsd;
 #[cfg(feature = "electrumx")]
 pub mod electrumxd;
 pub mod error;
+#[cfg(any(feature = "electrs", feature = "electrumx"))]
+pub mod indexer;
 pub mod node;
 #[cfg(feature = "utreexod")]
 pub mod utreexod;
@@ -123,6 +147,34 @@ pub fn get_available_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+/// Find the first raw argument owned by typed or dynamic configuration.
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
+    args: &[S],
+    option_names: &[&str],
+    boolean_option_names: &[&str],
+) -> Option<String> {
+    args.iter().find_map(|arg| {
+        let arg = arg.as_ref();
+        let option = arg.strip_prefix('-')?.trim_start_matches('-');
+        let name = option
+            .split_once('=')
+            .map_or(option, |(name, _)| name)
+            .to_ascii_lowercase();
+
+        let normalized_boolean = name.strip_prefix("no-").or_else(|| name.strip_prefix("no"));
+        let is_conflict = option_names.contains(&name.as_str())
+            || normalized_boolean.is_some_and(|name| boolean_option_names.contains(&name));
+
+        is_conflict.then(|| arg.to_string())
+    })
 }
 
 /// Spawn a background thread that reads `reader` line by line and re-emits
@@ -170,5 +222,71 @@ impl DataDir {
             Self::Persistent(path) => path.to_owned(),
             Self::Temporary(tmp_dir) => tmp_dir.path().to_path_buf(),
         }
+    }
+}
+
+/// Resolve and create a daemon or indexer data directory.
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+pub(crate) fn init_data_dir(
+    tmpdir: Option<&Path>,
+    staticdir: Option<&Path>,
+    prefix: &str,
+) -> Result<DataDir, Error> {
+    if tmpdir.is_some() && staticdir.is_some() {
+        return Err(Error::BothDirsSpecified);
+    }
+
+    if let Some(staticdir) = staticdir {
+        fs::create_dir_all(staticdir).map_err(Error::Io)?;
+        return Ok(DataDir::Persistent(staticdir.to_path_buf()));
+    }
+
+    let tmpdir = tmpdir
+        .map(Path::to_path_buf)
+        .or_else(|| env::var("TEMPDIR_ROOT").map(PathBuf::from).ok());
+    match tmpdir {
+        Some(tmpdir) => tempfile::Builder::new()
+            .prefix(prefix)
+            .tempdir_in(tmpdir)
+            .map(DataDir::Temporary)
+            .map_err(Error::Io),
+        None => tempfile::Builder::new()
+            .prefix(prefix)
+            .tempdir()
+            .map(DataDir::Temporary)
+            .map_err(Error::Io),
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        feature = "bitcoind",
+        feature = "utreexod",
+        feature = "electrs",
+        feature = "electrumx"
+    )
+))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_directory_configuration_is_shared() {
+        let root = tempfile::tempdir().unwrap();
+        let staticdir = root.path().join("static");
+
+        assert!(matches!(
+            init_data_dir(Some(root.path()), Some(&staticdir), "halfin-test-"),
+            Err(Error::BothDirsSpecified)
+        ));
+
+        let data_dir = init_data_dir(None, Some(&staticdir), "halfin-test-").unwrap();
+        assert_eq!(data_dir.path(), staticdir);
+        assert!(matches!(data_dir, DataDir::Persistent(_)));
     }
 }

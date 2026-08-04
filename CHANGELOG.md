@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-* Add `NodeArgs`, `BitcoinDArgs`, and `UtreexoDArgs`
+* Add the `Indexer` trait and let `ElectrsD` and `ElectrumxD` accept `&impl Node` backends
+* Add typed, owned node and indexer configurations exposed through `get_config`
 * Kill orphaned `electrumx.exe` processes on Windows
 
 ## [0.5.0] – 2026-07-01

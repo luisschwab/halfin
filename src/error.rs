@@ -49,14 +49,20 @@ pub enum Error {
     /// Timed out whilst waiting for peer connection to succeed.
     PeerConnectionTimeout((SocketAddr, SocketAddr)),
 
-    /// Both `tmpdir` and `workdir` were specified.
+    /// Both `tmpdir` and `staticdir` were specified.
     BothDirsSpecified,
 
     /// A raw CLI argument conflicts with a typed node configuration field.
     ConflictingNodeArgument(String),
 
+    /// A raw CLI argument conflicts with typed or dynamic indexer configuration.
+    ConflictingIndexerArgument(String),
+
     /// Typed node configuration contains an unsupported combination or value.
     InvalidNodeConfiguration(String),
+
+    /// Indexer configuration is incompatible with its backing node.
+    InvalidIndexerConfiguration(String),
 
     /// [`crate::bitcoind::BitcoinD`] is unresponsive (it's probably not running).
     #[cfg(feature = "bitcoind")]
@@ -82,9 +88,6 @@ pub enum Error {
     #[cfg(feature = "electrumx")]
     ElectrumxDIndexTimeout((String, Duration)),
 
-    /// Timed out whilst waiting for the cookie file to be generated.
-    CookieFileTimeout(PathBuf),
-
     /// Timed out whilst waiting for the JSON-RPC client to be ready.
     RpcClientSetupTimeout,
 
@@ -92,9 +95,9 @@ pub enum Error {
     UnexpectedResponse(String),
 
     /// Timed out whilst waiting for the [`Node`](crate::node::Node)'s chain to synchronize up to `height`
-    ChainSyncTimeOut((u32, u32, Duration)), // (current_height, target_height, timeout)
+    ChainSyncTimeOut((u32, u32, Duration)), // (target_height, current_height, timeout)
 
-    /// Timed out whilst waiting for the [`Node`](crate::node::Node)'s to connect to each other.
+    /// Timed out whilst waiting for the [`Node`](crate::node::Node)s to connect to each other.
     ConnectionTimeout(Duration),
 }
 
@@ -105,15 +108,17 @@ impl fmt::Display for Error {
             Self::BinaryPathNotAbsolute { bin_name, path } => write!(f, "The `{}` binary path is not absolute (path={})", bin_name, path),
             Self::BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
             Self::BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
-            Self::FailedToSpawn(err) => write!(f, "Failed to spawn a process for the node: {err:?}"),
-            Self::ExhaustedNodeBuildingAttempts(retries) => write!(f, "Failed to instantiate the node after {} attempts", retries),
+            Self::FailedToSpawn(err) => write!(f, "Failed to spawn a process: {err:?}"),
+            Self::ExhaustedNodeBuildingAttempts(retries) => write!(f, "Failed to instantiate the process after {} attempts", retries),
             Self::FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
             Self::Io(err) => write!(f, "I/O Error: {err:?}"),
             Self::JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
             Self::PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
-            Self::BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
+            Self::BothDirsSpecified => write!(f, "Both `tmpdir` and `staticdir` were specified. You must choose one or neither"),
             Self::ConflictingNodeArgument(arg) => write!(f, "Raw node argument conflicts with typed configuration: {arg}"),
+            Self::ConflictingIndexerArgument(arg) => write!(f, "Raw indexer argument conflicts with typed or dynamic configuration: {arg}"),
             Self::InvalidNodeConfiguration(description) => write!(f, "Invalid node configuration: {description}"),
+            Self::InvalidIndexerConfiguration(description) => write!(f, "Invalid indexer configuration: {description}"),
             #[cfg(feature = "bitcoind")]
             Self::UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
             #[cfg(feature = "utreexod")]
@@ -126,13 +131,12 @@ impl fmt::Display for Error {
             Self::ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
             #[cfg(feature = "electrumx")]
             Self::ElectrumxDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrumxD` to index {description}", timeout.as_secs()),
-            Self::CookieFileTimeout(cookie_path) => write!(f, "Timed out whilst waiting for the cookie={} to be generated", cookie_path.display()),
             Self::RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
             Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
             Self::ChainSyncTimeOut((target_height, current_height, timeout)) => write!(
                 f,
                 "Timed out after {} seconds whilst waiting for the node's chain to synchronize to height={} (current height={})",
-                target_height, current_height, timeout.as_secs()
+                timeout.as_secs(), target_height, current_height
             ),
             Self::ConnectionTimeout(timeout) => write!(
                 f,
