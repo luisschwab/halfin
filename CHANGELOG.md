@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Add `NodeArgs`, `BitcoinDArgs`, and `UtreexoDArgs`
 * Kill orphaned `electrumx.exe` processes on Windows
 
 ## [0.5.0] – 2026-07-01
@@ -24,8 +25,10 @@
 * Lock modules behind the respective feature
 * Lock `electrum-client` dependency behind `electrs_0_11_1` feature
 * Add `BitcoinD::invalidate_blocks`
-* Replace `ElectrsD` free-function wait helpers with `ElectrsD::wait_until_*` methods that an optional `timeout` parameter.
-* Make `ElectrsD` block waits verify both expected height and block hash using Electrum header notifications.
+* Replace `ElectrsD` free-function wait helpers with `ElectrsD::wait_until_*`
+  methods that have an optional `timeout` parameter.
+* Make `ElectrsD` block waits verify both expected height and block hash using
+  Electrum header notifications.
 * Add `ElectrsD` reorg coverage to verify the indexer follows replacement chain tips.
 
 [Unreleased]: https://github.com/luisschwab/halfin/compare/v0.5.0...HEAD

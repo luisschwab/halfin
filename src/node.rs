@@ -13,10 +13,86 @@ use crate::error::Error;
 use core::net::SocketAddr;
 use core::time::Duration;
 use corepc_client::bitcoin::BlockHash;
+use corepc_client::bitcoin::Network;
 use std::thread::sleep;
 use std::time::Instant;
 use tracing::debug;
 use tracing::info;
+
+/// Arguments shared by the supported [`Node`] implementations.
+///
+/// This type intentionally does not implement [`Default`]. Each daemon's
+/// configuration chooses defaults appropriate for that implementation.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct NodeArgs {
+    /// Bitcoin [`Network`] to run on.
+    pub network: Network,
+    /// Whether to enable BIP-0324 `P2Pv2` transport.
+    pub v2_transport: bool,
+    /// Whether to build the compact block-filter index.
+    pub cbf_index: bool,
+    /// Block-pruning behavior.
+    pub prune: PruneMode,
+    /// Whether to build the full transaction index.
+    pub txindex: bool,
+}
+
+/// Block-pruning behavior for a node.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PruneMode {
+    /// Retain all block data.
+    Disabled,
+    /// Let the caller prune blocks explicitly through RPC.
+    Manual,
+    /// Automatically prune block data to approximately the target size in MiB.
+    Automatic(u64),
+}
+
+/// Minimum automatic-pruning target supported by both daemons, in MiB.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
+
+/// Validate constraints common to every node implementation.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
+    if let PruneMode::Automatic(target_mib) = args.prune {
+        if target_mib < MIN_PRUNE_TARGET_MIB {
+            return Err(Error::InvalidNodeConfiguration(format!(
+                "automatic pruning target must be at least {MIN_PRUNE_TARGET_MIB} MiB (got {target_mib} MiB)"
+            )));
+        }
+    }
+
+    if args.prune != PruneMode::Disabled && args.txindex {
+        return Err(Error::InvalidNodeConfiguration(
+            "pruning and transaction indexing are mutually exclusive".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Find the first raw argument owned by typed configuration.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) fn find_conflicting_argument(
+    args: &[&str],
+    option_names: &[&str],
+    boolean_option_names: &[&str],
+) -> Option<String> {
+    args.iter().find_map(|arg| {
+        let option = arg.strip_prefix('-')?.trim_start_matches('-');
+        let name = option
+            .split_once('=')
+            .map_or(option, |(name, _)| name)
+            .to_ascii_lowercase();
+
+        let normalized_boolean = name.strip_prefix("no-").or_else(|| name.strip_prefix("no"));
+        let is_conflict = option_names.contains(&name.as_str())
+            || normalized_boolean.is_some_and(|name| boolean_option_names.contains(&name));
+
+        is_conflict.then(|| (*arg).to_string())
+    })
+}
 
 /// Common interface across all [`Node`] implementations.
 pub trait Node {

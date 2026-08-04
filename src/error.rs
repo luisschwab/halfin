@@ -52,6 +52,12 @@ pub enum Error {
     /// Both `tmpdir` and `workdir` were specified.
     BothDirsSpecified,
 
+    /// A raw CLI argument conflicts with a typed node configuration field.
+    ConflictingNodeArgument(String),
+
+    /// Typed node configuration contains an unsupported combination or value.
+    InvalidNodeConfiguration(String),
+
     /// [`crate::bitcoind::BitcoinD`] is unresponsive (it's probably not running).
     #[cfg(feature = "bitcoind")]
     UnresponsiveBitcoinD(corepc_client::client_sync::Error),
@@ -106,6 +112,8 @@ impl fmt::Display for Error {
             Self::JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
             Self::PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
             Self::BothDirsSpecified => write!(f, "Both `tempdir` and `workdir` were specified. You must choose one and only one"),
+            Self::ConflictingNodeArgument(arg) => write!(f, "Raw node argument conflicts with typed configuration: {arg}"),
+            Self::InvalidNodeConfiguration(description) => write!(f, "Invalid node configuration: {description}"),
             #[cfg(feature = "bitcoind")]
             Self::UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
             #[cfg(feature = "utreexod")]
