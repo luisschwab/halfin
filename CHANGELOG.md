@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Bump `bitcoin_hashes` to v1.1.0
 * Add and apply `rustfmt.toml`
 * Bump `cargo-rbmt` to v0.5.2
 * Drop `sample_strategy = "all"` and manually select feature combinations
