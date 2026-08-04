@@ -42,7 +42,6 @@
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
 
 use core::net::Ipv4Addr;
-
 #[cfg(any(
     feature = "bitcoind",
     feature = "utreexod",
@@ -63,7 +62,21 @@ use std::fs;
     feature = "electrs",
     feature = "electrumx"
 ))]
-use std::io::{BufRead, BufReader, Read};
+use std::io::BufRead;
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+use std::io::BufReader;
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+use std::io::Read;
 use std::net::TcpListener;
 #[cfg(any(
     feature = "bitcoind",
@@ -75,7 +88,16 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+#[allow(unused)]
+#[cfg(feature = "bitcoind")]
+pub(crate) use bitcoind::BitcoinD;
 pub use corepc_client::bitcoin;
+#[allow(unused)]
+#[cfg(feature = "electrs")]
+pub(crate) use electrsd::ElectrsD;
+#[allow(unused)]
+#[cfg(feature = "electrumx")]
+pub(crate) use electrumxd::ElectrumxD;
 pub use serde_json;
 use tempfile::TempDir;
 #[cfg(any(
@@ -85,16 +107,6 @@ use tempfile::TempDir;
     feature = "electrumx"
 ))]
 use tracing::info;
-
-#[allow(unused)]
-#[cfg(feature = "bitcoind")]
-pub(crate) use bitcoind::BitcoinD;
-#[allow(unused)]
-#[cfg(feature = "electrs")]
-pub(crate) use electrsd::ElectrsD;
-#[allow(unused)]
-#[cfg(feature = "electrumx")]
-pub(crate) use electrumxd::ElectrumxD;
 #[allow(unused)]
 #[cfg(feature = "utreexod")]
 pub(crate) use utreexod::UtreexoD;
@@ -123,10 +135,12 @@ pub const SPAWN_ATTEMPTS: u8 = 5;
 /// Period between attempts at spawning a process.
 pub const SPAWN_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Period between polls for [`connect`](crate::node::connect) and [`wait_for_height`](crate::node::wait_for_height).
+/// Period between polls for [`connect`](crate::node::connect) and
+/// [`wait_for_height`](crate::node::wait_for_height).
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Timeout for [`connect`](crate::node::connect) and [`wait_for_height`](crate::node::wait_for_height).
+/// Timeout for [`connect`](crate::node::connect) and
+/// [`wait_for_height`](crate::node::wait_for_height).
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Period between successive attempts of [`Node`](crate::node::Node) connection.
@@ -203,10 +217,10 @@ pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'sta
 
 /// Owns a node's working directory, either as a temporary or a persistent path.
 ///
-/// * [`DataDir::Temporary`]: backed by a [`TempDir`]; the directory is
-///   deleted automatically when this value is dropped.
-/// * [`DataDir::Persistent`]: backed by a plain [`PathBuf`]; the directory
-///   survives the process and is never cleaned up automatically.
+/// * [`DataDir::Temporary`]: backed by a [`TempDir`]; the directory is deleted automatically when
+///   this value is dropped.
+/// * [`DataDir::Persistent`]: backed by a plain [`PathBuf`]; the directory survives the process and
+///   is never cleaned up automatically.
 #[derive(Debug)]
 pub enum DataDir {
     /// A persistent directory that is **not** cleaned up on drop.

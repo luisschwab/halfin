@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Add and apply `rustfmt.toml`
 * Bump `cargo-rbmt` to v0.5.2
 * Drop `sample_strategy = "all"` and manually select feature combinations
 * Add the `Indexer` trait and let `ElectrsD` and `ElectrumxD` accept `&impl Node` backends

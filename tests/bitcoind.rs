@@ -5,7 +5,9 @@
 #![cfg(feature = "bitcoind")]
 
 use corepc_client::bitcoin::Amount;
-use halfin::bitcoind::{BitcoinD, BitcoinDConf, get_bitcoind_path};
+use halfin::bitcoind::BitcoinD;
+use halfin::bitcoind::BitcoinDConf;
+use halfin::bitcoind::get_bitcoind_path;
 use halfin::node::connect;
 use halfin::node::wait_for_filter_height;
 use halfin::node::wait_for_height;

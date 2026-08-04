@@ -213,7 +213,8 @@ impl ElectrumxD {
 }
 
 impl ElectrumxD {
-    /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with the default [`ElectrumxDConf`].
+    /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with the
+    /// default [`ElectrumxDConf`].
     ///
     /// The indexer connects to the supplied [`Node`].
     ///
@@ -225,7 +226,8 @@ impl ElectrumxD {
         Self::from_bin(get_electrumx_path()?, node)
     }
 
-    /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with a custom [`ElectrumxDConf`].
+    /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with a
+    /// custom [`ElectrumxDConf`].
     ///
     /// The indexer connects to the supplied [`Node`].
     ///
@@ -237,7 +239,8 @@ impl ElectrumxD {
         Self::from_bin_with_conf(get_electrumx_path()?, node, conf)
     }
 
-    /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with the default [`ElectrumxDConf`].
+    /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with the default
+    /// [`ElectrumxDConf`].
     ///
     /// # Errors
     ///
@@ -247,7 +250,8 @@ impl ElectrumxD {
         Self::from_bin_with_conf(electrumx_bin, node, &ElectrumxDConf::default())
     }
 
-    /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with a custom [`ElectrumxDConf`].
+    /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with a custom
+    /// [`ElectrumxDConf`].
     ///
     /// # Errors
     ///
@@ -580,7 +584,8 @@ impl ElectrumxD {
         self.wait_until_block(exp_height, Some(exp_hash), timeout)
     }
 
-    /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for `spk`.
+    /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for
+    /// `spk`.
     ///
     /// If `timeout` is `None`, the default [`ELECTRUMX_INDEXING_TIMEOUT`] will be used.
     ///
@@ -869,7 +874,8 @@ fn is_empty_subscription_read(err: &ElectrumError) -> bool {
     )
 }
 
-/// Return whether an Electrum block-header lookup failed because the indexer has not reached it yet.
+/// Return whether an Electrum block-header lookup failed because the indexer has not reached it
+/// yet.
 fn is_header_not_ready(err: &ElectrumError) -> bool {
     is_empty_subscription_read(err) || matches!(err, ElectrumError::Protocol(_))
 }
