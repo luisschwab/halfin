@@ -271,9 +271,11 @@ impl Node for UtreexoD {
 impl UtreexoD {
     // ----> NODE
 
-    /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with the default [`UtreexoDConf`].
+    /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with the
+    /// default [`UtreexoDConf`].
     ///
-    /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
+    /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per
+    /// `build.rs`.
     ///
     /// # Errors
     ///
@@ -282,18 +284,22 @@ impl UtreexoD {
         Self::from_bin(get_utreexod_path()?)
     }
 
-    /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with a custom [`UtreexoDConf`].
+    /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with a custom
+    /// [`UtreexoDConf`].
     ///
-    /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per `build.rs`.
+    /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per
+    /// `build.rs`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, the configuration is invalid, or the node cannot be started.
+    /// Returns an error if the binary cannot be located, the configuration is invalid, or the node
+    /// cannot be started.
     pub fn new_with_conf(conf: &UtreexoDConf) -> Result<Self, Error> {
         Self::from_bin_with_conf(get_utreexod_path()?, conf)
     }
 
-    /// Create a [`UtreexoD`] instance running the binary at [`Path`] with the default [`UtreexoDConf`].
+    /// Create a [`UtreexoD`] instance running the binary at [`Path`] with the default
+    /// [`UtreexoDConf`].
     ///
     /// # Errors
     ///
@@ -302,7 +308,8 @@ impl UtreexoD {
         Self::from_bin_with_conf(utreexod_bin, &UtreexoDConf::default())
     }
 
-    /// Create a [`UtreexoD`] instance running the binary at [`Path`] with a custom [`UtreexoDConf`].
+    /// Create a [`UtreexoD`] instance running the binary at [`Path`] with a custom
+    /// [`UtreexoDConf`].
     ///
     /// The method retries up to [`UtreexoDConf::max_retries`] times. On each
     /// attempt it:

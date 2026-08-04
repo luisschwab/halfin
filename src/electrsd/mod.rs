@@ -231,7 +231,8 @@ impl ElectrsD {
 impl ElectrsD {
     // ----> ELECTRS
 
-    /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with the default [`ElectrsDConf`].
+    /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with the
+    /// default [`ElectrsDConf`].
     ///
     /// The indexer connects to the supplied [`Node`].
     ///
@@ -243,7 +244,8 @@ impl ElectrsD {
         Self::from_bin(get_electrs_path()?, node)
     }
 
-    /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with a custom [`ElectrsDConf`].
+    /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with a
+    /// custom [`ElectrsDConf`].
     ///
     /// The indexer connects to the supplied [`Node`].
     ///
@@ -255,7 +257,8 @@ impl ElectrsD {
         Self::from_bin_with_conf(get_electrs_path()?, node, conf)
     }
 
-    /// Create an [`ElectrsD`] instance running the binary at [`Path`] with the default [`ElectrsDConf`].
+    /// Create an [`ElectrsD`] instance running the binary at [`Path`] with the default
+    /// [`ElectrsDConf`].
     ///
     /// # Errors
     ///
@@ -265,7 +268,8 @@ impl ElectrsD {
         Self::from_bin_with_conf(electrs_bin, node, &ElectrsDConf::default())
     }
 
-    /// Create an [`ElectrsD`] instance running the binary at [`Path`] with a custom [`ElectrsDConf`].
+    /// Create an [`ElectrsD`] instance running the binary at [`Path`] with a custom
+    /// [`ElectrsDConf`].
     ///
     /// The method retries up to [`ElectrsDConf::max_retries`] times. On each
     /// attempt it:
@@ -598,7 +602,8 @@ impl ElectrsD {
         self.wait_until_block(exp_height, Some(exp_hash), timeout)
     }
 
-    /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for `spk`.
+    /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for
+    /// `spk`.
     ///
     /// If `timeout` is `None`, the default [`ELECTRS_INDEXING_TIMEOUT`] will be used.
     ///
@@ -841,7 +846,8 @@ impl Drop for ElectrsD {
     }
 }
 
-/// Check whether an Electrum header notification proves [`ElectrsD`] has indexed up to `exp_height`.
+/// Check whether an Electrum header notification proves [`ElectrsD`] has indexed up to
+/// `exp_height`.
 ///
 /// If the notification has advanced past `exp_height`, fetch the header at `exp_height` explicitly
 /// so `exp_hash` can still be verified.

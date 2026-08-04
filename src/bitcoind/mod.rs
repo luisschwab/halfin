@@ -251,9 +251,11 @@ impl Node for BitcoinD {
 impl BitcoinD {
     // ----> NODE
 
-    /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with the default [`BitcoinDConf`].
+    /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with the
+    /// default [`BitcoinDConf`].
     ///
-    /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
+    /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org`
+    /// per `build.rs`.
     ///
     /// # Errors
     ///
@@ -262,18 +264,22 @@ impl BitcoinD {
         Self::from_bin(get_bitcoind_path()?)
     }
 
-    /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with a custom [`BitcoinDConf`].
+    /// Start a [`BitcoinD`] node using the binary located by [`get_bitcoind_path`], with a custom
+    /// [`BitcoinDConf`].
     ///
-    /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org` per `build.rs`.
+    /// If the binary is not cached under `target/bin/`, it will fetch one from `bitcoincore.org`
+    /// per `build.rs`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, the configuration is invalid, or the node cannot be started.
+    /// Returns an error if the binary cannot be located, the configuration is invalid, or the node
+    /// cannot be started.
     pub fn new_with_conf(conf: &BitcoinDConf) -> Result<Self, Error> {
         Self::from_bin_with_conf(get_bitcoind_path()?, conf)
     }
 
-    /// Create a [`BitcoinD`] instance running the binary at [`Path`] with the default [`BitcoinDConf`].
+    /// Create a [`BitcoinD`] instance running the binary at [`Path`] with the default
+    /// [`BitcoinDConf`].
     ///
     /// # Errors
     ///
@@ -282,8 +288,9 @@ impl BitcoinD {
         Self::from_bin_with_conf(bitcoind_bin, &BitcoinDConf::default())
     }
 
-    /// Create a [`BitcoinD`] instance running the binary at [`Path`] with a custom [`BitcoinDConf`].
-    /// The method retries up to [`BitcoinDConf::max_retries`] times.  On each attempt it:
+    /// Create a [`BitcoinD`] instance running the binary at [`Path`] with a custom
+    /// [`BitcoinDConf`]. The method retries up to [`BitcoinDConf::max_retries`] times.  On each
+    /// attempt it:
     ///
     /// 1. Picks fresh ephemeral RPC and P2P ports.
     /// 2. Writes a halfin-owned RPC cookie in a fresh data directory.

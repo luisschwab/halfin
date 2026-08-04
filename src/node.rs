@@ -5,15 +5,8 @@
 //! This module implements the [`Node`] trait, with common methods
 //! and utilities across all Bitcoin [`Node`] implementations.
 
-use crate::CONNECTION_INTERVAL;
-use crate::CONNECTION_TIMEOUT;
-use crate::POLL_INTERVAL;
-use crate::WAIT_TIMEOUT;
-use crate::error::Error;
 use core::net::SocketAddr;
 use core::time::Duration;
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 use std::fs::OpenOptions;
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
@@ -23,8 +16,17 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Instant;
+
+use corepc_client::bitcoin::BlockHash;
+use corepc_client::bitcoin::Network;
 use tracing::debug;
 use tracing::info;
+
+use crate::CONNECTION_INTERVAL;
+use crate::CONNECTION_TIMEOUT;
+use crate::POLL_INTERVAL;
+use crate::WAIT_TIMEOUT;
+use crate::error::Error;
 
 /// Minimum automatic-pruning target supported by both daemons, in MiB.
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]

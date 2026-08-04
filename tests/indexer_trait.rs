@@ -15,7 +15,8 @@ use halfin::electrumxd::ElectrumxD;
 use halfin::electrumxd::ElectrumxDConf;
 use halfin::indexer::Indexer;
 
-/// Verify that both Electrum servers implement the complete [`Indexer`](halfin::indexer::Indexer) API.
+/// Verify that both Electrum servers implement the complete [`Indexer`](halfin::indexer::Indexer)
+/// API.
 #[test]
 fn test_indexer_trait() {
     const BLOCK_COUNT: u32 = 101;
