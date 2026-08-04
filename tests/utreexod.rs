@@ -16,11 +16,16 @@ use halfin::utreexod::get_utreexod_path;
 #[test]
 fn test_utreexod_starts() {
     let bin_path = get_utreexod_path().unwrap();
-    let utreexod = UtreexoD::from_bin(bin_path).unwrap();
+    let conf = UtreexoDConf {
+        raw_args: vec!["--debuglevel=info".to_string()],
+        ..UtreexoDConf::default()
+    };
+    let utreexod = UtreexoD::from_bin_with_conf(bin_path, &conf).unwrap();
 
     println!("PID: {}", utreexod.get_pid());
     println!("Working Directory: {:?}", utreexod.get_working_directory());
     println!("P2P Socket: {}", utreexod.get_p2p_socket());
+    assert_eq!(utreexod.get_config(), &conf);
 }
 
 /// Verify that typed transaction-index configuration starts successfully.
@@ -48,7 +53,7 @@ fn test_utreexod_generate() {
 }
 
 #[test]
-fn test_bitcoind_get_filter_height() {
+fn test_utreexod_get_filter_height() {
     const BLOCK_COUNT: u32 = 21;
 
     let utreexod = UtreexoD::new().unwrap();

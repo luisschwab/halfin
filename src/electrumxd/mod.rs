@@ -3,12 +3,10 @@
 //! # `ElectrumxD`: spawn and interact with an `electrumx` process
 //!
 //! A utility crate for spinning up `ElectrumX` processes connected to a local
-//! [`BitcoinD`] process in **regtest**.
+//! [`Node`] process.
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
-use std::env;
-use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::ErrorKind;
@@ -24,6 +22,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
+use corepc_client::bitcoin::Network;
 use corepc_client::bitcoin::Script;
 use corepc_client::bitcoin::Txid;
 use electrum_client::ElectrumApi;
@@ -33,15 +32,21 @@ use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
 use tracing::debug;
 
-use crate::BitcoinD;
 use crate::DataDir;
 use crate::Error;
 use crate::IPV4_LOCALHOST;
 use crate::POLL_INTERVAL;
 use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
+use crate::find_conflicting_argument;
 use crate::get_available_port;
+use crate::indexer::Indexer;
+use crate::indexer::ensure_backend_ready;
+use crate::indexer::read_backend_cookie;
+use crate::indexer::validate_backend;
+use crate::init_data_dir;
 use crate::node::Node;
+use crate::node::NodeArgs;
 use crate::pipe_to_tracing;
 
 /// Bundled `ElectrumX` version metadata.
@@ -75,17 +80,38 @@ pub fn get_electrumx_path() -> Result<PathBuf, Error> {
     }
 }
 
-/// Configuration for an [`ElectrumxD`] instance.
+/// Arguments specific to [`ElectrumxD`].
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ElectrumxDConf<'a> {
+pub struct ElectrumxDArgs {
+    /// `ElectrumX` coin implementation name.
+    pub coin: String,
+}
+
+/// Configuration for an [`ElectrumxD`] instance.
+///
+/// # Directory precedence
+///
+/// Exactly one of `tmpdir` / `staticdir` may be set at a time; setting both
+/// returns [`Error::BothDirsSpecified`].
+///
+/// | `tmpdir` | `staticdir` | Result |
+/// |----------|-------------|--------|
+/// | `None`   | `None`      | System temp dir (auto-cleaned on drop) |
+/// | `Some`   | `None`      | Custom temp root (auto-cleaned on drop) |
+/// | `None`   | `Some`      | Persistent directory (not cleaned on drop) |
+/// | `Some`   | `Some`      | **Error** |
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ElectrumxDConf {
+    /// Arguments specific to `ElectrumX`.
+    pub electrumx_args: ElectrumxDArgs,
+
     /// Extra CLI arguments forwarded verbatim to the `ElectrumX` launcher.
-    pub args: Vec<&'a str>,
-
-    /// Bitcoin network passed to `ElectrumX`. Defaults to `regtest`.
-    pub network: &'a str,
-
-    /// `ElectrumX` coin name. Defaults to `Bitcoin`.
-    pub coin: &'a str,
+    ///
+    /// Raw arguments must not configure an option represented by
+    /// [`electrumx_args`](Self::electrumx_args), or owned
+    /// dynamically by `halfin`. Such duplicates return
+    /// [`Error::ConflictingIndexerArgument`].
+    pub raw_args: Vec<String>,
 
     /// Root directory under which a fresh temporary working directory is
     /// created for each instance. Falls back to the `TEMPDIR_ROOT`
@@ -104,12 +130,13 @@ pub struct ElectrumxDConf<'a> {
     pub max_retries: u8,
 }
 
-impl Default for ElectrumxDConf<'_> {
+impl Default for ElectrumxDConf {
     fn default() -> Self {
         Self {
-            args: vec![],
-            network: "regtest",
-            coin: "Bitcoin",
+            electrumx_args: ElectrumxDArgs {
+                coin: "Bitcoin".to_string(),
+            },
+            raw_args: Vec::new(),
             tmpdir: None,
             staticdir: None,
             max_retries: SPAWN_ATTEMPTS,
@@ -117,7 +144,7 @@ impl Default for ElectrumxDConf<'_> {
     }
 }
 
-/// A running `ElectrumX` regtest indexer.
+/// A running `ElectrumX` indexer.
 #[derive(Debug)]
 pub struct ElectrumxD {
     /// Handle to the spawned `ElectrumX` child process.
@@ -129,11 +156,51 @@ pub struct ElectrumxD {
     /// Owns the indexer's data directory.
     working_directory: DataDir,
 
+    /// Complete configuration used to start the indexer.
+    config: ElectrumxDConf,
+
     /// Address the Electrum RPC server is bound to.
     electrum_socket: SocketAddr,
 
     /// Address the admin RPC server is bound to.
     rpc_socket: SocketAddr,
+}
+
+#[rustfmt::skip]
+impl Indexer for ElectrumxD {
+    type Config = ElectrumxDConf;
+
+    fn get_name() -> &'static str { Self::get_name() }
+
+    fn get_bin_name() -> &'static str { Self::get_bin_name() }
+
+    fn trigger(&self) -> Result<(), Error> { self.trigger() }
+
+    fn stop(&mut self) -> Result<std::process::ExitStatus, Error> { self.stop() }
+
+    fn get_pid(&self) -> u32 { self.get_pid() }
+
+    fn get_working_directory(&self) -> PathBuf { self.get_working_directory() }
+
+    fn get_config(&self) -> &ElectrumxDConf { self.get_config() }
+
+    fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> { self.get_electrum_client() }
+
+    fn electrum_socket(&self) -> SocketAddr { self.electrum_socket() }
+
+    fn electrum_url(&self) -> String { self.electrum_url() }
+
+    fn wait_until_caught_up(&self, node: &impl Node, timeout: Option<Duration>) -> Result<(), Error> {
+        self.wait_until_caught_up(node, timeout)
+    }
+
+    fn wait_until_tip(&self, exp_height: u32, exp_hash: BlockHash, timeout: Option<Duration>) -> Result<(), Error> {
+        self.wait_until_tip(exp_height, exp_hash, timeout)
+    }
+
+    fn wait_until_mempool_tx(&self, spk: &Script, txid: Txid, timeout: Option<Duration>) -> Result<(), Error> {
+        self.wait_until_mempool_tx(spk, txid, timeout)
+    }
 }
 
 #[rustfmt::skip]
@@ -148,49 +215,54 @@ impl ElectrumxD {
 impl ElectrumxD {
     /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with the default [`ElectrumxDConf`].
     ///
-    /// The indexer connects to the supplied [`BitcoinD`] process.
+    /// The indexer connects to the supplied [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, `bitcoind` is not ready,
+    /// Returns an error if the binary cannot be located, the node is not ready,
     /// or the indexer cannot be started.
-    pub fn new(bitcoind: &BitcoinD) -> Result<Self, Error> {
-        Self::from_bin(get_electrumx_path()?, bitcoind)
+    pub fn new<N: Node>(node: &N) -> Result<Self, Error> {
+        Self::from_bin(get_electrumx_path()?, node)
     }
 
     /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with a custom [`ElectrumxDConf`].
     ///
-    /// The indexer connects to the supplied [`BitcoinD`] process.
+    /// The indexer connects to the supplied [`Node`].
     ///
     /// # Errors
     ///
     /// Returns an error if the binary cannot be located, the configuration is
-    /// invalid, `bitcoind` is not ready, or the indexer cannot be started.
-    pub fn new_with_conf(bitcoind: &BitcoinD, conf: &ElectrumxDConf) -> Result<Self, Error> {
-        Self::from_bin_with_conf(get_electrumx_path()?, bitcoind, conf)
+    /// invalid, the node is not ready, or the indexer cannot be started.
+    pub fn new_with_conf<N: Node>(node: &N, conf: &ElectrumxDConf) -> Result<Self, Error> {
+        Self::from_bin_with_conf(get_electrumx_path()?, node, conf)
     }
 
     /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with the default [`ElectrumxDConf`].
     ///
     /// # Errors
     ///
-    /// Returns an error if `electrumx_bin` is invalid, `bitcoind` is not ready,
+    /// Returns an error if `electrumx_bin` is invalid, the node is not ready,
     /// or the indexer cannot be started.
-    pub fn from_bin<P: AsRef<Path>>(electrumx_bin: P, bitcoind: &BitcoinD) -> Result<Self, Error> {
-        Self::from_bin_with_conf(electrumx_bin, bitcoind, &ElectrumxDConf::default())
+    pub fn from_bin<P: AsRef<Path>, N: Node>(electrumx_bin: P, node: &N) -> Result<Self, Error> {
+        Self::from_bin_with_conf(electrumx_bin, node, &ElectrumxDConf::default())
     }
 
     /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with a custom [`ElectrumxDConf`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary path is invalid, the backing [`BitcoinD`]
+    /// Returns an error if the binary path is invalid, the backing [`Node`]
     /// is not ready, the working directory cannot be created, or all attempts are exhausted.
-    pub fn from_bin_with_conf<P: AsRef<Path>>(
+    #[allow(clippy::too_many_lines)]
+    pub fn from_bin_with_conf<P: AsRef<Path>, N: Node>(
         electrumx_bin: P,
-        bitcoind: &BitcoinD,
+        node: &N,
         conf: &ElectrumxDConf,
     ) -> Result<Self, Error> {
+        validate_backend::<N>()?;
+        let node_args = *node.get_config().as_ref();
+        let configured_args = Self::configured_args(conf, node_args.network)?;
+
         let electrumx_bin = electrumx_bin.as_ref();
         if !electrumx_bin.is_absolute() {
             return Err(Error::BinaryPathNotAbsolute {
@@ -205,10 +277,18 @@ impl ElectrumxD {
             });
         }
 
-        Self::ensure_bitcoind_ready(bitcoind)?;
+        Self::validate_node_args(node_args)?;
+        let (_, credentials) = read_backend_cookie(node)?;
+        ensure_backend_ready(node, node_args.network, Self::get_name())?;
+        let node_rpc_socket = node.get_rpc_socket();
+        let daemon_url = format!("http://{credentials}@{node_rpc_socket}");
 
         for _attempt in 0..conf.max_retries {
-            let working_directory = Self::init_work_dir(conf)?;
+            let working_directory = init_data_dir(
+                conf.tmpdir.as_deref(),
+                conf.staticdir.as_deref(),
+                "halfin-electrumx-",
+            )?;
 
             let electrum_port = get_available_port();
             let electrum_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, electrum_port));
@@ -216,20 +296,16 @@ impl ElectrumxD {
             let rpc_port = get_available_port();
             let rpc_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, rpc_port));
 
-            let daemon_url = Self::daemon_url(bitcoind)?;
             let services = format!("tcp://{},rpc://{}", electrum_socket, rpc_socket);
             let db_directory = working_directory.path().display().to_string();
 
-            let mut args: Vec<String> = conf.args.iter().map(ToString::to_string).collect();
+            let mut args = configured_args.clone();
+            args.extend(conf.raw_args.iter().cloned());
             args.extend([
                 "--db-directory".to_string(),
                 db_directory,
                 "--daemon-url".to_string(),
-                daemon_url,
-                "--coin".to_string(),
-                conf.coin.to_string(),
-                "--net".to_string(),
-                conf.network.to_string(),
+                daemon_url.clone(),
                 "--services".to_string(),
                 services,
                 "--peer-discovery".to_string(),
@@ -268,6 +344,7 @@ impl ElectrumxD {
                         Self::get_name()
                     );
                     let _ = process.kill();
+                    let _ = process.wait();
                     continue;
                 }
                 Ok(None) => {}
@@ -291,11 +368,13 @@ impl ElectrumxD {
                     process,
                     client,
                     working_directory,
+                    config: conf.clone(),
                     electrum_socket,
                     rpc_socket,
                 });
             }
             let _ = process.kill();
+            let _ = process.wait();
         }
 
         Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
@@ -368,6 +447,11 @@ impl ElectrumxD {
 
     /// Kill the `ElectrumX` process and wait for it to exit.
     ///
+    /// Calling this method is **not required** in normal usage because [`Drop`]
+    /// kills the process automatically. It is provided for cases where you
+    /// need the exit status or want to ensure the indexer has fully shut down
+    /// before proceeding.
+    ///
     /// # Errors
     ///
     /// Returns an error if the child process cannot be waited on.
@@ -397,6 +481,11 @@ impl ElectrumxD {
         );
 
         working_directory
+    }
+
+    /// Return the complete configuration used to start this indexer.
+    pub fn get_config(&self) -> &ElectrumxDConf {
+        &self.config
     }
 
     /// Get a reference to [`ElectrumxD`]'s Electrum [`RawClient`].
@@ -445,7 +534,7 @@ impl ElectrumxD {
         self.rpc_socket
     }
 
-    /// Poll until this [`ElectrumxD`]'s Electrum header tip matches [`BitcoinD`]'s tip.
+    /// Poll until this [`ElectrumxD`]'s Electrum header tip matches a [`Node`]'s tip.
     ///
     /// # Errors
     ///
@@ -453,11 +542,11 @@ impl ElectrumxD {
     /// does not catch up before the timeout.
     pub fn wait_until_caught_up(
         &self,
-        bitcoind: &BitcoinD,
+        node: &impl Node,
         timeout: Option<Duration>,
     ) -> Result<(), Error> {
-        let height = bitcoind.get_chain_tip()?;
-        let hash = bitcoind.get_block_hash(height)?;
+        let height = node.get_chain_tip()?;
+        let hash = node.get_block_hash(height)?;
 
         debug!(
             "{}: waiting until caught up height={} hash={}",
@@ -567,6 +656,38 @@ impl ElectrumxD {
         result
     }
 
+    /// Render indexer-owned arguments after validating raw arguments.
+    fn configured_args(conf: &ElectrumxDConf, network: Network) -> Result<Vec<String>, Error> {
+        const OPTIONS: &[&str] = &[
+            "coin",
+            "daemon-url",
+            "db-directory",
+            "net",
+            "peer-discovery",
+            "services",
+        ];
+        const BOOLEAN_OPTIONS: &[&str] = &["peer-discovery"];
+
+        if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
+            return Err(Error::ConflictingIndexerArgument(arg));
+        }
+
+        let network = match network {
+            Network::Bitcoin => "mainnet",
+            Network::Testnet => "testnet",
+            Network::Testnet4 => "testnet4",
+            Network::Signet => "signet",
+            Network::Regtest => "regtest",
+        };
+
+        Ok(vec![
+            "--coin".to_string(),
+            conf.electrumx_args.coin.clone(),
+            "--net".to_string(),
+            network.to_string(),
+        ])
+    }
+
     /// Return whether this `spk`'s history contains `txid` as an unconfirmed transaction.
     fn script_history_has_mempool_tx(
         client: &RawClient<ElectrumPlaintextStream>,
@@ -592,7 +713,7 @@ impl ElectrumxD {
             .map_err(Error::UnresponsiveElectrumxD)
     }
 
-    /// Wait for an Electrum block-header notification proving `exp_height`/`exp_hash` is indexed.
+    /// Wait until the block header at `exp_height` matches `exp_hash`.
     fn wait_until_block(
         &self,
         exp_height: u32,
@@ -642,66 +763,14 @@ impl ElectrumxD {
         Err(Error::ElectrumxDIndexTimeout((description, timeout)))
     }
 
-    /// Ensure the backing [`BitcoinD`] has left initial block download.
-    fn ensure_bitcoind_ready(bitcoind: &BitcoinD) -> Result<(), Error> {
-        let blockchain_info = bitcoind.call("getblockchaininfo", &[])?;
-        let initial_block_download = blockchain_info
-            .get("initialblockdownload")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-
-        debug!(
-            "{}: checked backing bitcoind readiness initial_block_download={}",
-            Self::get_name(),
-            initial_block_download
-        );
-
-        if initial_block_download {
-            let _ = bitcoind.generate(1)?;
+    /// Reject node configurations that `ElectrumX` cannot index.
+    fn validate_node_args(args: NodeArgs) -> Result<(), Error> {
+        if !args.txindex {
+            return Err(Error::InvalidIndexerConfiguration(
+                "ElectrumX requires a backing node with transaction indexing enabled".to_string(),
+            ));
         }
         Ok(())
-    }
-
-    /// Build the authenticated daemon URL expected by `ElectrumX`.
-    fn daemon_url(bitcoind: &BitcoinD) -> Result<String, Error> {
-        let cookie = fs::read_to_string(bitcoind.cookie_file()).map_err(Error::Io)?;
-        Ok(format!(
-            "http://{}@{}",
-            cookie.trim(),
-            bitcoind.rpc_socket()
-        ))
-    }
-
-    /// Resolve and create the working directory according to `conf`.
-    ///
-    /// Precedence: `conf.tmpdir` → `TEMPDIR_ROOT` env var → system temp.
-    /// If `conf.staticdir` is set the directory is created but never cleaned
-    /// up automatically.
-    fn init_work_dir(conf: &ElectrumxDConf) -> Result<DataDir, Error> {
-        let tmpdir = conf
-            .tmpdir
-            .clone()
-            .or_else(|| env::var("TEMPDIR_ROOT").map(PathBuf::from).ok());
-        let work_dir = match (&tmpdir, &conf.staticdir) {
-            (Some(_), Some(_)) => return Err(Error::BothDirsSpecified),
-            (None, Some(workdir)) => {
-                fs::create_dir_all(workdir).map_err(Error::Io)?;
-                DataDir::Persistent(workdir.to_owned())
-            }
-            (Some(tmpdir), None) => DataDir::Temporary(
-                tempfile::Builder::new()
-                    .prefix("halfin-electrumx-")
-                    .tempdir_in(tmpdir)
-                    .map_err(Error::Io)?,
-            ),
-            (None, None) => DataDir::Temporary(
-                tempfile::Builder::new()
-                    .prefix("halfin-electrumx-")
-                    .tempdir()
-                    .map_err(Error::Io)?,
-            ),
-        };
-        Ok(work_dir)
     }
 
     /// Build a short-lived Electrum client for subscription wait helpers.
@@ -739,9 +808,10 @@ impl ElectrumxD {
 }
 
 impl Drop for ElectrumxD {
-    /// Kills the `electrumx` process.
+    /// Kills the `electrumx` process and waits for it to exit.
     ///
-    /// Errors from `kill` are silently discarded so that [`Drop`] never panics.
+    /// Errors from `kill` and `wait` are silently discarded so that [`Drop`]
+    /// never panics.
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
@@ -802,4 +872,102 @@ fn is_empty_subscription_read(err: &ElectrumError) -> bool {
 /// Return whether an Electrum block-header lookup failed because the indexer has not reached it yet.
 fn is_header_not_ready(err: &ElectrumError) -> bool {
     is_empty_subscription_read(err) || matches!(err, ElectrumError::Protocol(_))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configuration_defaults() {
+        let conf = ElectrumxDConf::default();
+
+        assert_eq!(conf.electrumx_args.coin, "Bitcoin");
+        assert!(conf.raw_args.is_empty());
+        assert_eq!(conf.max_retries, SPAWN_ATTEMPTS);
+        assert_eq!(
+            ElectrumxD::configured_args(&conf, Network::Regtest).unwrap(),
+            ["--coin", "Bitcoin", "--net", "regtest"]
+        );
+    }
+
+    #[test]
+    fn renders_every_network() {
+        let cases = [
+            (Network::Bitcoin, "mainnet"),
+            (Network::Testnet, "testnet"),
+            (Network::Testnet4, "testnet4"),
+            (Network::Signet, "signet"),
+            (Network::Regtest, "regtest"),
+        ];
+
+        for (network, expected) in cases {
+            let conf = ElectrumxDConf::default();
+
+            assert_eq!(
+                ElectrumxD::configured_args(&conf, network).unwrap(),
+                ["--coin", "Bitcoin", "--net", expected]
+            );
+        }
+    }
+
+    #[test]
+    fn renders_coin() {
+        let conf = ElectrumxDConf {
+            electrumx_args: ElectrumxDArgs {
+                coin: "Namecoin".to_string(),
+            },
+            ..ElectrumxDConf::default()
+        };
+
+        assert_eq!(
+            ElectrumxD::configured_args(&conf, Network::Regtest).unwrap(),
+            ["--coin", "Namecoin", "--net", "regtest"]
+        );
+    }
+
+    #[test]
+    fn rejects_owned_raw_arguments() {
+        let cases = [
+            "--coin",
+            "--coin=Bitcoin",
+            "--daemon-url",
+            "--daemon-url=http://user:pass@127.0.0.1:1",
+            "--db-directory",
+            "--db-directory=/tmp/electrumx",
+            "--net",
+            "--net=testnet",
+            "--peer-discovery",
+            "--peer-discovery=on",
+            "--no-peer-discovery",
+            "--nopeer-discovery",
+            "--services",
+            "--services=tcp://127.0.0.1:50001",
+        ];
+
+        for arg in cases {
+            let conf = ElectrumxDConf {
+                raw_args: vec![arg.to_string()],
+                ..ElectrumxDConf::default()
+            };
+
+            assert!(matches!(
+                ElectrumxD::configured_args(&conf, Network::Regtest),
+                Err(Error::ConflictingIndexerArgument(conflict)) if conflict == arg
+            ));
+        }
+    }
+
+    #[test]
+    fn accepts_unmodeled_raw_arguments() {
+        let conf = ElectrumxDConf {
+            raw_args: vec![
+                "--log-level=debug".to_string(),
+                "--cache-mb=512".to_string(),
+            ],
+            ..ElectrumxDConf::default()
+        };
+
+        assert!(ElectrumxD::configured_args(&conf, Network::Regtest).is_ok());
+    }
 }

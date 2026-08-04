@@ -31,8 +31,6 @@ mod versions;
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
-use std::env;
-use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
@@ -60,12 +58,16 @@ use crate::Error;
 use crate::IPV4_LOCALHOST;
 use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
+use crate::find_conflicting_argument;
 use crate::get_available_port;
+use crate::init_data_dir;
 use crate::node::Node;
 use crate::node::NodeArgs;
 use crate::node::PruneMode;
-use crate::node::find_conflicting_argument;
+use crate::node::RPC_PASS;
+use crate::node::RPC_USER;
 use crate::node::validate_node_arguments;
+use crate::node::write_rpc_cookie;
 use crate::pipe_to_tracing;
 
 /// Name of the wallet created (or loaded) inside every [`BitcoinD`] instance.
@@ -118,7 +120,7 @@ pub struct BitcoinDArgs {
 /// | `None`   | `Some`      | Persistent directory (not cleaned on drop) |
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BitcoinDConf<'a> {
+pub struct BitcoinDConf {
     /// Arguments shared with other node implementations.
     pub args: NodeArgs,
 
@@ -130,7 +132,7 @@ pub struct BitcoinDConf<'a> {
     /// Raw arguments must not configure an option represented by [`args`](Self::args)
     /// or [`bitcoind_args`](Self::bitcoind_args). Such duplicates return
     /// [`Error::ConflictingNodeArgument`].
-    pub raw_args: Vec<&'a str>,
+    pub raw_args: Vec<String>,
 
     /// Root directory under which a fresh temporary working directory is
     /// created for each instance. Falls back to the `TEMPDIR_ROOT`
@@ -149,9 +151,9 @@ pub struct BitcoinDConf<'a> {
     pub max_retries: u8,
 }
 
-impl Default for BitcoinDConf<'_> {
+impl Default for BitcoinDConf {
     fn default() -> Self {
-        BitcoinDConf {
+        Self {
             args: NodeArgs {
                 network: Network::Regtest,
                 cbf_index: true,
@@ -170,7 +172,13 @@ impl Default for BitcoinDConf<'_> {
     }
 }
 
-/// A running `bitcoind` regtest node.
+impl AsRef<NodeArgs> for BitcoinDConf {
+    fn as_ref(&self) -> &NodeArgs {
+        &self.args
+    }
+}
+
+/// A running `bitcoind` node.
 ///
 /// The node is started in [`BitcoinD::from_bin`] (or one of its siblings) and
 /// stopped — and its temporary files removed — when this value is dropped.
@@ -195,6 +203,8 @@ pub struct BitcoinD {
     pub client: Client,
     /// Owns (and optionally cleans up) the node's data directory.
     working_directory: DataDir,
+    /// Complete configuration used to start the node.
+    config: BitcoinDConf,
     /// Path to the cookie file used for RPC authentication.
     cookie_file: PathBuf,
     /// Address the JSON-RPC server is bound to.
@@ -205,9 +215,19 @@ pub struct BitcoinD {
 
 #[rustfmt::skip]
 impl Node for BitcoinD {
+    type Config = BitcoinDConf;
+
     fn get_name() -> &'static str { versions::BITCOIND_NAME }
 
     fn get_bin_name() -> &'static str { versions::BITCOIND_BIN_NAME }
+
+    fn get_config(&self) -> &BitcoinDConf { self.get_config() }
+
+    fn get_working_directory(&self) -> PathBuf { self.get_working_directory() }
+
+    fn get_rpc_socket(&self) -> SocketAddr { self.rpc_socket() }
+
+    fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> { self.generate(count) }
 
     fn get_p2p_socket(&self) -> SocketAddr { self.get_p2p_socket() }
 
@@ -266,8 +286,8 @@ impl BitcoinD {
     /// The method retries up to [`BitcoinDConf::max_retries`] times.  On each attempt it:
     ///
     /// 1. Picks fresh ephemeral RPC and P2P ports.
-    /// 2. Spawns `bitcoind` with those ports and a fresh data directory.
-    /// 3. Waits for the cookie file to appear (up to 5 seconds).
+    /// 2. Writes a halfin-owned RPC cookie in a fresh data directory.
+    /// 3. Spawns `bitcoind` with those ports and matching RPC credentials.
     /// 4. Creates or loads the default wallet and builds an RPC client.
     /// 5. Waits for the node to become responsive (up to 5 seconds).
     ///
@@ -299,11 +319,13 @@ impl BitcoinD {
             });
         }
 
-        for _ in 0..conf.max_retries {
-            let working_directory = Self::init_work_dir(conf)?;
-            let cookie_file = working_directory
-                .path()
-                .join(Self::cookie_relative_path(conf.args.network));
+        'spawn_attempt: for _ in 0..conf.max_retries {
+            let working_directory = init_data_dir(
+                conf.tmpdir.as_deref(),
+                conf.staticdir.as_deref(),
+                "halfin-bitcoind-",
+            )?;
+            let cookie_file = write_rpc_cookie(&working_directory.path())?;
 
             let rpc_port = get_available_port();
             let rpc_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, rpc_port));
@@ -314,6 +336,9 @@ impl BitcoinD {
 
             let datadir_arg = format!("-datadir={}", working_directory.path().display());
             let rpc_arg = format!("-rpcport={}", rpc_port);
+            let rpcbind_arg = format!("-rpcbind={IPV4_LOCALHOST}");
+            let rpcuser_arg = format!("-rpcuser={RPC_USER}");
+            let rpcpassword_arg = format!("-rpcpassword={RPC_PASS}");
             let p2p_arg = format!("-bind={}", p2p_socket);
 
             debug!(
@@ -329,6 +354,9 @@ impl BitcoinD {
                 .args(&conf.raw_args)
                 .arg(&datadir_arg)
                 .arg(&rpc_arg)
+                .arg(&rpcbind_arg)
+                .arg(&rpcuser_arg)
+                .arg(&rpcpassword_arg)
                 .arg(&p2p_arg)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -347,6 +375,7 @@ impl BitcoinD {
                         Self::get_name()
                     );
                     let _ = process.kill();
+                    let _ = process.wait();
                     continue;
                 }
                 Ok(None) => {}
@@ -362,13 +391,6 @@ impl BitcoinD {
                 pipe_to_tracing(stderr, "bitcoind");
             }
 
-            // Wait up to 5 seconds for the cookie file. Kills
-            // the process and tries again if it exceeds this time.
-            if Self::wait_for_cookie_file(&cookie_file, Duration::from_secs(5)).is_err() {
-                let _ = process.kill();
-                continue;
-            }
-
             // Wallet-specific RPC endpoints are prefixed with `/wallet`.
             let wallet_url = format!("{}/wallet/{}", rpc_url, BITCOIND_WALLET);
 
@@ -382,7 +404,8 @@ impl BitcoinD {
             let client = loop {
                 if Instant::now() > deadline {
                     let _ = process.kill();
-                    continue;
+                    let _ = process.wait();
+                    continue 'spawn_attempt;
                 }
                 if client_base.create_wallet(BITCOIND_WALLET).is_ok()
                     || client_base.load_wallet(BITCOIND_WALLET).is_ok()
@@ -396,6 +419,7 @@ impl BitcoinD {
 
             if Self::wait_for_client(&client, Duration::from_secs(5)).is_err() {
                 let _ = process.kill();
+                let _ = process.wait();
                 continue;
             }
 
@@ -414,6 +438,7 @@ impl BitcoinD {
                 process,
                 client,
                 working_directory,
+                config: conf.clone(),
                 cookie_file,
                 rpc_socket,
                 p2p_socket,
@@ -463,6 +488,11 @@ impl BitcoinD {
         );
 
         working_directory
+    }
+
+    /// Return the complete configuration used to start this node.
+    pub fn get_config(&self) -> &BitcoinDConf {
+        &self.config
     }
 
     /// Get [`BitcoinD`]'s P2P [`SocketAddr`].
@@ -752,11 +782,19 @@ impl BitcoinD {
     /// Validate typed and raw configuration and render daemon-owned arguments.
     fn configured_args(conf: &BitcoinDConf) -> Result<Vec<String>, Error> {
         const OPTIONS: &[&str] = &[
+            "bind",
             "blockfilterindex",
             "chain",
+            "datadir",
             "fallbackfee",
+            "listen",
+            "port",
             "prune",
             "regtest",
+            "rpcbind",
+            "rpcpassword",
+            "rpcport",
+            "rpcuser",
             "signet",
             "testnet",
             "testnet4",
@@ -765,6 +803,7 @@ impl BitcoinD {
         ];
         const BOOLEAN_OPTIONS: &[&str] = &[
             "blockfilterindex",
+            "listen",
             "prune",
             "regtest",
             "signet",
@@ -806,52 +845,6 @@ impl BitcoinD {
         ])
     }
 
-    /// Return the network-specific path to Bitcoin Core's RPC cookie.
-    fn cookie_relative_path(network: Network) -> PathBuf {
-        match network {
-            Network::Bitcoin => PathBuf::from(".cookie"),
-            Network::Testnet => PathBuf::from("testnet3").join(".cookie"),
-            Network::Testnet4 => PathBuf::from("testnet4").join(".cookie"),
-            Network::Signet => PathBuf::from("signet").join(".cookie"),
-            Network::Regtest => PathBuf::from("regtest").join(".cookie"),
-        }
-    }
-
-    /// Resolve and create the working directory according to `conf`.
-    ///
-    /// Precedence: `conf.tmpdir` → `TEMPDIR_ROOT` env var → system temp.
-    /// If `conf.staticdir` is set the directory is created but never cleaned
-    /// up automatically.
-    fn init_work_dir(conf: &BitcoinDConf) -> Result<DataDir, Error> {
-        let tmpdir = conf
-            .tmpdir
-            .clone()
-            .or_else(|| env::var("TEMPDIR_ROOT").map(PathBuf::from).ok());
-        let work_dir = match (&tmpdir, &conf.staticdir) {
-            // Cannot specify both directories.
-            (Some(_), Some(_)) => return Err(Error::BothDirsSpecified),
-            // Create a persistent directory.
-            (None, Some(workdir)) => {
-                fs::create_dir_all(workdir).map_err(Error::Io)?;
-                DataDir::Persistent(workdir.to_owned())
-            }
-            // Create a new temporary directory.
-            (Some(tmpdir), None) => DataDir::Temporary(
-                tempfile::Builder::new()
-                    .prefix("halfin-bitcoind-")
-                    .tempdir_in(tmpdir)
-                    .map_err(Error::Io)?,
-            ),
-            (None, None) => DataDir::Temporary(
-                tempfile::Builder::new()
-                    .prefix("halfin-bitcoind-")
-                    .tempdir()
-                    .map_err(Error::Io)?,
-            ),
-        };
-        Ok(work_dir)
-    }
-
     /// Attempt to create a base (wallet-less) RPC client, retrying up to 10
     /// times with 200 millisecond gaps. Used during startup before the wallet exists.
     fn create_base_rpc_client(rpc_url: &str, auth: &Auth) -> Result<Client, Error> {
@@ -865,20 +858,6 @@ impl BitcoinD {
             Client::new_with_auth(rpc_url, auth.clone()).map_err(Error::UnresponsiveBitcoinD)?;
 
         Ok(client)
-    }
-
-    /// Poll for the cookie file's existence, sleeping 200 milliseconds between checks.
-    ///
-    /// Returns `Err` if the file does not appear within `timeout`.
-    fn wait_for_cookie_file(cookie_file: &Path, timeout: Duration) -> Result<(), Error> {
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            if cookie_file.exists() {
-                return Ok(());
-            }
-            sleep(Duration::from_millis(200));
-        }
-        Err(Error::CookieFileTimeout(cookie_file.into()))
     }
 
     /// Poll `getblockchaininfo` until it succeeds, sleeping 200 milliseconds between attempts.
@@ -901,8 +880,8 @@ impl Drop for BitcoinD {
     /// Gracefully stops the node (if it was started with a persistent
     /// directory) and kills the process.
     ///
-    /// Errors from `stop` and `kill` are silently discarded so that `Drop`
-    /// never panics.
+    /// Errors from `stop`, `kill`, and `wait` are silently discarded so that
+    /// `Drop` never panics.
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
@@ -913,6 +892,7 @@ impl Drop for BitcoinD {
             let _ = self.stop();
         }
         let _ = self.process.kill();
+        let _ = self.process.wait();
     }
 }
 
@@ -955,37 +935,20 @@ mod tests {
     }
 
     #[test]
-    fn renders_all_networks_and_cookie_paths() {
+    fn renders_all_networks() {
         let cases = [
-            (Network::Bitcoin, "main", PathBuf::from(".cookie")),
-            (
-                Network::Testnet,
-                "test",
-                PathBuf::from("testnet3").join(".cookie"),
-            ),
-            (
-                Network::Testnet4,
-                "testnet4",
-                PathBuf::from("testnet4").join(".cookie"),
-            ),
-            (
-                Network::Signet,
-                "signet",
-                PathBuf::from("signet").join(".cookie"),
-            ),
-            (
-                Network::Regtest,
-                "regtest",
-                PathBuf::from("regtest").join(".cookie"),
-            ),
+            (Network::Bitcoin, "main"),
+            (Network::Testnet, "test"),
+            (Network::Testnet4, "testnet4"),
+            (Network::Signet, "signet"),
+            (Network::Regtest, "regtest"),
         ];
 
-        for (network, core_arg, cookie_path) in cases {
+        for (network, core_arg) in cases {
             let mut conf = BitcoinDConf::default();
             conf.args.network = network;
             let args = BitcoinD::configured_args(&conf).unwrap();
             assert_eq!(args[0], format!("-chain={core_arg}"));
-            assert_eq!(BitcoinD::cookie_relative_path(network), cookie_path);
         }
     }
 
@@ -1059,11 +1022,19 @@ mod tests {
             "--txindex=1",
             "-notxindex",
             "-fallbackfee=0.1",
+            "-bind=127.0.0.1:18444",
+            "-listen=0",
+            "-port=18444",
+            "-datadir=/tmp/bitcoin",
+            "-rpcbind=127.0.0.1",
+            "-rpcpassword=secret",
+            "-rpcport=18443",
+            "-rpcuser=user",
         ];
 
         for arg in conflicts {
             let conf = BitcoinDConf {
-                raw_args: vec![arg],
+                raw_args: vec![arg.to_string()],
                 ..BitcoinDConf::default()
             };
             assert!(matches!(
@@ -1073,7 +1044,7 @@ mod tests {
         }
 
         let conf = BitcoinDConf {
-            raw_args: vec!["-debug=net", "-maxconnections=8"],
+            raw_args: vec!["-debug=net".to_string(), "-maxconnections=8".to_string()],
             ..BitcoinDConf::default()
         };
         assert!(BitcoinD::configured_args(&conf).is_ok());

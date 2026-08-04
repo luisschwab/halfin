@@ -5,8 +5,7 @@
 #![cfg(feature = "bitcoind")]
 
 use corepc_client::bitcoin::Amount;
-use halfin::bitcoind::BitcoinD;
-use halfin::bitcoind::get_bitcoind_path;
+use halfin::bitcoind::{BitcoinD, BitcoinDConf, get_bitcoind_path};
 use halfin::node::connect;
 use halfin::node::wait_for_filter_height;
 use halfin::node::wait_for_height;
@@ -16,11 +15,16 @@ use halfin::node::wait_for_height;
 #[test]
 fn test_bitcoind_starts() {
     let bin = get_bitcoind_path().unwrap();
-    let bitcoind = BitcoinD::from_bin(bin).unwrap();
+    let conf = BitcoinDConf {
+        raw_args: vec!["-debug=net".to_string()],
+        ..BitcoinDConf::default()
+    };
+    let bitcoind = BitcoinD::from_bin_with_conf(bin, &conf).unwrap();
 
     println!("PID: {}", bitcoind.get_pid());
     println!("Working Directory: {:?}", bitcoind.get_working_directory());
     println!("P2P Socket: {}", bitcoind.get_p2p_socket());
+    assert_eq!(bitcoind.get_config(), &conf);
 }
 
 /// Verify that `generate` mines the requested number of blocks.

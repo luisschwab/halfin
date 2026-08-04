@@ -14,10 +14,38 @@ use core::net::SocketAddr;
 use core::time::Duration;
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+use std::fs::OpenOptions;
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+use std::io::Write;
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+use std::path::Path;
+use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Instant;
 use tracing::debug;
 use tracing::info;
+
+/// Minimum automatic-pruning target supported by both daemons, in MiB.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
+
+/// Filename used for halfin-owned RPC authentication cookies.
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "utreexod",
+    feature = "electrs",
+    feature = "electrumx"
+))]
+pub(crate) const RPC_COOKIE_FILE_NAME: &str = ".cookie";
+
+/// Username stored in halfin-owned RPC authentication cookies.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) const RPC_USER: &str = "__cookie__";
+
+/// Password stored in halfin-owned RPC authentication cookies.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) const RPC_PASS: &str = "halfin";
 
 /// Arguments shared by the supported [`Node`] implementations.
 ///
@@ -48,59 +76,35 @@ pub enum PruneMode {
     Automatic(u64),
 }
 
-/// Minimum automatic-pruning target supported by both daemons, in MiB.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
-pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
-
-/// Validate constraints common to every node implementation.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
-pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
-    if let PruneMode::Automatic(target_mib) = args.prune {
-        if target_mib < MIN_PRUNE_TARGET_MIB {
-            return Err(Error::InvalidNodeConfiguration(format!(
-                "automatic pruning target must be at least {MIN_PRUNE_TARGET_MIB} MiB (got {target_mib} MiB)"
-            )));
-        }
-    }
-
-    if args.prune != PruneMode::Disabled && args.txindex {
-        return Err(Error::InvalidNodeConfiguration(
-            "pruning and transaction indexing are mutually exclusive".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
-/// Find the first raw argument owned by typed configuration.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
-pub(crate) fn find_conflicting_argument(
-    args: &[&str],
-    option_names: &[&str],
-    boolean_option_names: &[&str],
-) -> Option<String> {
-    args.iter().find_map(|arg| {
-        let option = arg.strip_prefix('-')?.trim_start_matches('-');
-        let name = option
-            .split_once('=')
-            .map_or(option, |(name, _)| name)
-            .to_ascii_lowercase();
-
-        let normalized_boolean = name.strip_prefix("no-").or_else(|| name.strip_prefix("no"));
-        let is_conflict = option_names.contains(&name.as_str())
-            || normalized_boolean.is_some_and(|name| boolean_option_names.contains(&name));
-
-        is_conflict.then(|| (*arg).to_string())
-    })
-}
-
 /// Common interface across all [`Node`] implementations.
 pub trait Node {
+    /// Concrete configuration type retained by this node implementation.
+    type Config: AsRef<NodeArgs>;
+
     /// The [`Node`]'s human-readable name.
     fn get_name() -> &'static str;
 
     /// The [`Node`]'s binary name.
     fn get_bin_name() -> &'static str;
+
+    /// Return the complete configuration used to start this node.
+    fn get_config(&self) -> &Self::Config;
+
+    /// Return the node's effective runtime data directory.
+    ///
+    /// Implementations intended for use as indexer backends must expose RPC
+    /// credentials at `.cookie` in this directory, encoded as `user:password`.
+    fn get_working_directory(&self) -> PathBuf;
+
+    /// Return the node's JSON-RPC listener address.
+    fn get_rpc_socket(&self) -> SocketAddr;
+
+    /// Mine `count` blocks and return their hashes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if block generation fails.
+    fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error>;
 
     /// Get the [`Node`]'s current chain height.
     ///
@@ -335,4 +339,46 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
         curr_filter_height,
         N::wait_timeout(),
     )))
+}
+
+/// Validate constraints common to every node implementation.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
+    if let PruneMode::Automatic(target_mib) = args.prune {
+        if target_mib < MIN_PRUNE_TARGET_MIB {
+            return Err(Error::InvalidNodeConfiguration(format!(
+                "automatic pruning target must be at least {MIN_PRUNE_TARGET_MIB} MiB (got {target_mib} MiB)"
+            )));
+        }
+    }
+
+    if args.prune != PruneMode::Disabled && args.txindex {
+        return Err(Error::InvalidNodeConfiguration(
+            "pruning and transaction indexing are mutually exclusive".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Write the RPC cookie shared by a node and its indexers.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(crate) fn write_rpc_cookie(data_dir: &Path) -> Result<PathBuf, Error> {
+    let cookie_file = data_dir.join(RPC_COOKIE_FILE_NAME);
+    let mut options = OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&cookie_file).map_err(Error::Io)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(Error::Io)?;
+    }
+    write!(file, "{RPC_USER}:{RPC_PASS}").map_err(Error::Io)?;
+    Ok(cookie_file)
 }

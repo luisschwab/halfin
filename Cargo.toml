@@ -1,7 +1,7 @@
 [package]
 name = "halfin"
 version = "0.5.0"
-description = "A {regtest} bitcoin node and indexer runner 🏃‍♂️"
+description = "A runner for bitcoin nodes and indexers 🏃‍♂️"
 authors = ["Luis Schwab <dev@luisschwab.net"]
 documentation = "https://docs.rs/halfin"
 repository = "https://github.com/luisschwab/halfin"
@@ -15,8 +15,8 @@ edition = "2024"
 default = ["bitcoind", "utreexod"]
 bitcoind = []
 utreexod = []
-electrs = ["bitcoind", "dep:electrum-client"]
-electrumx = ["bitcoind", "dep:electrum-client"]
+electrs = ["dep:electrum-client"]
+electrumx = ["dep:electrum-client"]
 
 [[example]]
 name = "cross-compile-electrs"
