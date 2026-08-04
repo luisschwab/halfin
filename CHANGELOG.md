@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Bump `cargo-rbmt` to v0.5.2
 * Drop `sample_strategy = "all"` and manually select feature combinations
 * Add the `Indexer` trait and let `ElectrsD` and `ElectrumxD` accept `&impl Node` backends
 * Add typed, owned node and indexer configurations exposed through `get_config`
