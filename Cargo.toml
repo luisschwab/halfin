@@ -61,8 +61,14 @@ lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
 version = "0.5.1"
 toolchains = { stable = "1.97.1", nightly = "nightly-2026-07-29" }
 tools = { cargo-audit = "=0.22.2", zizmor = "=1.26.1" }
-test = { sample_strategy = "all" }
 lint = { allowed_duplicates = ["base64"] }
+
+[package.metadata.rbmt.test]
+exact_features = [
+    ["bitcoind", "utreexod"],
+    ["bitcoind", "electrs"],
+    ["bitcoind", "electrumx"],
+]
 
 [lints.rust]
 missing_debug_implementations = "warn"
