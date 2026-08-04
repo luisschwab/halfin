@@ -287,6 +287,7 @@ dependencies = [
 name = "halfin"
 version = "0.5.0"
 dependencies = [
+ "bitcoin",
  "bitcoin_hashes 0.20.0",
  "bitreq",
  "corepc-client",

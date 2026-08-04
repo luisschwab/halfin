@@ -86,6 +86,38 @@ assert_eq!(utreexod.get_chain_tip().unwrap(), 100);
 let res = utreexod.call("uptime", &[]).unwrap();
 ```
 
+## Typed Node Configuration
+
+Options shared by Bitcoin Core and `utreexod` use `NodeArgs` through each
+configuration's `args` field. Daemon-specific options use `BitcoinDArgs` and
+`UtreexoDArgs`, while `raw_args` remains available for options `halfin` does
+not model:
+
+```rust
+use halfin::bitcoin::{FeeRate, Network};
+use halfin::bitcoind::{BitcoinD, BitcoinDConf};
+use halfin::node::PruneMode;
+use halfin::utreexod::{UtreexoD, UtreexoDConf};
+
+let mut bitcoind_conf = BitcoinDConf::default();
+bitcoind_conf.args.network = Network::Signet;
+bitcoind_conf.args.txindex = false;
+bitcoind_conf.args.prune = PruneMode::Automatic(1_024);
+bitcoind_conf.bitcoind_args.fallback_fee_rate = FeeRate::from_sat_per_vb_u32(2);
+bitcoind_conf.raw_args.push("-debug=net");
+let bitcoind = BitcoinD::new_with_conf(&bitcoind_conf).unwrap();
+
+let mut utreexod_conf = UtreexoDConf::default();
+utreexod_conf.args.txindex = true;
+utreexod_conf.utreexo_args.proof_index_max_memory_mib = 512;
+utreexod_conf.utreexo_args.dns_seed = true;
+let utreexod = UtreexoD::new_with_conf(&utreexod_conf).unwrap();
+```
+
+Raw arguments that duplicate typed settings are rejected. For example,
+`bitcoind_conf.raw_args.push("-txindex=0")` conflicts with
+`bitcoind_conf.args.txindex`; mutate the typed field instead.
+
 ## Developing
 
 This project uses [`just`](https://github.com/casey/just) for command running, and

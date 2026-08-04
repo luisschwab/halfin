@@ -53,6 +53,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub use corepc_client::bitcoin;
 pub use serde_json;
 use tempfile::TempDir;
 #[cfg(any(

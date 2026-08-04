@@ -8,6 +8,7 @@ use halfin::node::connect;
 use halfin::node::wait_for_filter_height;
 use halfin::node::wait_for_height;
 use halfin::utreexod::UtreexoD;
+use halfin::utreexod::UtreexoDConf;
 use halfin::utreexod::get_utreexod_path;
 
 /// Verify that [`UtreexoD`] starts successfully and
@@ -20,6 +21,16 @@ fn test_utreexod_starts() {
     println!("PID: {}", utreexod.get_pid());
     println!("Working Directory: {:?}", utreexod.get_working_directory());
     println!("P2P Socket: {}", utreexod.get_p2p_socket());
+}
+
+/// Verify that typed transaction-index configuration starts successfully.
+#[test]
+fn test_utreexod_starts_with_txindex() {
+    let mut conf = UtreexoDConf::default();
+    conf.args.txindex = true;
+
+    let utreexod = UtreexoD::new_with_conf(&conf).unwrap();
+    assert!(utreexod.get_pid() > 0);
 }
 
 /// Verify that `generate` mines the requested number of blocks.

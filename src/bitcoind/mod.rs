@@ -45,6 +45,8 @@ use std::time::Instant;
 
 use corepc_client::bitcoin::Address;
 use corepc_client::bitcoin::BlockHash;
+use corepc_client::bitcoin::Denomination;
+use corepc_client::bitcoin::FeeRate;
 use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v30::AddNodeCommand;
@@ -60,6 +62,10 @@ use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
 use crate::get_available_port;
 use crate::node::Node;
+use crate::node::NodeArgs;
+use crate::node::PruneMode;
+use crate::node::find_conflicting_argument;
+use crate::node::validate_node_arguments;
 use crate::pipe_to_tracing;
 
 /// Name of the wallet created (or loaded) inside every [`BitcoinD`] instance.
@@ -91,6 +97,13 @@ pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
     }
 }
 
+/// Arguments specific to Bitcoin Core.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct BitcoinDArgs {
+    /// Fee rate used when fee estimation has insufficient data.
+    pub fallback_fee_rate: FeeRate,
+}
+
 /// Configuration for a [`BitcoinD`] instance.
 ///
 /// # Directory precedence
@@ -106,12 +119,18 @@ pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BitcoinDConf<'a> {
+    /// Arguments shared with other node implementations.
+    pub args: NodeArgs,
+
+    /// Arguments specific to Bitcoin Core.
+    pub bitcoind_args: BitcoinDArgs,
+
     /// Extra CLI arguments forwarded verbatim to the `bitcoind` process.
     ///
-    /// The defaults (`-regtest`, `-fallbackfee=0.0001`, `-blockfilterindex=1`)
-    /// are always present when using [`BitcoinDConf::default`].
-    /// Replace or extend this vec to customise the node (e.g. add `-txindex=1`).
-    pub args: Vec<&'a str>,
+    /// Raw arguments must not configure an option represented by [`args`](Self::args)
+    /// or [`bitcoind_args`](Self::bitcoind_args). Such duplicates return
+    /// [`Error::ConflictingNodeArgument`].
+    pub raw_args: Vec<&'a str>,
 
     /// Root directory under which a fresh temporary working directory is
     /// created for each instance. Falls back to the `TEMPDIR_ROOT`
@@ -133,12 +152,17 @@ pub struct BitcoinDConf<'a> {
 impl Default for BitcoinDConf<'_> {
     fn default() -> Self {
         BitcoinDConf {
-            args: vec![
-                "-regtest",
-                "-fallbackfee=0.0001",
-                "-blockfilterindex=1",
-                "-txindex=1",
-            ],
+            args: NodeArgs {
+                network: Network::Regtest,
+                cbf_index: true,
+                prune: PruneMode::Disabled,
+                v2_transport: true,
+                txindex: true,
+            },
+            bitcoind_args: BitcoinDArgs {
+                fallback_fee_rate: FeeRate::from_sat_per_vb_u32(10),
+            },
+            raw_args: Vec::new(),
             tmpdir: None,
             staticdir: None,
             max_retries: SPAWN_ATTEMPTS,
@@ -256,6 +280,8 @@ impl BitcoinD {
         bitcoind_bin: P,
         conf: &BitcoinDConf,
     ) -> Result<Self, Error> {
+        let configured_args = Self::configured_args(conf)?;
+
         // Validate the `bitcoind_bin` path
         let bitcoind_bin = bitcoind_bin.as_ref();
         // The path must be absolute
@@ -277,8 +303,7 @@ impl BitcoinD {
             let working_directory = Self::init_work_dir(conf)?;
             let cookie_file = working_directory
                 .path()
-                .join(Network::Regtest.to_string())
-                .join(".cookie");
+                .join(Self::cookie_relative_path(conf.args.network));
 
             let rpc_port = get_available_port();
             let rpc_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, rpc_port));
@@ -300,7 +325,8 @@ impl BitcoinD {
             );
 
             let mut process = Command::new(bitcoind_bin)
-                .args(&conf.args)
+                .args(&configured_args)
+                .args(&conf.raw_args)
                 .arg(&datadir_arg)
                 .arg(&rpc_arg)
                 .arg(&p2p_arg)
@@ -723,6 +749,74 @@ impl BitcoinD {
 
     // ----> INTERNAL
 
+    /// Validate typed and raw configuration and render daemon-owned arguments.
+    fn configured_args(conf: &BitcoinDConf) -> Result<Vec<String>, Error> {
+        const OPTIONS: &[&str] = &[
+            "blockfilterindex",
+            "chain",
+            "fallbackfee",
+            "prune",
+            "regtest",
+            "signet",
+            "testnet",
+            "testnet4",
+            "txindex",
+            "v2transport",
+        ];
+        const BOOLEAN_OPTIONS: &[&str] = &[
+            "blockfilterindex",
+            "prune",
+            "regtest",
+            "signet",
+            "testnet",
+            "testnet4",
+            "txindex",
+            "v2transport",
+        ];
+
+        validate_node_arguments(&conf.args)?;
+        if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
+            return Err(Error::ConflictingNodeArgument(arg));
+        }
+
+        let prune = match conf.args.prune {
+            PruneMode::Disabled => "0".to_string(),
+            PruneMode::Manual => "1".to_string(),
+            PruneMode::Automatic(target_mib) => target_mib.to_string(),
+        };
+        let fallback_fee_per_kvb = conf
+            .bitcoind_args
+            .fallback_fee_rate
+            .fee_vb(1_000)
+            .ok_or_else(|| {
+                Error::InvalidNodeConfiguration("fallback fee rate is too large".to_string())
+            })?;
+        let bool_value = |value: bool| if value { '1' } else { '0' };
+
+        Ok(vec![
+            format!("-chain={}", conf.args.network.to_core_arg()),
+            format!("-blockfilterindex={}", bool_value(conf.args.cbf_index)),
+            format!("-prune={prune}"),
+            format!("-v2transport={}", bool_value(conf.args.v2_transport)),
+            format!("-txindex={}", bool_value(conf.args.txindex)),
+            format!(
+                "-fallbackfee={}",
+                fallback_fee_per_kvb.display_in(Denomination::Bitcoin)
+            ),
+        ])
+    }
+
+    /// Return the network-specific path to Bitcoin Core's RPC cookie.
+    fn cookie_relative_path(network: Network) -> PathBuf {
+        match network {
+            Network::Bitcoin => PathBuf::from(".cookie"),
+            Network::Testnet => PathBuf::from("testnet3").join(".cookie"),
+            Network::Testnet4 => PathBuf::from("testnet4").join(".cookie"),
+            Network::Signet => PathBuf::from("signet").join(".cookie"),
+            Network::Regtest => PathBuf::from("regtest").join(".cookie"),
+        }
+    }
+
     /// Resolve and create the working directory according to `conf`.
     ///
     /// Precedence: `conf.tmpdir` → `TEMPDIR_ROOT` env var → system temp.
@@ -819,5 +913,169 @@ impl Drop for BitcoinD {
             let _ = self.stop();
         }
         let _ = self.process.kill();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_invalid(conf: &BitcoinDConf) {
+        assert!(matches!(
+            BitcoinD::configured_args(conf),
+            Err(Error::InvalidNodeConfiguration(_))
+        ));
+    }
+
+    #[test]
+    fn default_configuration_preserves_existing_behavior() {
+        let conf = BitcoinDConf::default();
+
+        assert!(conf.raw_args.is_empty());
+        assert_eq!(conf.args.network, Network::Regtest);
+        assert!(conf.args.cbf_index);
+        assert_eq!(conf.args.prune, PruneMode::Disabled);
+        assert!(conf.args.v2_transport);
+        assert!(conf.args.txindex);
+        assert_eq!(
+            conf.bitcoind_args.fallback_fee_rate,
+            FeeRate::from_sat_per_vb_u32(10)
+        );
+        assert_eq!(
+            BitcoinD::configured_args(&conf).unwrap(),
+            [
+                "-chain=regtest",
+                "-blockfilterindex=1",
+                "-prune=0",
+                "-v2transport=1",
+                "-txindex=1",
+                "-fallbackfee=0.0001",
+            ]
+        );
+    }
+
+    #[test]
+    fn renders_all_networks_and_cookie_paths() {
+        let cases = [
+            (Network::Bitcoin, "main", PathBuf::from(".cookie")),
+            (
+                Network::Testnet,
+                "test",
+                PathBuf::from("testnet3").join(".cookie"),
+            ),
+            (
+                Network::Testnet4,
+                "testnet4",
+                PathBuf::from("testnet4").join(".cookie"),
+            ),
+            (
+                Network::Signet,
+                "signet",
+                PathBuf::from("signet").join(".cookie"),
+            ),
+            (
+                Network::Regtest,
+                "regtest",
+                PathBuf::from("regtest").join(".cookie"),
+            ),
+        ];
+
+        for (network, core_arg, cookie_path) in cases {
+            let mut conf = BitcoinDConf::default();
+            conf.args.network = network;
+            let args = BitcoinD::configured_args(&conf).unwrap();
+            assert_eq!(args[0], format!("-chain={core_arg}"));
+            assert_eq!(BitcoinD::cookie_relative_path(network), cookie_path);
+        }
+    }
+
+    #[test]
+    fn renders_boolean_and_pruning_flags() {
+        let mut conf = BitcoinDConf::default();
+        conf.args.cbf_index = false;
+        conf.args.v2_transport = false;
+        conf.args.txindex = false;
+        conf.args.prune = PruneMode::Manual;
+        let args = BitcoinD::configured_args(&conf).unwrap();
+        assert!(args.contains(&"-blockfilterindex=0".to_string()));
+        assert!(args.contains(&"-prune=1".to_string()));
+        assert!(args.contains(&"-v2transport=0".to_string()));
+        assert!(args.contains(&"-txindex=0".to_string()));
+
+        conf.args.prune = PruneMode::Automatic(550);
+        let args = BitcoinD::configured_args(&conf).unwrap();
+        assert!(args.contains(&"-prune=550".to_string()));
+
+        conf.args.prune = PruneMode::Automatic(549);
+        assert_invalid(&conf);
+    }
+
+    #[test]
+    fn rejects_pruning_with_txindex() {
+        let mut conf = BitcoinDConf::default();
+        conf.args.prune = PruneMode::Automatic(550);
+        assert_invalid(&conf);
+    }
+
+    #[test]
+    fn formats_fallback_fee_with_bitcoin_amount() {
+        let cases = [
+            (FeeRate::from_sat_per_vb_u32(10), "-fallbackfee=0.0001"),
+            (FeeRate::from_sat_per_kwu(1), "-fallbackfee=0.00000004"),
+            (FeeRate::ZERO, "-fallbackfee=0"),
+            (FeeRate::from_sat_per_kwu(25_000_000), "-fallbackfee=1"),
+        ];
+
+        for (fee_rate, expected) in cases {
+            let mut conf = BitcoinDConf::default();
+            conf.bitcoind_args.fallback_fee_rate = fee_rate;
+            assert!(
+                BitcoinD::configured_args(&conf)
+                    .unwrap()
+                    .contains(&expected.to_string())
+            );
+        }
+
+        let mut conf = BitcoinDConf::default();
+        conf.bitcoind_args.fallback_fee_rate = FeeRate::MAX;
+        assert_invalid(&conf);
+    }
+
+    #[test]
+    fn rejects_raw_typed_argument_spellings() {
+        let conflicts = [
+            "-chain=signet",
+            "--regtest",
+            "-noregtest",
+            "-blockfilterindex=0",
+            "--blockfilterindex",
+            "-noblockfilterindex",
+            "--no-blockfilterindex",
+            "-prune=550",
+            "-noprune",
+            "-v2transport=0",
+            "-nov2transport",
+            "-txindex",
+            "--txindex=1",
+            "-notxindex",
+            "-fallbackfee=0.1",
+        ];
+
+        for arg in conflicts {
+            let conf = BitcoinDConf {
+                raw_args: vec![arg],
+                ..BitcoinDConf::default()
+            };
+            assert!(matches!(
+                BitcoinD::configured_args(&conf),
+                Err(Error::ConflictingNodeArgument(conflict)) if conflict == arg
+            ));
+        }
+
+        let conf = BitcoinDConf {
+            raw_args: vec!["-debug=net", "-maxconnections=8"],
+            ..BitcoinDConf::default()
+        };
+        assert!(BitcoinD::configured_args(&conf).is_ok());
     }
 }
