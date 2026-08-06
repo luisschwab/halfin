@@ -48,8 +48,8 @@ fn test_indexer_trait() {
     assert!(Indexer::get_working_directory(&electrsd).is_dir());
     assert_eq!(Indexer::get_config(&electrsd), &electrsd_conf);
     assert_eq!(
-        Indexer::electrum_url(&electrsd),
-        Indexer::electrum_socket(&electrsd).to_string()
+        Indexer::get_electrum_url(&electrsd),
+        Indexer::get_electrum_socket(&electrsd).to_string()
     );
     Indexer::get_electrum_client(&electrsd).ping().unwrap();
     Indexer::trigger(&electrsd).unwrap();
@@ -68,8 +68,8 @@ fn test_indexer_trait() {
     assert!(Indexer::get_working_directory(&electrumxd).is_dir());
     assert_eq!(Indexer::get_config(&electrumxd), &electrumxd_conf);
     assert_eq!(
-        Indexer::electrum_url(&electrumxd),
-        Indexer::electrum_socket(&electrumxd).to_string()
+        Indexer::get_electrum_url(&electrumxd),
+        Indexer::get_electrum_socket(&electrumxd).to_string()
     );
     Indexer::get_electrum_client(&electrumxd).ping().unwrap();
     Indexer::trigger(&electrumxd).unwrap();

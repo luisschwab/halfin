@@ -111,8 +111,8 @@ let bitcoind = BitcoinD::new_with_conf(&bitcoind_conf).unwrap();
 
 let mut utreexod_conf = UtreexoDConf::default();
 utreexod_conf.args.txindex = true;
-utreexod_conf.utreexo_args.proof_index_max_memory_mib = 512;
-utreexod_conf.utreexo_args.dns_seed = true;
+utreexod_conf.utreexod_args.proof_index_max_memory_mib = 512;
+utreexod_conf.utreexod_args.dns_seed = true;
 utreexod_conf
     .raw_args
     .push("--debuglevel=info".to_string());
@@ -150,12 +150,12 @@ let mut electrumxd_conf = ElectrumxDConf::default();
 electrumxd_conf.electrumx_args.coin = "Bitcoin".to_string();
 let electrumxd = ElectrumxD::new_with_conf(&bitcoind, &electrumxd_conf).unwrap();
 
-fn electrum_url<I: Indexer>(indexer: &I) -> String {
-    indexer.electrum_url()
+fn get_electrum_url<I: Indexer>(indexer: &I) -> String {
+    indexer.get_electrum_url()
 }
 
-assert_eq!(electrum_url(&electrsd), electrsd.electrum_url());
-assert_eq!(electrum_url(&electrumxd), electrumxd.electrum_url());
+assert_eq!(get_electrum_url(&electrsd), electrsd.get_electrum_url());
+assert_eq!(get_electrum_url(&electrumxd), electrumxd.get_electrum_url());
 ```
 
 The BitcoinD backing node must be unpruned for `electrs` and must have

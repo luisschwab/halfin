@@ -158,8 +158,8 @@ impl Default for ElectrsDConf {
 /// # Networking
 ///
 /// The Electrum RPC and monitoring ports are chosen from the OS's ephemeral
-/// range at startup. Use [`electrum_socket`](ElectrsD::electrum_socket)
-/// and [`monitoring_socket`](ElectrsD::monitoring_socket) to discover them after
+/// range at startup. Use [`get_electrum_socket`](ElectrsD::get_electrum_socket)
+/// and [`get_monitoring_socket`](ElectrsD::get_monitoring_socket) to discover them after
 /// construction.
 #[derive(Debug)]
 pub struct ElectrsD {
@@ -202,9 +202,9 @@ impl Indexer for ElectrsD {
 
     fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> { self.get_electrum_client() }
 
-    fn electrum_socket(&self) -> SocketAddr { self.electrum_socket() }
+    fn get_electrum_socket(&self) -> SocketAddr { self.get_electrum_socket() }
 
-    fn electrum_url(&self) -> String { self.electrum_url() }
+    fn get_electrum_url(&self) -> String { self.get_electrum_url() }
 
     fn wait_until_caught_up(&self, node: &impl Node, timeout: Option<Duration>) -> Result<(), Error> {
         self.wait_until_caught_up(node, timeout)
@@ -516,7 +516,7 @@ impl ElectrsD {
     }
 
     /// Return the Electrum RPC [`SocketAddr`] the indexer is listening on.
-    pub fn electrum_socket(&self) -> SocketAddr {
+    pub fn get_electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
             Self::get_name(),
@@ -527,7 +527,7 @@ impl ElectrsD {
     }
 
     /// Return the Electrum RPC URL for the indexer.
-    pub fn electrum_url(&self) -> String {
+    pub fn get_electrum_url(&self) -> String {
         let electrum_url = self.electrum_socket.to_string();
 
         debug!(
@@ -540,7 +540,7 @@ impl ElectrsD {
     }
 
     /// Return the monitoring [`SocketAddr`] the indexer is listening on.
-    pub fn monitoring_socket(&self) -> SocketAddr {
+    pub fn get_monitoring_socket(&self) -> SocketAddr {
         debug!(
             "{}: got monitoring socket at socket={}",
             Self::get_name(),

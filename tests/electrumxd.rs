@@ -42,12 +42,12 @@ fn test_electrumxd_spawns() {
         "Working Directory: {:?}",
         electrumxd.get_working_directory()
     );
-    info!("Electrum Socket: {}", electrumxd.electrum_socket());
+    info!("Electrum Socket: {}", electrumxd.get_electrum_socket());
     info!(
         "Electrum Server Protocol Version: {}",
         electrumxd.client.server_features().unwrap().protocol_max
     );
-    info!("Admin RPC Socket: {}", electrumxd.rpc_socket());
+    info!("Admin RPC Socket: {}", electrumxd.get_rpc_socket());
 }
 
 /// Verify that [`ElectrumxD`] tracks mempool transactions.

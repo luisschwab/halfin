@@ -113,10 +113,10 @@ pub trait Indexer {
     fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream>;
 
     /// Return the Electrum RPC [`SocketAddr`] the indexer is listening on.
-    fn electrum_socket(&self) -> SocketAddr;
+    fn get_electrum_socket(&self) -> SocketAddr;
 
     /// Return the Electrum RPC URL for the indexer.
-    fn electrum_url(&self) -> String;
+    fn get_electrum_url(&self) -> String;
 
     /// Wait until the indexer reaches the supplied [`Node`]'s chain tip.
     ///
