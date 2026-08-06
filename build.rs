@@ -2,7 +2,7 @@
 
 //! Build script for fetching and exposing binaries.
 //!
-//! The script downloads `bitcoind`, `electrsd`, and `electrs` archives
+//! The script downloads `bitcoind`, `utreexod`, `electrs`, and `electrumx` archives
 //! when their features are enabled, verifies their checksums, extracts
 //! the needed binaries, and publishes their paths through Cargo compile-time
 //! environment variables.
@@ -642,7 +642,7 @@ mod electrs {
             env_var: HALFIN_ELECTRS_PATH,
             destination_dir_prefix: "electrs",
             checksum_file: PathBuf::from(format!(
-                "sha256/electrsd/electrs-{}-SHA256SUMS",
+                "sha256/electrs/electrs-{}-SHA256SUMS",
                 ELECTRS_VERSION
             )),
             remote_dir: "electrs",

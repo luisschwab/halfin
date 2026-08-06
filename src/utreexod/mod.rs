@@ -120,16 +120,16 @@ pub struct UtreexoDArgs {
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UtreexoDConf {
-    /// Arguments shared with other node implementations.
+    /// Arguments shared with other [`Node`] implementations.
     pub args: NodeArgs,
 
     /// Arguments specific to `utreexod`.
-    pub utreexo_args: UtreexoDArgs,
+    pub utreexod_args: UtreexoDArgs,
 
     /// Extra CLI arguments forwarded verbatim to the `utreexod` process.
     ///
     /// Raw arguments must not configure an option represented by
-    /// [`args`](Self::args), [`utreexo_args`](Self::utreexo_args),
+    /// [`args`](Self::args), [`utreexod_args`](Self::utreexod_args),
     /// or an invariant owned by halfin. Such duplicates return
     /// [`Error::ConflictingNodeArgument`].
     pub raw_args: Vec<String>,
@@ -161,7 +161,7 @@ impl Default for UtreexoDConf {
                 v2_transport: true,
                 txindex: false,
             },
-            utreexo_args: UtreexoDArgs {
+            utreexod_args: UtreexoDArgs {
                 dns_seed: false,
                 assume_utreexo: false,
                 mining_address: Some(
@@ -838,13 +838,13 @@ impl UtreexoD {
                 "utreexod does not support manual pruning".to_string(),
             ));
         }
-        if conf.utreexo_args.proof_index_max_memory_mib < 250 {
+        if conf.utreexod_args.proof_index_max_memory_mib < 250 {
             return Err(Error::InvalidNodeConfiguration(format!(
                 "Utreexo proof-index memory must be at least 250 MiB (got {} MiB)",
-                conf.utreexo_args.proof_index_max_memory_mib
+                conf.utreexod_args.proof_index_max_memory_mib
             )));
         }
-        if let Some(address) = &conf.utreexo_args.mining_address {
+        if let Some(address) = &conf.utreexod_args.mining_address {
             if !address.is_valid_for_network(conf.args.network) {
                 return Err(Error::InvalidNodeConfiguration(format!(
                     "mining address {} is incompatible with network {}",
@@ -891,19 +891,19 @@ impl UtreexoD {
 
         // RPC TLS and proof-index storage mode are halfin-owned invariants.
         args.push("--notls".to_string());
-        if !conf.utreexo_args.dns_seed {
+        if !conf.utreexod_args.dns_seed {
             args.push("--nodnsseed".to_string());
         }
-        if !conf.utreexo_args.assume_utreexo {
+        if !conf.utreexod_args.assume_utreexo {
             args.push("--noassumeutreexo".to_string());
         }
-        if let Some(address) = &conf.utreexo_args.mining_address {
+        if let Some(address) = &conf.utreexod_args.mining_address {
             args.push(format!("--miningaddr={}", address.assume_checked_ref()));
         }
         args.push("--flatutreexoproofindex".to_string());
         args.push(format!(
             "--utreexoproofindexmaxmemory={}",
-            conf.utreexo_args.proof_index_max_memory_mib
+            conf.utreexod_args.proof_index_max_memory_mib
         ));
 
         Ok(args)
@@ -1021,11 +1021,11 @@ mod tests {
         assert_eq!(conf.args.prune, PruneMode::Disabled);
         assert!(conf.args.v2_transport);
         assert!(!conf.args.txindex);
-        assert!(!conf.utreexo_args.dns_seed);
-        assert!(!conf.utreexo_args.assume_utreexo);
-        assert_eq!(conf.utreexo_args.proof_index_max_memory_mib, 256);
+        assert!(!conf.utreexod_args.dns_seed);
+        assert!(!conf.utreexod_args.assume_utreexo);
+        assert_eq!(conf.utreexod_args.proof_index_max_memory_mib, 256);
         assert_eq!(
-            conf.utreexo_args
+            conf.utreexod_args
                 .mining_address
                 .as_ref()
                 .unwrap()
@@ -1062,7 +1062,7 @@ mod tests {
         for (network, switch, data_dir) in cases {
             let mut conf = UtreexoDConf::default();
             conf.args.network = network;
-            conf.utreexo_args.mining_address = None;
+            conf.utreexod_args.mining_address = None;
             let args = UtreexoD::configured_args(&conf).unwrap();
             match switch {
                 Some(switch) => assert!(args.contains(&switch.to_string())),
@@ -1085,7 +1085,7 @@ mod tests {
     fn rejects_testnet4() {
         let mut conf = UtreexoDConf::default();
         conf.args.network = Network::Testnet4;
-        conf.utreexo_args.mining_address = None;
+        conf.utreexod_args.mining_address = None;
         assert_invalid(&conf);
     }
 
@@ -1095,10 +1095,10 @@ mod tests {
         conf.args.cbf_index = false;
         conf.args.v2_transport = false;
         conf.args.txindex = true;
-        conf.utreexo_args.dns_seed = true;
-        conf.utreexo_args.assume_utreexo = true;
-        conf.utreexo_args.mining_address = None;
-        conf.utreexo_args.proof_index_max_memory_mib = 512;
+        conf.utreexod_args.dns_seed = true;
+        conf.utreexod_args.assume_utreexo = true;
+        conf.utreexod_args.mining_address = None;
+        conf.utreexod_args.proof_index_max_memory_mib = 512;
 
         let args = UtreexoD::configured_args(&conf).unwrap();
         assert!(!args.contains(&"--cfilters".to_string()));
@@ -1136,10 +1136,10 @@ mod tests {
     #[test]
     fn validates_proof_index_memory() {
         let mut conf = UtreexoDConf::default();
-        conf.utreexo_args.proof_index_max_memory_mib = 249;
+        conf.utreexod_args.proof_index_max_memory_mib = 249;
         assert_invalid(&conf);
 
-        conf.utreexo_args.proof_index_max_memory_mib = 250;
+        conf.utreexod_args.proof_index_max_memory_mib = 250;
         assert!(UtreexoD::configured_args(&conf).is_ok());
     }
 
@@ -1149,7 +1149,7 @@ mod tests {
         conf.args.network = Network::Bitcoin;
         assert_invalid(&conf);
 
-        conf.utreexo_args.mining_address = Some(
+        conf.utreexod_args.mining_address = Some(
             Address::from_str("1BitcoinEaterAddressDontSendf59kuE").expect("valid mainnet address"),
         );
         let args = UtreexoD::configured_args(&conf).unwrap();

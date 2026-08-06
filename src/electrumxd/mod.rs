@@ -186,9 +186,9 @@ impl Indexer for ElectrumxD {
 
     fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> { self.get_electrum_client() }
 
-    fn electrum_socket(&self) -> SocketAddr { self.electrum_socket() }
+    fn get_electrum_socket(&self) -> SocketAddr { self.get_electrum_socket() }
 
-    fn electrum_url(&self) -> String { self.electrum_url() }
+    fn get_electrum_url(&self) -> String { self.get_electrum_url() }
 
     fn wait_until_caught_up(&self, node: &impl Node, timeout: Option<Duration>) -> Result<(), Error> {
         self.wait_until_caught_up(node, timeout)
@@ -504,7 +504,7 @@ impl ElectrumxD {
     }
 
     /// Return the Electrum RPC [`SocketAddr`] the indexer is listening on.
-    pub fn electrum_socket(&self) -> SocketAddr {
+    pub fn get_electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
             Self::get_name(),
@@ -515,7 +515,7 @@ impl ElectrumxD {
     }
 
     /// Return the Electrum RPC URL for the indexer.
-    pub fn electrum_url(&self) -> String {
+    pub fn get_electrum_url(&self) -> String {
         let electrum_url = self.electrum_socket.to_string();
 
         debug!(
@@ -528,7 +528,7 @@ impl ElectrumxD {
     }
 
     /// Return the admin RPC [`SocketAddr`] the indexer is listening on.
-    pub fn rpc_socket(&self) -> SocketAddr {
+    pub fn get_rpc_socket(&self) -> SocketAddr {
         debug!(
             "{}: got admin RPC socket at socket={}",
             Self::get_name(),

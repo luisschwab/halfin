@@ -34,12 +34,12 @@ fn test_electrsd_spawns() {
 
     info!("PID: {}", electrsd.get_pid());
     info!("Working Directory: {:?}", electrsd.get_working_directory());
-    info!("Electrum Socket: {}", electrsd.electrum_socket());
+    info!("Electrum Socket: {}", electrsd.get_electrum_socket());
     info!(
         "Electrum Server Protocol Version: {}",
         electrsd.client.server_features().unwrap().protocol_max
     );
-    info!("Monitoring Socket: {}", electrsd.monitoring_socket());
+    info!("Monitoring Socket: {}", electrsd.get_monitoring_socket());
 }
 
 /// Verify that [`ElectrsD`] tracks mempool transactions.

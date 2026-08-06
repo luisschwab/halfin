@@ -121,7 +121,7 @@ pub struct BitcoinDArgs {
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BitcoinDConf {
-    /// Arguments shared with other node implementations.
+    /// Arguments shared with other [`Node`] implementations.
     pub args: NodeArgs,
 
     /// Arguments specific to Bitcoin Core.
@@ -192,7 +192,7 @@ impl AsRef<NodeArgs> for BitcoinDConf {
 /// # Networking
 ///
 /// Both the RPC and P2P ports are chosen from the OS's ephemeral range at
-/// startup.  Use [`rpc_socket`](BitcoinD::rpc_socket) and
+/// startup. Use [`get_rpc_socket`](BitcoinD::get_rpc_socket) and
 /// [`get_p2p_socket`](BitcoinD::get_p2p_socket) to discover them after
 /// construction.
 #[derive(Debug)]
@@ -225,7 +225,7 @@ impl Node for BitcoinD {
 
     fn get_working_directory(&self) -> PathBuf { self.get_working_directory() }
 
-    fn get_rpc_socket(&self) -> SocketAddr { self.rpc_socket() }
+    fn get_rpc_socket(&self) -> SocketAddr { self.get_rpc_socket() }
 
     fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> { self.generate(count) }
 
@@ -527,7 +527,7 @@ impl BitcoinD {
     }
 
     /// Get [`BitcoinD`]'s JSON-RPC [`SocketAddr`].
-    pub fn rpc_socket(&self) -> SocketAddr {
+    pub fn get_rpc_socket(&self) -> SocketAddr {
         debug!(
             "{}: got rpc socket at socket={}",
             Self::get_name(),
@@ -538,7 +538,7 @@ impl BitcoinD {
     }
 
     /// Get the [`Path`] to [`BitcoinD`]'s cookie file.
-    pub fn cookie_file(&self) -> &Path {
+    pub fn get_cookie_file(&self) -> &Path {
         debug!(
             "{}: got cookie file at path={}",
             Self::get_name(),
