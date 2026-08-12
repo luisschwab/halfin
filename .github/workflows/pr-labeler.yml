@@ -34,7 +34,7 @@ jobs:
                         'sha256/': 'sha256',
                         'src/bitcoind/': 'M-bitcoind',
                         'src/electrsd/': 'M-electrsd',
-                        'src/electrumxd/': 'M-electrumx',
+                        'src/electrumxd/': 'M-electrumxd',
                         'src/utreexod/': 'M-utreexod',
                       };
 

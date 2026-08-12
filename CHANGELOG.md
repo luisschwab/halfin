@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Drop `which`
 * `ElectrumxD`: assert Python is available at runtime
 * Fix naming inconsistencies
 * Bump `bitcoin_hashes` to v1.1.0
