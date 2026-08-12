@@ -10,7 +10,7 @@ alias sc := shellcheck
 alias z := zizmor
 alias p := pre-push
 
-export RBMT_LOG_LEVEL := env("RBMT_LOG_LEVEL", "verbose")
+export RBMT_LOG_LEVEL := env("RBMT_LOG_LEVEL", "progress")
 
 _default:
     @echo "> halfin"
@@ -50,22 +50,22 @@ lock:
 
 [doc: "Run Tests"]
 test:
-    cargo rbmt test
+    RBMT_LOG_LEVEL=verbose cargo rbmt test
 
 [doc: "Run Tests with Lockfile and Toolchain Combos"]
 test-all:
-    cargo rbmt test --toolchain stable --lockfile recent
-    cargo rbmt test --toolchain stable --lockfile minimal
-    cargo rbmt test --toolchain msrv --lockfile minimal
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile recent
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
 
 [doc: "Update Stable and Nightly Toolchains"]
 toolchains:
-    RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-stable
-    RBMT_LOG_LEVEL=progress cargo rbmt toolchains --update-nightly
+    cargo rbmt toolchains --update-stable
+    cargo rbmt toolchains --update-nightly
 
 [doc: "Install cargo-rbmt Tools"]
 tools:
-    RBMT_LOG_LEVEL=progress cargo rbmt tools
+    cargo rbmt tools
 
 [doc: "Run ShellCheck"]
 shellcheck:
@@ -74,7 +74,7 @@ shellcheck:
 
 [doc: "Run Zizmor Static Analysis"]
 zizmor:
-   zizmor .github/workflows
+   zizmor .github
 
 [doc: "Run pre-push checks"]
 pre-push:
