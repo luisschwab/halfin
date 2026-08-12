@@ -7,6 +7,7 @@
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
+use std::env;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::ErrorKind;
@@ -220,10 +221,11 @@ impl ElectrumxD {
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, the node is not ready,
-    /// or the indexer cannot be started.
+    /// Returns [`Error::InvalidPython`] if the bundled launcher's Python version is unavailable.
+    /// Returns an error if the binary cannot be located, the node is not ready, or the indexer
+    /// cannot be started.
     pub fn new<N: Node>(node: &N) -> Result<Self, Error> {
-        Self::from_bin(get_electrumx_path()?, node)
+        Self::new_with_conf(node, &ElectrumxDConf::default())
     }
 
     /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with a
@@ -233,10 +235,14 @@ impl ElectrumxD {
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, the configuration is
-    /// invalid, the node is not ready, or the indexer cannot be started.
+    /// Returns [`Error::InvalidPython`] if the bundled launcher's Python version is unavailable.
+    /// Returns an error if the binary cannot be located, the configuration is invalid, the node is
+    /// not ready, or the indexer cannot be started.
     pub fn new_with_conf<N: Node>(node: &N, conf: &ElectrumxDConf) -> Result<Self, Error> {
-        Self::from_bin_with_conf(get_electrumx_path()?, node, conf)
+        Self::validate_python_version()?;
+
+        let electrumx_path = get_electrumx_path()?;
+        Self::from_bin_with_conf(electrumx_path, node, conf)
     }
 
     /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with the default
@@ -774,6 +780,47 @@ impl ElectrumxD {
             return Err(Error::InvalidIndexerConfiguration(
                 "ElectrumX requires a backing node with transaction indexing enabled".to_string(),
             ));
+        }
+        Ok(())
+    }
+
+    /// Validate that the Python version required by the bundled `ElectrumX` launcher is available.
+    ///
+    /// The `PYTHON` environment variable selects an explicit interpreter. Otherwise, Unix uses
+    /// `python3.10`, Windows uses `py -3.10`, and Windows ARM64 uses `py -3.11`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidPython`] if the selected command cannot be started or its
+    /// `--version` check exits unsuccessfully.
+    fn validate_python_version() -> Result<(), Error> {
+        // Python version required by the bundled `ElectrumX` launcher.
+        const PYTHON_VERSION: &str = "3.10";
+
+        // Python version required by the bundled Windows ARM64 `ElectrumX` launcher.
+        const PYTHON_VERSION_WINDOWS_ARM64: &str = "3.11";
+
+        let mut python = if let Some(python) = env::var_os("PYTHON") {
+            Command::new(python)
+        } else if cfg!(target_os = "windows") {
+            let mut python = Command::new("py");
+            let version = if cfg!(target_arch = "aarch64") {
+                PYTHON_VERSION_WINDOWS_ARM64
+            } else {
+                PYTHON_VERSION
+            };
+            python.arg(format!("-{version}"));
+            python
+        } else {
+            Command::new(format!("python{PYTHON_VERSION}"))
+        };
+        let status = python.arg("--version").status().map_err(|e| {
+            Error::InvalidPython(format!("failed to run Python version check: {e}"))
+        })?;
+        if !status.success() {
+            return Err(Error::InvalidPython(format!(
+                "Python version check failed with {status}"
+            )));
         }
         Ok(())
     }
