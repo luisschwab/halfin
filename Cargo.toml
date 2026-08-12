@@ -40,7 +40,6 @@ electrum-client = { version = "=0.25.0", default-features = false, optional = tr
 tempfile = { version = "=3.27.0", default-features = false }
 serde_json = { version = "=1.0.150", default-features = false }
 tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
-which = { version = "=8.0.4", default-features = false }
 # Pinned transitive deps:
 bitcoin = { version = "0.32.101", default-features = false }
 

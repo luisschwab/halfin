@@ -4,10 +4,14 @@
 
 #![cfg(all(feature = "bitcoind", feature = "electrumx"))]
 
+use std::env;
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::sync::Mutex;
 
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;
+use halfin::Error;
 use halfin::bitcoind::BitcoinD;
 use halfin::electrumxd::ELECTRUMX_INDEXING_TIMEOUT;
 use halfin::electrumxd::ElectrumxD;
@@ -20,6 +24,65 @@ fn electrumx_test_lock() -> std::sync::MutexGuard<'static, ()> {
     ELECTRUMX_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Restore `PYTHON` after a test changes it.
+struct PythonEnvGuard {
+    original: Option<OsString>,
+}
+
+impl PythonEnvGuard {
+    /// Set `PYTHON` for the duration of a test.
+    fn set(value: &OsStr) -> Self {
+        let original = env::var_os("PYTHON");
+
+        // SAFETY: every test in this binary holds `ELECTRUMX_TEST_LOCK` while changing or reading
+        // `PYTHON` through a bundled `ElectrumxD` constructor.
+        unsafe {
+            env::set_var("PYTHON", value);
+        }
+
+        Self { original }
+    }
+}
+
+impl Drop for PythonEnvGuard {
+    fn drop(&mut self) {
+        // SAFETY: the guard is dropped while its test still holds `ELECTRUMX_TEST_LOCK`.
+        unsafe {
+            match &self.original {
+                Some(value) => env::set_var("PYTHON", value),
+                None => env::remove_var("PYTHON"),
+            }
+        }
+    }
+}
+
+/// Verify that `PYTHON` takes precedence and missing overrides produce an actionable error.
+#[test]
+fn bundled_constructor_rejects_missing_python_override() {
+    let _guard = electrumx_test_lock();
+    let bitcoind = BitcoinD::new().unwrap();
+    let _python = PythonEnvGuard::set(OsStr::new("halfin-python-command-that-does-not-exist"));
+
+    assert!(matches!(
+        ElectrumxD::new(&bitcoind),
+        Err(Error::InvalidPython(description))
+            if description.contains("failed to run Python version check")
+    ));
+}
+
+/// Verify that custom executables do not inherit the bundled launcher's Python requirement.
+#[test]
+fn custom_binary_constructor_skips_python_preflight() {
+    let _guard = electrumx_test_lock();
+    let bitcoind = BitcoinD::new().unwrap();
+    let _python = PythonEnvGuard::set(OsStr::new("halfin-python-command-that-does-not-exist"));
+
+    assert!(matches!(
+        ElectrumxD::from_bin("missing-electrumx", &bitcoind),
+        Err(Error::BinaryPathNotAbsolute { .. })
+    ));
 }
 
 /// Verify that [`ElectrumxD`] starts and accepts Electrum requests.

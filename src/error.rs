@@ -63,6 +63,11 @@ pub enum Error {
     /// Typed node configuration contains an unsupported combination or value.
     InvalidNodeConfiguration(String),
 
+    /// The Python interpreter required by the bundled `ElectrumX` launcher is unavailable or
+    /// cannot run.
+    #[cfg(feature = "electrumx")]
+    InvalidPython(String),
+
     /// Indexer configuration is incompatible with its backing node.
     InvalidIndexerConfiguration(String),
 
@@ -121,6 +126,8 @@ impl fmt::Display for Error {
             Self::ConflictingNodeArgument(arg) => write!(f, "Raw node argument conflicts with typed configuration: {arg}"),
             Self::ConflictingIndexerArgument(arg) => write!(f, "Raw indexer argument conflicts with typed or dynamic configuration: {arg}"),
             Self::InvalidNodeConfiguration(description) => write!(f, "Invalid node configuration: {description}"),
+            #[cfg(feature = "electrumx")]
+            Self::InvalidPython(description) => write!(f, "Invalid Python runtime for `ElectrumX`: {description}"),
             Self::InvalidIndexerConfiguration(description) => write!(f, "Invalid indexer configuration: {description}"),
             #[cfg(feature = "bitcoind")]
             Self::UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
