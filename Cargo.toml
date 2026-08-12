@@ -59,7 +59,7 @@ lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
 
 [package.metadata.rbmt]
 version = "0.5.2"
-toolchains = { stable = "1.97.1", nightly = "nightly-2026-08-05" }
+toolchains = { stable = "1.97.1", nightly = "nightly-2026-08-12" }
 tools = { cargo-audit = "=0.22.2", zizmor = "=1.26.1" }
 lint = { allowed_duplicates = ["base64"] }
 
