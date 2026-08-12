@@ -2,13 +2,13 @@
 
 //! Build script for fetching and exposing binaries.
 //!
-//! The script downloads `bitcoind`, `utreexod`, `electrs`, and `electrumx` archives
-//! when their features are enabled, verifies their checksums, extracts
-//! the needed binaries, and publishes their paths through Cargo compile-time
-//! environment variables.
+//! The script downloads `bitcoind`, `florestad`, `utreexod`, `electrs`, and `electrumx`
+//! archives when their features are enabled, verifies their checksums, extracts the needed
+//! binaries, and publishes their paths through Cargo compile-time environment variables.
 
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -464,6 +464,9 @@ fn main() {
         #[cfg(feature = "bitcoind")]
         bitcoind::download();
 
+        #[cfg(feature = "florestad")]
+        florestad::download();
+
         #[cfg(feature = "utreexod")]
         utreexod::download();
 
@@ -526,6 +529,62 @@ mod bitcoind {
             )),
             remote_dir: "bitcoind",
             remote_version_dir: PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
+            archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            codesign_on_macos_aarch64: true,
+        }
+        .download_and_install();
+    }
+}
+
+/// Downloads and verifies the `florestad` binary based on the enabled version feature.
+#[cfg(feature = "florestad")]
+mod florestad {
+    use super::binary::Binary;
+    use super::binary::PathBuf;
+
+    include!("src/florestad/versions.rs");
+
+    /// Compile-time environment variable containing the extracted `florestad` path.
+    const HALFIN_FLORESTAD_PATH: &str = "HALFIN_FLORESTAD_PATH";
+
+    /// Return the platform-specific archive filename for this version of `florestad`.
+    ///
+    /// Panics if the current OS/architecture combination is not supported.
+    fn get_download_filename() -> String {
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            return "florestad-darwin-arm64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            return "florestad-linux-amd64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            return "florestad-linux-arm64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+            return "florestad-windows-amd64.zip".to_string();
+        }
+        panic!("No download file for this OS+Architecture combination");
+    }
+
+    /// Download, verify, and extract the `florestad` binary into
+    /// `<OUT_DIR>/bin/florestad-<VERSION>/florestad`, or
+    /// `<HALFIN_BIN_DIR>/florestad-<VERSION>/florestad` if the
+    /// `HALFIN_BIN_DIR` environment variable is set.
+    ///
+    /// Skips the download if the binary is already cached from a previous build.
+    pub(crate) fn download() {
+        Binary {
+            name: "florestad",
+            version: FLORESTAD_VERSION,
+            env_var: HALFIN_FLORESTAD_PATH,
+            destination_dir_prefix: "florestad",
+            checksum_file: PathBuf::from(format!(
+                "sha256/florestad/florestad-{}-SHA256SUMS",
+                FLORESTAD_VERSION
+            )),
+            remote_dir: "florestad",
+            remote_version_dir: PathBuf::from(format!("florestad-{}", FLORESTAD_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: true,

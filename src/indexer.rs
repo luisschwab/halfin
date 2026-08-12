@@ -22,10 +22,10 @@ use crate::node::RPC_COOKIE_FILE_NAME;
 
 /// Reject backing node implementations unsupported by every indexer.
 pub(crate) fn validate_backend<N: Node>() -> Result<(), Error> {
-    if N::get_name() == "UtreexoD" {
-        return Err(Error::InvalidIndexerConfiguration(
-            "UtreexoD cannot currently be used as an indexer backing node".to_string(),
-        ));
+    if matches!(N::get_name(), "FlorestaD" | "UtreexoD") {
+        return Err(Error::UnsupportedIndexerBackend {
+            node: N::get_name(),
+        });
     }
     Ok(())
 }

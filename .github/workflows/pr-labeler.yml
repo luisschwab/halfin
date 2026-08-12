@@ -33,6 +33,7 @@ jobs:
                         'tests/': 'test',
                         'sha256/': 'sha256',
                         'src/bitcoind/': 'M-bitcoind',
+                        'src/florestad/' 'M-florestad'
                         'src/electrsd/': 'M-electrsd',
                         'src/electrumxd/': 'M-electrumxd',
                         'src/utreexod/': 'M-utreexod',

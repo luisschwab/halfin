@@ -17,14 +17,15 @@
 
 This crate makes it simple to run [`bitcoind`](https://github.com/bitcoin/bitcoin),
 [`utreexod`](https://github.com/utreexo/utreexod), [`electrs`](https://github.com/romanz/electrs),
-and [`electrumx`](https://github.com/spesmilo/electrumx) instances from Rust code, useful in
-integration test contexts.
+[`electrumx`](https://github.com/spesmilo/electrumx), and [`florestad`](https://github.com/getfloresta/Floresta)
+instances from Rust code, useful in integration test contexts.
 
 ## Supported Implementations
 
 | Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
 |---------|----------------|-----------|--------------|-----------------|-------------------|
 | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
+| Node    | `florestad`    | `v0.9.1`  | `florestad`  | No              |                   |
 | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
 |         |                |           |              |                 |                   |
 | Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
@@ -88,82 +89,11 @@ assert_eq!(utreexod.get_chain_tip().unwrap(), 100);
 let res = utreexod.call("uptime", &[]).unwrap();
 ```
 
-## Typed Node Configuration
-
-Options shared by Bitcoin Core and `utreexod` use `NodeArgs` through each
-configuration's `args` field. Daemon-specific options use `BitcoinDArgs` and
-`UtreexoDArgs`, while `raw_args` remains available for options `halfin` does
-not model:
+### FlorestaD
 
 ```rust
-use halfin::bitcoin::{FeeRate, Network};
-use halfin::bitcoind::{BitcoinD, BitcoinDConf};
-use halfin::node::PruneMode;
-use halfin::utreexod::{UtreexoD, UtreexoDConf};
-
-let mut bitcoind_conf = BitcoinDConf::default();
-bitcoind_conf.args.network = Network::Signet;
-bitcoind_conf.args.txindex = false;
-bitcoind_conf.args.prune = PruneMode::Automatic(1_024);
-bitcoind_conf.bitcoind_args.fallback_fee_rate = FeeRate::from_sat_per_vb_u32(2);
-bitcoind_conf.raw_args.push("-debug=net".to_string());
-let bitcoind = BitcoinD::new_with_conf(&bitcoind_conf).unwrap();
-
-let mut utreexod_conf = UtreexoDConf::default();
-utreexod_conf.args.txindex = true;
-utreexod_conf.utreexod_args.proof_index_max_memory_mib = 512;
-utreexod_conf.utreexod_args.dns_seed = true;
-utreexod_conf
-    .raw_args
-    .push("--debuglevel=info".to_string());
-let utreexod = UtreexoD::new_with_conf(&utreexod_conf).unwrap();
+TODO
 ```
-
-Raw arguments that duplicate typed settings are rejected. For example,
-`bitcoind_conf.raw_args.push("-txindex=0".to_string())` conflicts with
-`bitcoind_conf.args.txindex`; mutate the typed field instead.
-
-## Indexer Configuration
-
-`ElectrsD` and `ElectrumxD` accept an `&impl Node`, so their network and RPC
-authentication are derived from the backing node. Of the bundled nodes, only
-`BitcoinD` is currently supported. `UtreexoD` is rejected until its
-indexer-facing P2P and RPC compatibility issues are fixed; the Electrs P2P
-issue is documented [here](docs/utreexod-electrs-p2p-bug.md).
-ElectrumX-specific options use `ElectrumxDArgs`, while `raw_args` remains
-available for unmodeled options:
-
-```rust
-use halfin::bitcoind::BitcoinD;
-use halfin::electrsd::{ElectrsD, ElectrsDConf};
-use halfin::electrumxd::{ElectrumxD, ElectrumxDConf};
-use halfin::indexer::Indexer;
-
-let mut electrsd_conf = ElectrsDConf::default();
-electrsd_conf
-    .raw_args
-    .push("--log-filters=debug".to_string());
-let bitcoind = BitcoinD::new().unwrap();
-let electrsd = ElectrsD::new_with_conf(&bitcoind, &electrsd_conf).unwrap();
-
-let mut electrumxd_conf = ElectrumxDConf::default();
-electrumxd_conf.electrumx_args.coin = "Bitcoin".to_string();
-let electrumxd = ElectrumxD::new_with_conf(&bitcoind, &electrumxd_conf).unwrap();
-
-fn get_electrum_url<I: Indexer>(indexer: &I) -> String {
-    indexer.get_electrum_url()
-}
-
-assert_eq!(get_electrum_url(&electrsd), electrsd.get_electrum_url());
-assert_eq!(get_electrum_url(&electrumxd), electrumxd.get_electrum_url());
-```
-
-The BitcoinD backing node must be unpruned for `electrs` and must have
-`txindex` enabled for ElectrumX. Raw arguments cannot override the
-network, RPC authentication, addresses, or directories owned by `halfin`; for
-example, `electrsd_conf.raw_args.push("--network=signet".to_string())` is
-rejected.
-Configure the network through the backing node's `args` instead.
 
 ## Developing
 

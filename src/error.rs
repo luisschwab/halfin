@@ -7,6 +7,7 @@ use core::error;
 use core::fmt;
 use core::net::SocketAddr;
 use core::time::Duration;
+use std::io;
 use std::path::PathBuf;
 
 /// Errors returned by node and indexer process management helpers.
@@ -33,17 +34,17 @@ pub enum Error {
 
     /// Failed to spawn a [process](std::process::Child) for a [`Node`](crate::node::Node) or
     /// Electrum Server.
-    FailedToSpawn(std::io::Error),
+    FailedToSpawn(io::Error),
 
-    /// Failed to instantiate a node or indexer after [`crate::SPAWN_ATTEMPTS`] attempts.
+    /// Failed to instantiate a node or indexer after
+    /// [`SPAWN_ATTEMPTS`](crate::SPAWN_ATTEMPTS) attempts.
     ExhaustedNodeBuildingAttempts(u8),
 
-    /// Failed to stop [`crate::bitcoind::BitcoinD`] or [`crate::utreexod::UtreexoD`] over JSON-RPC
-    /// (e.g. `bitcoin-cli -regtest stop`).
+    /// Failed to stop a [`Node`](crate::node::Node) over JSON-RPC.
     FailedToStop(corepc_client::client_sync::Error),
 
     /// I/O errors.
-    Io(std::io::Error),
+    Io(io::Error),
 
     /// JSON-RPC Errors.
     JsonRpc(corepc_client::client_sync::Error),
@@ -63,6 +64,14 @@ pub enum Error {
     /// Typed node configuration contains an unsupported combination or value.
     InvalidNodeConfiguration(String),
 
+    /// A node does not support a requested command.
+    UnsupportedCommand {
+        /// Human-readable node name.
+        node: &'static str,
+        /// Unsupported command name.
+        command: &'static str,
+    },
+
     /// The Python interpreter required by the bundled `ElectrumX` launcher is unavailable or
     /// cannot run.
     #[cfg(feature = "electrumx")]
@@ -71,27 +80,38 @@ pub enum Error {
     /// Indexer configuration is incompatible with its backing node.
     InvalidIndexerConfiguration(String),
 
-    /// [`crate::bitcoind::BitcoinD`] is unresponsive (it's probably not running).
+    /// The node implementation cannot be used as an external indexer's backend.
+    UnsupportedIndexerBackend {
+        /// Human-readable node name.
+        node: &'static str,
+    },
+
+    /// [`BitcoinD`](crate::bitcoind::BitcoinD) is unresponsive (it's probably not running).
     #[cfg(feature = "bitcoind")]
     UnresponsiveBitcoinD(corepc_client::client_sync::Error),
 
-    /// [`crate::utreexod::UtreexoD`] is unresponsive (it's probably not running).
+    /// [`UtreexoD`](crate::utreexod::UtreexoD) is unresponsive (it's probably not running).
     #[cfg(feature = "utreexod")]
     UnresponsiveUtreexoD(corepc_client::client_sync::Error),
 
-    /// [`crate::electrsd::ElectrsD`] is unresponsive (it's probably not running).
+    /// [`FlorestaD`](crate::florestad::FlorestaD) is unresponsive to Electrum requests.
+    #[cfg(feature = "florestad")]
+    UnresponsiveFlorestaD(electrum_client::Error),
+
+    /// [`ElectrsD`](crate::electrsd::ElectrsD) is unresponsive (it's probably not running).
     #[cfg(feature = "electrs")]
     UnresponsiveElectrsD(electrum_client::Error),
 
-    /// [`crate::electrumxd::ElectrumxD`] is unresponsive (it's probably not running).
+    /// [`ElectrumxD`](crate::electrumxd::ElectrumxD) is unresponsive (it's probably not running).
     #[cfg(feature = "electrumx")]
     UnresponsiveElectrumxD(electrum_client::Error),
 
-    /// Timed out whilst waiting for [`crate::electrsd::ElectrsD`] to index expected data.
+    /// Timed out whilst waiting for [`ElectrsD`](crate::electrsd::ElectrsD) to index expected data.
     #[cfg(feature = "electrs")]
     ElectrsDIndexTimeout((String, Duration)),
 
-    /// Timed out whilst waiting for [`crate::electrumxd::ElectrumxD`] to index expected data.
+    /// Timed out whilst waiting for [`ElectrumxD`](crate::electrumxd::ElectrumxD) to index expected
+    /// data.
     #[cfg(feature = "electrumx")]
     ElectrumxDIndexTimeout((String, Duration)),
 
@@ -105,7 +125,7 @@ pub enum Error {
     /// `height`
     ChainSyncTimeOut((u32, u32, Duration)), // (target_height, current_height, timeout)
 
-    /// Timed out whilst waiting for the [`Node`](crate::node::Node)s to connect to each other.
+    /// Timed out whilst waiting for a [`Node`](crate::node::Node) connection to succeed.
     ConnectionTimeout(Duration),
 }
 
@@ -126,13 +146,17 @@ impl fmt::Display for Error {
             Self::ConflictingNodeArgument(arg) => write!(f, "Raw node argument conflicts with typed configuration: {arg}"),
             Self::ConflictingIndexerArgument(arg) => write!(f, "Raw indexer argument conflicts with typed or dynamic configuration: {arg}"),
             Self::InvalidNodeConfiguration(description) => write!(f, "Invalid node configuration: {description}"),
+            Self::UnsupportedCommand { node, command } => write!(f, "`{node}` does not support the `{command}` command"),
             #[cfg(feature = "electrumx")]
             Self::InvalidPython(description) => write!(f, "Invalid Python runtime for `ElectrumX`: {description}"),
             Self::InvalidIndexerConfiguration(description) => write!(f, "Invalid indexer configuration: {description}"),
+            Self::UnsupportedIndexerBackend { node } => write!(f, "`{node}` cannot be used as a backing node for an indexer"),
             #[cfg(feature = "bitcoind")]
             Self::UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
             #[cfg(feature = "utreexod")]
             Self::UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
+            #[cfg(feature = "florestad")]
+            Self::UnresponsiveFlorestaD(err) => write!(f, "`FlorestaD` is unresponsive to Electrum requests: {err:?}"),
             #[cfg(feature = "electrs")]
             Self::UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
             #[cfg(feature = "electrumx")]
@@ -150,7 +174,7 @@ impl fmt::Display for Error {
             ),
             Self::ConnectionTimeout(timeout) => write!(
                 f,
-                "Timed out after {} seconds whilst waiting for the nodes to connect to each other",
+                "Timed out after {} seconds whilst waiting for a node connection to succeed",
                 timeout.as_secs()
             ),
         }

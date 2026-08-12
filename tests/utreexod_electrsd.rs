@@ -20,14 +20,9 @@ fn test_electrsd_rejects_utreexod() {
         ..ElectrsDConf::default()
     };
 
-    match ElectrsD::new_with_conf(&utreexod, &electrsd_conf) {
-        Err(Error::InvalidIndexerConfiguration(message)) => {
-            assert_eq!(
-                message,
-                "UtreexoD cannot currently be used as an indexer backing node"
-            );
-        }
-        result => panic!("expected UtreexoD backend rejection, got {result:?}"),
-    }
+    assert!(matches!(
+        ElectrsD::new_with_conf(&utreexod, &electrsd_conf),
+        Err(Error::UnsupportedIndexerBackend { node: "UtreexoD" })
+    ));
     assert!(!indexer_dir.exists());
 }
