@@ -5,6 +5,13 @@
 //! This module implements the [`Node`] trait, with common methods
 //! and utilities across all Bitcoin [`Node`] implementations.
 
+#[cfg(feature = "bitcoind")]
+pub mod bitcoind;
+#[cfg(feature = "florestad")]
+pub mod florestad;
+#[cfg(feature = "utreexod")]
+pub mod utreexod;
+
 use core::net::SocketAddr;
 use core::time::Duration;
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
@@ -189,7 +196,8 @@ pub trait Node {
     /// Defaults to [`WAIT_TIMEOUT`].
     ///
     /// Override for nodes that need more time to process blocks
-    /// (e.g. [`UtreexoD`](crate::utreexod::UtreexoD) needs more time to build the Merkle forest).
+    /// (e.g. [`UtreexoD`](crate::node::utreexod::UtreexoD) needs more time to build the Merkle
+    /// forest).
     fn wait_timeout() -> Duration {
         WAIT_TIMEOUT
     }

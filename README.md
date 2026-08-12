@@ -38,7 +38,7 @@ Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs
 ```rs
 use std::path::PathBuf;
 
-use halfin::bitcoind::BitcoinD;
+use halfin::node::bitcoind::BitcoinD;
 use halfin::node::{connect, wait_for_height};
 
 // Use a downloaded binary
@@ -63,8 +63,8 @@ assert_eq!(bitcoind_beta.get_chain_tip().unwrap(), 100);
 ### ElectrsD
 
 ```rust
-use halfin::bitcoind::BitcoinD;
-use halfin::electrsd::ElectrsD;
+use halfin::indexer::electrsd::ElectrsD;
+use halfin::node::bitcoind::BitcoinD;
 
 let bitcoind = BitcoinD::new().unwrap();
 bitcoind.generate(100).unwrap();
@@ -76,7 +76,7 @@ electrs.wait_until_caught_up(&bitcoind, None).unwrap();
 ### UtreexoD
 
 ```rust
-use halfin::utreexod::UtreexoD;
+use halfin::node::utreexod::UtreexoD;
 
 // Use a downloaded binary
 let utreexod = UtreexoD::new().unwrap();

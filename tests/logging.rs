@@ -13,10 +13,10 @@
 use std::thread;
 use std::time::Duration;
 
-use halfin::bitcoind::BitcoinD;
-use halfin::electrsd::ElectrsD;
+use halfin::indexer::electrsd::ElectrsD;
+use halfin::node::bitcoind::BitcoinD;
 use halfin::node::connect;
-use halfin::utreexod::UtreexoD;
+use halfin::node::utreexod::UtreexoD;
 use tracing::Level;
 
 #[test]

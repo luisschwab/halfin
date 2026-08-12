@@ -22,9 +22,9 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use halfin::bitcoind::BitcoinD;
+//! use halfin::node::bitcoind::BitcoinD;
 //! use halfin::node::connect;
-//! use halfin::utreexod::UtreexoD;
+//! use halfin::node::utreexod::UtreexoD;
 //!
 //! let bitcoind = BitcoinD::new().unwrap();
 //! bitcoind.generate(10).unwrap();
@@ -96,19 +96,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[allow(unused)]
-#[cfg(feature = "bitcoind")]
-pub(crate) use bitcoind::BitcoinD;
 pub use corepc_client::bitcoin;
-#[allow(unused)]
-#[cfg(feature = "electrs")]
-pub(crate) use electrsd::ElectrsD;
-#[allow(unused)]
-#[cfg(feature = "electrumx")]
-pub(crate) use electrumxd::ElectrumxD;
-#[allow(unused)]
-#[cfg(feature = "florestad")]
-pub(crate) use florestad::FlorestaD;
 pub use serde_json;
 use tempfile::TempDir;
 #[cfg(any(
@@ -119,26 +107,13 @@ use tempfile::TempDir;
     feature = "electrumx"
 ))]
 use tracing::info;
-#[allow(unused)]
-#[cfg(feature = "utreexod")]
-pub(crate) use utreexod::UtreexoD;
 
 pub use crate::error::Error;
 
-#[cfg(feature = "bitcoind")]
-pub mod bitcoind;
-#[cfg(feature = "electrs")]
-pub mod electrsd;
-#[cfg(feature = "electrumx")]
-pub mod electrumxd;
 pub mod error;
-#[cfg(feature = "florestad")]
-pub mod florestad;
 #[cfg(any(feature = "electrs", feature = "electrumx"))]
 pub mod indexer;
 pub mod node;
-#[cfg(feature = "utreexod")]
-pub mod utreexod;
 
 /// IPv4 localhost address.
 const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);

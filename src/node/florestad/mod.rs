@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # `FlorestaD`: spawn and interact with a `florestad` process
+//! # `FlorestaD`: spawn and interact with a `florestad` node process
 //!
 //! This module runs the bundled Floresta daemon with an isolated data directory
 //! and ephemeral JSON-RPC and Electrum ports.

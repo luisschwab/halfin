@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Refactor module structure
 * `FlorestaD` support
 * Drop `which`
 * `ElectrumxD`: assert Python is available at runtime

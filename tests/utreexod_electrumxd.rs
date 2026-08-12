@@ -5,9 +5,9 @@
 #![cfg(all(feature = "utreexod", feature = "electrumx"))]
 
 use halfin::Error;
-use halfin::electrumxd::ElectrumxD;
-use halfin::electrumxd::ElectrumxDConf;
-use halfin::utreexod::UtreexoD;
+use halfin::indexer::electrumxd::ElectrumxD;
+use halfin::indexer::electrumxd::ElectrumxDConf;
+use halfin::node::utreexod::UtreexoD;
 
 /// Verify that `UtreexoD` is rejected before creating the indexer's data directory.
 #[test]

@@ -484,7 +484,7 @@ mod bitcoind {
     use super::binary::Binary;
     use super::binary::PathBuf;
 
-    include!("src/bitcoind/versions.rs");
+    include!("src/node/bitcoind/versions.rs");
 
     /// Compile-time environment variable containing the extracted `bitcoind` path.
     const HALFIN_BITCOIND_PATH: &str = "HALFIN_BITCOIND_PATH";
@@ -543,7 +543,7 @@ mod florestad {
     use super::binary::Binary;
     use super::binary::PathBuf;
 
-    include!("src/florestad/versions.rs");
+    include!("src/node/florestad/versions.rs");
 
     /// Compile-time environment variable containing the extracted `florestad` path.
     const HALFIN_FLORESTAD_PATH: &str = "HALFIN_FLORESTAD_PATH";
@@ -599,7 +599,7 @@ mod utreexod {
     use super::binary::Binary;
     use super::binary::PathBuf;
 
-    include!("src/utreexod/versions.rs");
+    include!("src/node/utreexod/versions.rs");
 
     /// Compile-time environment variable containing the extracted `utreexod` path.
     const HALFIN_UTREEXOD_PATH: &str = "HALFIN_UTREEXOD_PATH";
@@ -658,7 +658,7 @@ mod electrs {
     use super::binary::Binary;
     use super::binary::PathBuf;
 
-    include!("src/electrsd/versions.rs");
+    include!("src/indexer/electrsd/versions.rs");
 
     /// Compile-time environment variable containing the extracted `electrs` path.
     const HALFIN_ELECTRS_PATH: &str = "HALFIN_ELECTRS_PATH";
@@ -720,7 +720,7 @@ mod electrumx {
     use super::binary::Binary;
     use super::binary::PathBuf;
 
-    include!("src/electrumxd/versions.rs");
+    include!("src/indexer/electrumxd/versions.rs");
 
     /// Compile-time environment variable containing the extracted `ElectrumX` launcher path.
     const HALFIN_ELECTRUMX_PATH: &str = "HALFIN_ELECTRUMX_PATH";

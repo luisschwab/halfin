@@ -9,7 +9,7 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use halfin::utreexod::UtreexoD;
+//! use halfin::node::utreexod::UtreexoD;
 //!
 //! // Start a node with default configuration
 //! let node = UtreexoD::new().unwrap();

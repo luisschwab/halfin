@@ -2,6 +2,11 @@
 
 //! Shared interface for Electrum indexer implementations.
 
+#[cfg(feature = "electrs")]
+pub mod electrsd;
+#[cfg(feature = "electrumx")]
+pub mod electrumxd;
+
 use core::net::SocketAddr;
 use core::time::Duration;
 use std::fs;

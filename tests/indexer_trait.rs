@@ -8,12 +8,12 @@ use core::time::Duration;
 
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;
-use halfin::bitcoind::BitcoinD;
-use halfin::electrsd::ElectrsD;
-use halfin::electrsd::ElectrsDConf;
-use halfin::electrumxd::ElectrumxD;
-use halfin::electrumxd::ElectrumxDConf;
 use halfin::indexer::Indexer;
+use halfin::indexer::electrsd::ElectrsD;
+use halfin::indexer::electrsd::ElectrsDConf;
+use halfin::indexer::electrumxd::ElectrumxD;
+use halfin::indexer::electrumxd::ElectrumxDConf;
+use halfin::node::bitcoind::BitcoinD;
 
 /// Verify that both Electrum servers implement the complete [`Indexer`](halfin::indexer::Indexer)
 /// API.

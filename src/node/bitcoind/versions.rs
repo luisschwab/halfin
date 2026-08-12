@@ -1,8 +1,10 @@
-/// [`BitcoinD`](crate::bitcoind::BitcoinD)'s human-readable name.
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+/// [`BitcoinD`](crate::node::bitcoind::BitcoinD)'s human-readable name.
 #[allow(unused)]
 pub(crate) const BITCOIND_NAME: &str = "BitcoinD";
 
-/// [`BitcoinD`](crate::bitcoind::BitcoinD)'s binary name.
+/// [`BitcoinD`](crate::node::bitcoind::BitcoinD)'s binary name.
 #[allow(unused)]
 pub(crate) const BITCOIND_BIN_NAME: &str = "bitcoind_v_31_0";
 
