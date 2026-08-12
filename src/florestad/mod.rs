@@ -1,0 +1,833 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+//! # `FlorestaD`: spawn and interact with a `florestad` process
+//!
+//! This module runs the bundled Floresta daemon with an isolated data directory
+//! and ephemeral JSON-RPC and Electrum ports.
+
+use core::net::SocketAddr;
+use core::net::SocketAddrV4;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Child;
+use std::process::Command;
+use std::process::ExitStatus;
+use std::process::Stdio;
+use std::thread::sleep;
+use std::time::Duration;
+use std::time::Instant;
+
+use corepc_client::bitcoin::BlockHash;
+use corepc_client::bitcoin::Network;
+use electrum_client::ElectrumApi;
+use electrum_client::raw_client::ElectrumPlaintextStream;
+use electrum_client::raw_client::RawClient;
+use miniscript::Descriptor;
+use miniscript::DescriptorPublicKey;
+use tracing::debug;
+
+use self::client_versions::Client;
+use crate::CONNECTION_INTERVAL;
+use crate::CONNECTION_TIMEOUT;
+use crate::DataDir;
+use crate::Error;
+use crate::IPV4_LOCALHOST;
+use crate::SPAWN_ATTEMPTS;
+use crate::SPAWN_INTERVAL;
+use crate::find_conflicting_argument;
+use crate::get_available_port;
+use crate::init_data_dir;
+use crate::node::Node;
+use crate::node::NodeArgs;
+use crate::node::PruneMode;
+use crate::pipe_to_tracing;
+
+/// Version-specific JSON-RPC client aliases for the bundled `florestad`.
+mod client_versions;
+/// Bundled `florestad` version metadata.
+mod versions;
+
+/// Return the path to the downloaded `florestad` binary.
+///
+/// The path is resolved at compile time from the `HALFIN_FLORESTAD_PATH`
+/// environment variable, which is set by `build.rs` after downloading and
+/// extracting the binary.
+///
+/// # Errors
+///
+/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
+pub fn get_florestad_path() -> Result<PathBuf, Error> {
+    #[allow(unused_mut)]
+    let mut bin_path = PathBuf::from(option_env!("HALFIN_FLORESTAD_PATH").unwrap_or(""));
+
+    #[cfg(target_os = "windows")]
+    if bin_path.extension().is_none() {
+        bin_path.set_extension("exe");
+    }
+
+    let bin_name = FlorestaD::get_bin_name().to_string();
+    match bin_path.exists() {
+        true => Ok(bin_path),
+        false => Err(Error::BinaryNotFound((bin_name, bin_path))),
+    }
+}
+
+/// Arguments specific to `florestad`.
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct FlorestaDArgs {
+    /// Whether to discover peers using DNS seeds.
+    pub dns_seeds: bool,
+    /// Whether automatic peer connections may fall back from `P2Pv2` to `P2Pv1`.
+    ///
+    /// This does not select the transport used by [`FlorestaD::add_peer`];
+    /// that method uses [`NodeArgs::v2_transport`].
+    pub allow_v1_fallback: bool,
+    /// Whether to use Floresta's assume-Utreexo snapshot.
+    pub assume_utreexo: bool,
+    /// Whether to validate skipped blocks in the background.
+    pub backfill: bool,
+    /// Output descriptors whose transactions Floresta should index.
+    pub wallet_descriptors: Vec<Descriptor<DescriptorPublicKey>>,
+}
+
+/// Configuration for a [`FlorestaD`] instance.
+///
+/// Exactly one of `tmpdir` and `staticdir` may be set. By default, each node
+/// uses a fresh temporary directory that is removed when the node is dropped.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct FlorestaDConf {
+    /// Arguments shared with other [`Node`] implementations.
+    pub args: NodeArgs,
+    /// Arguments specific to `florestad`.
+    pub florestad_args: FlorestaDArgs,
+    /// Extra CLI arguments forwarded verbatim to `florestad`.
+    ///
+    /// Arguments managed by typed configuration or by halfin itself are
+    /// rejected with [`Error::ConflictingNodeArgument`].
+    pub raw_args: Vec<String>,
+    /// Root under which a fresh temporary working directory is created.
+    pub tmpdir: Option<PathBuf>,
+    /// Persistent base data directory, which is not removed on drop.
+    pub staticdir: Option<PathBuf>,
+    /// Number of process-spawn attempts before returning an error.
+    pub max_retries: u8,
+}
+
+impl Default for FlorestaDConf {
+    fn default() -> Self {
+        Self {
+            args: NodeArgs {
+                network: Network::Regtest,
+                v2_transport: true,
+                cbf_index: true,
+                prune: PruneMode::Disabled,
+                txindex: false,
+            },
+            florestad_args: FlorestaDArgs {
+                dns_seeds: false,
+                allow_v1_fallback: false,
+                assume_utreexo: false,
+                backfill: false,
+                wallet_descriptors: Vec::new(),
+            },
+            raw_args: Vec::new(),
+            tmpdir: None,
+            staticdir: None,
+            max_retries: SPAWN_ATTEMPTS,
+        }
+    }
+}
+
+impl AsRef<NodeArgs> for FlorestaDConf {
+    fn as_ref(&self) -> &NodeArgs {
+        &self.args
+    }
+}
+
+/// A running `florestad` node.
+///
+/// Floresta v0.9.1 does not accept inbound P2P connections and does not expose
+/// block generation or compact-filter progress through JSON-RPC. Unsupported
+/// commands return [`Error::UnsupportedCommand`]; requesting its P2P listener
+/// panics because [`Node::get_p2p_socket`] cannot return an error.
+#[derive(Debug)]
+pub struct FlorestaD {
+    /// Handle to the spawned `florestad` child process.
+    process: Child,
+    /// Unauthenticated JSON-RPC client connected to Floresta.
+    pub client: Client,
+    /// Plaintext Electrum client connected to Floresta's embedded server.
+    pub electrum_client: RawClient<ElectrumPlaintextStream>,
+    /// Owns and optionally cleans up the base data directory.
+    working_directory: DataDir,
+    /// Complete configuration used to start the node.
+    config: FlorestaDConf,
+    /// Address of the JSON-RPC listener.
+    rpc_socket: SocketAddr,
+    /// Address of the Electrum listener.
+    electrum_socket: SocketAddr,
+}
+
+#[rustfmt::skip]
+impl Node for FlorestaD {
+    type Config = FlorestaDConf;
+
+    fn get_name() -> &'static str { versions::FLORESTAD_NAME }
+
+    fn get_bin_name() -> &'static str { versions::FLORESTAD_BIN_NAME }
+
+    fn get_config(&self) -> &FlorestaDConf { self.get_config() }
+
+    fn get_working_directory(&self) -> PathBuf { self.get_working_directory() }
+
+    fn get_rpc_socket(&self) -> SocketAddr { self.get_rpc_socket() }
+
+    fn generate(&self, _count: u32) -> Result<Vec<BlockHash>, Error> {
+        Err(Error::UnsupportedCommand {
+            node: Self::get_name(),
+            command: "generate",
+        })
+    }
+
+    fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
+
+    fn get_filter_tip(&self) -> Result<u32, Error> {
+        Err(Error::UnsupportedCommand {
+            node: Self::get_name(),
+            command: "get_filter_tip",
+        })
+    }
+
+    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
+
+    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
+        self.client.call(method, args).map_err(Error::JsonRpc)
+    }
+
+    fn get_p2p_socket(&self) -> SocketAddr {
+        panic!("florestad v0.9.1 does not accept inbound P2P connections")
+    }
+
+    fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> { self.has_peer(socket) }
+
+    fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> { self.add_peer(socket) }
+
+    fn get_peer_count(&self) -> Result<u32, Error> { self.get_peer_count() }
+}
+
+impl FlorestaD {
+    /// Start a [`FlorestaD`] using the bundled binary and default configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be found or the daemon cannot be started.
+    pub fn new() -> Result<Self, Error> {
+        Self::from_bin(get_florestad_path()?)
+    }
+
+    /// Start a [`FlorestaD`] using the bundled binary and `conf`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary cannot be found, the configuration is
+    /// invalid, or the daemon cannot be started.
+    pub fn new_with_conf(conf: &FlorestaDConf) -> Result<Self, Error> {
+        Self::from_bin_with_conf(get_florestad_path()?, conf)
+    }
+
+    /// Start the `florestad` binary at `florestad_bin` with default configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary path is invalid or the daemon cannot be started.
+    pub fn from_bin<P: AsRef<Path>>(florestad_bin: P) -> Result<Self, Error> {
+        Self::from_bin_with_conf(florestad_bin, &FlorestaDConf::default())
+    }
+
+    /// Start the `florestad` binary at `florestad_bin` with `conf`.
+    ///
+    /// Each attempt uses fresh ephemeral JSON-RPC and Electrum ports. The
+    /// Electrum port is managed because Floresta starts that server even when
+    /// only its node interface is needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the binary path or configuration is invalid, the
+    /// data directory cannot be created, or all spawn attempts fail.
+    #[allow(clippy::too_many_lines)]
+    pub fn from_bin_with_conf<P: AsRef<Path>>(
+        florestad_bin: P,
+        conf: &FlorestaDConf,
+    ) -> Result<Self, Error> {
+        let configured_args = Self::configured_args(conf)?;
+        let florestad_bin = florestad_bin.as_ref();
+
+        if !florestad_bin.is_absolute() {
+            return Err(Error::BinaryPathNotAbsolute {
+                bin_name: Self::get_bin_name().to_string(),
+                path: florestad_bin.display().to_string(),
+            });
+        }
+        if !florestad_bin.is_file() {
+            return Err(Error::BinaryPathNotFile {
+                bin_name: Self::get_bin_name().to_string(),
+                path: florestad_bin.display().to_string(),
+            });
+        }
+
+        for _attempt in 0..conf.max_retries {
+            let working_directory = init_data_dir(
+                conf.tmpdir.as_deref(),
+                conf.staticdir.as_deref(),
+                "halfin-florestad-",
+            )?;
+
+            let rpc_port = get_available_port();
+            let rpc_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, rpc_port));
+            let rpc_url = format!("http://{rpc_socket}");
+
+            let mut electrum_port = get_available_port();
+            while electrum_port == rpc_port {
+                electrum_port = get_available_port();
+            }
+            let electrum_socket = SocketAddr::V4(SocketAddrV4::new(IPV4_LOCALHOST, electrum_port));
+
+            let data_dir_arg = format!("--data-dir={}", working_directory.path().display());
+            let rpc_address_arg = format!("--rpc-address={rpc_socket}");
+            let electrum_address_arg = format!("--electrum-address={electrum_socket}");
+
+            debug!(
+                "Spawning {} [RPC_SOCKET={}, ELECTRUM_SOCKET={}, DATADIR={}]",
+                Self::get_name(),
+                rpc_socket,
+                electrum_socket,
+                working_directory.path().display()
+            );
+
+            let mut process = Command::new(florestad_bin)
+                .args(&configured_args)
+                .args(&conf.raw_args)
+                .arg(&data_dir_arg)
+                .arg(&rpc_address_arg)
+                .arg(&electrum_address_arg)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(Error::FailedToSpawn)?;
+
+            sleep(SPAWN_INTERVAL);
+
+            match process.try_wait() {
+                Ok(Some(status)) => {
+                    let output = process.wait_with_output().map_err(Error::Io)?;
+                    eprintln!(
+                        "{} exited immediately with status={status}; stdout={}; stderr={}",
+                        Self::get_name(),
+                        String::from_utf8_lossy(&output.stdout).trim(),
+                        String::from_utf8_lossy(&output.stderr).trim(),
+                    );
+                    continue;
+                }
+                Err(err) => {
+                    debug!(
+                        "{} status check failed, retrying with fresh ports: {}",
+                        Self::get_name(),
+                        err
+                    );
+                    let _ = process.kill();
+                    let _ = process.wait();
+                    continue;
+                }
+                Ok(None) => {}
+            }
+
+            if let Some(stdout) = process.stdout.take() {
+                pipe_to_tracing(stdout, "florestad");
+            }
+            if let Some(stderr) = process.stderr.take() {
+                pipe_to_tracing(stderr, "florestad");
+            }
+
+            if let Ok(client) = Self::wait_for_rpc_client(&rpc_url, Duration::from_secs(10)) {
+                if let Ok(electrum_client) = Self::wait_for_electrum_client(
+                    electrum_socket,
+                    &mut process,
+                    Duration::from_secs(10),
+                ) {
+                    debug!(
+                        "Started {} [PID={}, RPC_SOCKET={}, ELECTRUM_SOCKET={}, DATADIR={}]",
+                        Self::get_name(),
+                        process.id(),
+                        rpc_socket,
+                        electrum_socket,
+                        working_directory.path().display()
+                    );
+
+                    return Ok(Self {
+                        process,
+                        client,
+                        electrum_client,
+                        working_directory,
+                        config: conf.clone(),
+                        rpc_socket,
+                        electrum_socket,
+                    });
+                }
+            }
+
+            let _ = process.kill();
+            let _ = process.wait();
+        }
+
+        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
+    }
+
+    /// Gracefully stop Floresta through JSON-RPC and wait for it to exit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stop RPC or process wait fails.
+    pub fn stop(&mut self) -> Result<ExitStatus, Error> {
+        debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
+
+        let _ = self
+            .client
+            .call::<serde_json::Value>("stop", &[])
+            .map_err(Error::FailedToStop)?;
+        self.process.wait().map_err(Error::Io)
+    }
+
+    /// Return the running `florestad` process ID.
+    pub fn get_pid(&self) -> u32 {
+        self.process.id()
+    }
+
+    /// Return Floresta's data directory.
+    pub fn get_working_directory(&self) -> PathBuf {
+        self.working_directory.path()
+    }
+
+    /// Return the complete configuration used to start this daemon.
+    pub fn get_config(&self) -> &FlorestaDConf {
+        &self.config
+    }
+
+    /// Return a reference to Floresta's JSON-RPC client.
+    pub fn get_rpc_client(&self) -> &Client {
+        &self.client
+    }
+
+    /// Return Floresta's JSON-RPC listener address.
+    pub fn get_rpc_socket(&self) -> SocketAddr {
+        self.rpc_socket
+    }
+
+    /// Return a reference to Floresta's Electrum client.
+    pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
+        &self.electrum_client
+    }
+
+    /// Return Floresta's Electrum listener address.
+    pub fn get_electrum_socket(&self) -> SocketAddr {
+        self.electrum_socket
+    }
+
+    /// Return Floresta's Electrum server URL.
+    pub fn get_electrum_url(&self) -> String {
+        self.electrum_socket.to_string()
+    }
+
+    /// Return Floresta's current chain height.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `getblockcount` fails or returns a non-numeric value.
+    pub fn get_chain_tip(&self) -> Result<u32, Error> {
+        let height = self
+            .client
+            .call::<serde_json::Value>("getblockcount", &[])
+            .map_err(Error::JsonRpc)?
+            .as_u64()
+            .ok_or_else(|| {
+                Error::UnexpectedResponse("getblockcount returned a non-numeric value".to_string())
+            })? as u32;
+
+        debug!("{}: got chain tip at height={height}", Self::get_name());
+        Ok(height)
+    }
+
+    /// Return the block hash at `height`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `getblockhash` fails or returns an invalid hash.
+    pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
+        let hash = self
+            .client
+            .call::<serde_json::Value>("getblockhash", &[height.into()])
+            .map_err(Error::JsonRpc)?
+            .as_str()
+            .ok_or_else(|| {
+                Error::UnexpectedResponse("getblockhash returned a non-string value".to_string())
+            })?
+            .parse::<BlockHash>()
+            .map_err(|err| Error::UnexpectedResponse(err.to_string()))?;
+
+        debug!(
+            "{}: got block hash at height={} hash={}",
+            Self::get_name(),
+            height,
+            hash
+        );
+        Ok(hash)
+    }
+
+    /// Check whether Floresta has an outbound connection to `socket`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `getpeerinfo` fails or returns a non-array value.
+    pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
+        let peers = self
+            .client
+            .call::<serde_json::Value>("getpeerinfo", &[])
+            .map_err(Error::JsonRpc)?;
+        let peers = peers.as_array().ok_or_else(|| {
+            Error::UnexpectedResponse("getpeerinfo returned a non-array value".to_string())
+        })?;
+        let has_peer = peers.iter().any(|peer| {
+            peer["address"]
+                .as_str()
+                .and_then(|address| address.parse::<SocketAddr>().ok())
+                == Some(socket)
+        });
+
+        debug!(
+            "{}: checked peer connection at socket={} connected={}",
+            Self::get_name(),
+            socket,
+            has_peer
+        );
+        Ok(has_peer)
+    }
+
+    /// Add `socket` as an outbound Floresta peer and wait for the connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `addnode` fails or the peer does not connect before
+    /// [`CONNECTION_TIMEOUT`].
+    pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
+        self.client
+            .call::<serde_json::Value>(
+                "addnode",
+                &[
+                    socket.to_string().into(),
+                    "add".into(),
+                    self.config.args.v2_transport.into(),
+                ],
+            )
+            .map_err(Error::JsonRpc)?;
+
+        let mut delay = CONNECTION_INTERVAL;
+        let start = Instant::now();
+        while start.elapsed() < CONNECTION_TIMEOUT {
+            if self.has_peer(socket)? {
+                return Ok(());
+            }
+            sleep(delay);
+            delay = (delay * 2).min(Duration::from_secs(1));
+        }
+
+        Err(Error::ConnectionTimeout(CONNECTION_TIMEOUT))
+    }
+
+    /// Return Floresta's outbound peer count.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `getpeerinfo` fails or returns a non-array value.
+    pub fn get_peer_count(&self) -> Result<u32, Error> {
+        let peers = self
+            .client
+            .call::<serde_json::Value>("getpeerinfo", &[])
+            .map_err(Error::JsonRpc)?;
+        let count = peers
+            .as_array()
+            .ok_or_else(|| {
+                Error::UnexpectedResponse("getpeerinfo returned a non-array value".to_string())
+            })?
+            .len() as u32;
+        Ok(count)
+    }
+
+    /// Validate typed and raw Floresta configuration.
+    fn validate_configuration(conf: &FlorestaDConf) -> Result<(), Error> {
+        const OPTIONS: &[&str] = &[
+            "allow-v1-fallback",
+            "assume-utreexo",
+            "backfill",
+            "cfilters",
+            "daemon",
+            "data-dir",
+            "disable-dns-seeds",
+            "electrum-address",
+            "electrum-address-tls",
+            "enable-electrum-tls",
+            "n",
+            "network",
+            "pid-file",
+            "rpc-address",
+            "txindex",
+            "wallet-descriptor",
+        ];
+        const BOOLEAN_OPTIONS: &[&str] = &[
+            "assume-utreexo",
+            "backfill",
+            "cfilters",
+            "daemon",
+            "enable-electrum-tls",
+            "txindex",
+        ];
+
+        if conf.args.prune != PruneMode::Disabled {
+            return Err(Error::InvalidNodeConfiguration(
+                "FlorestaD does not expose configurable block pruning".to_string(),
+            ));
+        }
+        if conf.args.txindex {
+            return Err(Error::InvalidNodeConfiguration(
+                "FlorestaD does not support a full transaction index".to_string(),
+            ));
+        }
+        if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
+            return Err(Error::ConflictingNodeArgument(arg));
+        }
+
+        Ok(())
+    }
+
+    /// Render Floresta CLI arguments owned by typed configuration.
+    fn configured_args(conf: &FlorestaDConf) -> Result<Vec<String>, Error> {
+        Self::validate_configuration(conf)?;
+
+        let mut args = vec![format!("--network={}", conf.args.network)];
+        if !conf.args.cbf_index {
+            args.push("--no-cfilters".to_string());
+        }
+        if conf.florestad_args.allow_v1_fallback {
+            args.push("--allow-v1-fallback".to_string());
+        }
+        if !conf.florestad_args.dns_seeds {
+            args.push("--disable-dns-seeds".to_string());
+        }
+        if !conf.florestad_args.assume_utreexo {
+            args.push("--no-assume-utreexo".to_string());
+        }
+        if !conf.florestad_args.backfill {
+            args.push("--no-backfill".to_string());
+        }
+        args.extend(
+            conf.florestad_args
+                .wallet_descriptors
+                .iter()
+                .map(|descriptor| format!("--wallet-descriptor={descriptor}")),
+        );
+
+        Ok(args)
+    }
+
+    /// Wait until Floresta answers `getblockchaininfo`.
+    fn wait_for_rpc_client(rpc_url: &str, timeout: Duration) -> Result<Client, Error> {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            let client = Client::new(rpc_url);
+            if client
+                .call::<serde_json::Value>("getblockchaininfo", &[])
+                .is_ok()
+            {
+                return Ok(client);
+            }
+            sleep(Duration::from_millis(200));
+        }
+
+        Err(Error::RpcClientSetupTimeout)
+    }
+
+    /// Wait until Floresta's Electrum server answers `server.ping`.
+    fn wait_for_electrum_client(
+        electrum_socket: SocketAddr,
+        process: &mut Child,
+        timeout: Duration,
+    ) -> Result<RawClient<ElectrumPlaintextStream>, Error> {
+        let start = Instant::now();
+        let mut last_error = None;
+        while start.elapsed() < timeout {
+            match process.try_wait() {
+                Ok(Some(_)) | Err(_) => return Err(Error::RpcClientSetupTimeout),
+                Ok(None) => {}
+            }
+
+            match RawClient::new(electrum_socket, Some(Duration::from_millis(500)), None) {
+                Ok(client) => match client.ping() {
+                    Ok(()) => return Ok(client),
+                    Err(err) => last_error = Some(err),
+                },
+                Err(err) => last_error = Some(err),
+            }
+            sleep(Duration::from_millis(200));
+        }
+
+        Err(last_error.map_or(Error::RpcClientSetupTimeout, Error::UnresponsiveFlorestaD))
+    }
+}
+
+impl Drop for FlorestaD {
+    fn drop(&mut self) {
+        debug!(
+            "{}: killing process with pid={}",
+            Self::get_name(),
+            self.process.id()
+        );
+        let _ = self.process.kill();
+        let _ = self.process.wait();
+
+        // Keep the owner alive until after the process releases its files.
+        let _ = &self.working_directory;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_configuration_is_isolated_regtest() {
+        let conf = FlorestaDConf::default();
+
+        assert_eq!(conf.args.network, Network::Regtest);
+        assert!(conf.args.v2_transport);
+        assert!(conf.args.cbf_index);
+        assert_eq!(conf.args.prune, PruneMode::Disabled);
+        assert!(!conf.args.txindex);
+        assert!(!conf.florestad_args.dns_seeds);
+        assert!(!conf.florestad_args.allow_v1_fallback);
+        assert!(!conf.florestad_args.assume_utreexo);
+        assert!(!conf.florestad_args.backfill);
+        assert!(conf.florestad_args.wallet_descriptors.is_empty());
+        assert_eq!(
+            FlorestaD::configured_args(&conf).unwrap(),
+            [
+                "--network=regtest",
+                "--disable-dns-seeds",
+                "--no-assume-utreexo",
+                "--no-backfill",
+            ]
+        );
+    }
+
+    #[test]
+    fn renders_supported_flags() {
+        const PUBLIC_KEY: &str =
+            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+
+        let mut conf = FlorestaDConf::default();
+        conf.args.network = Network::Testnet4;
+        conf.args.v2_transport = false;
+        conf.args.cbf_index = false;
+        conf.florestad_args.dns_seeds = true;
+        conf.florestad_args.allow_v1_fallback = true;
+        conf.florestad_args.assume_utreexo = true;
+        conf.florestad_args.backfill = true;
+        conf.florestad_args.wallet_descriptors = [
+            format!("wpkh({PUBLIC_KEY})"),
+            format!("sh(wpkh({PUBLIC_KEY}))"),
+        ]
+        .map(|descriptor| descriptor.parse().unwrap())
+        .to_vec();
+
+        assert_eq!(
+            FlorestaD::configured_args(&conf).unwrap(),
+            [
+                "--network=testnet4".to_string(),
+                "--no-cfilters".to_string(),
+                "--allow-v1-fallback".to_string(),
+                format!(
+                    "--wallet-descriptor={}",
+                    conf.florestad_args.wallet_descriptors[0]
+                ),
+                format!(
+                    "--wallet-descriptor={}",
+                    conf.florestad_args.wallet_descriptors[1]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn renders_v1_fallback_independently_from_manual_peer_transport() {
+        let mut conf = FlorestaDConf::default();
+        conf.args.v2_transport = false;
+
+        assert!(
+            !FlorestaD::configured_args(&conf)
+                .unwrap()
+                .contains(&"--allow-v1-fallback".to_string())
+        );
+
+        conf.args.v2_transport = true;
+        conf.florestad_args.allow_v1_fallback = true;
+
+        assert!(
+            FlorestaD::configured_args(&conf)
+                .unwrap()
+                .contains(&"--allow-v1-fallback".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_typed_configuration() {
+        let mut conf = FlorestaDConf::default();
+        conf.args.prune = PruneMode::Automatic(550);
+        assert!(matches!(
+            FlorestaD::configured_args(&conf),
+            Err(Error::InvalidNodeConfiguration(_))
+        ));
+
+        conf.args.prune = PruneMode::Disabled;
+        conf.args.txindex = true;
+        assert!(matches!(
+            FlorestaD::configured_args(&conf),
+            Err(Error::InvalidNodeConfiguration(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_owned_raw_arguments() {
+        for arg in [
+            "--network=bitcoin",
+            "-n=signet",
+            "-nregtest",
+            "--data-dir=/tmp/floresta",
+            "--rpc-address=127.0.0.1:8332",
+            "--electrum-address=127.0.0.1:50001",
+            "--no-cfilters",
+            "--disable-dns-seeds",
+            "--no-assume-utreexo",
+            "--no-backfill",
+            "--wallet-descriptor=raw(51)",
+            "--allow-v1-fallback",
+            "--daemon",
+        ] {
+            let conf = FlorestaDConf {
+                raw_args: vec![arg.to_string()],
+                ..FlorestaDConf::default()
+            };
+            assert!(matches!(
+                FlorestaD::configured_args(&conf),
+                Err(Error::ConflictingNodeArgument(conflict)) if conflict == arg
+            ));
+        }
+    }
+}

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* `FlorestaD` support
 * Drop `which`
 * `ElectrumxD`: assert Python is available at runtime
 * Fix naming inconsistencies

@@ -4,9 +4,9 @@
 //!
 //! > A runner for bitcoin nodes and indexers 🏃‍♂️
 //!
-//! This crate makes it simple to run [`bitcoind`], [`utreexod`], [`electrs`],
-//! and [`electrumx`] instances from Rust code, useful in integration test
-//! contexts.
+//! This crate makes it simple to run [`bitcoind`], [`florestad`], [`utreexod`],
+//! [`electrs`] and [`electrumx`] instances from Rust code, useful in integration
+//! test contexts.
 //!
 //! ## Supported Implementations
 //!
@@ -14,6 +14,7 @@
 //! |---------|----------------|-----------|--------------|-----------------|-------------------|
 //! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
 //! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
+//! | Node    | `florestad`    | `v0.9.1`  | `florestad`  | No              |                   |
 //! |         |                |           |              |                 |                   |
 //! | Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
 //! | Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              | Needs Python 3.10 |
@@ -37,6 +38,7 @@
 //! ```
 //!
 //! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
+//! [`florestad`]: <https://github.com/getfloresta/Floresta>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
 //! [`electrs`]: <https://github.com/romanz/electrs>
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
@@ -44,6 +46,7 @@
 use core::net::Ipv4Addr;
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -51,6 +54,7 @@ use core::net::Ipv4Addr;
 use std::env;
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -58,6 +62,7 @@ use std::env;
 use std::fs;
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -65,6 +70,7 @@ use std::fs;
 use std::io::BufRead;
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -72,6 +78,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -80,6 +87,7 @@ use std::io::Read;
 use std::net::TcpListener;
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -98,10 +106,14 @@ pub(crate) use electrsd::ElectrsD;
 #[allow(unused)]
 #[cfg(feature = "electrumx")]
 pub(crate) use electrumxd::ElectrumxD;
+#[allow(unused)]
+#[cfg(feature = "florestad")]
+pub(crate) use florestad::FlorestaD;
 pub use serde_json;
 use tempfile::TempDir;
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -120,6 +132,8 @@ pub mod electrsd;
 #[cfg(feature = "electrumx")]
 pub mod electrumxd;
 pub mod error;
+#[cfg(feature = "florestad")]
+pub mod florestad;
 #[cfg(any(feature = "electrs", feature = "electrumx"))]
 pub mod indexer;
 pub mod node;
@@ -166,6 +180,7 @@ pub fn get_available_port() -> u16 {
 /// Find the first raw argument owned by typed or dynamic configuration.
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -184,7 +199,12 @@ pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
             .to_ascii_lowercase();
 
         let normalized_boolean = name.strip_prefix("no-").or_else(|| name.strip_prefix("no"));
+        let is_attached_short_option = !arg.starts_with("--")
+            && option_names
+                .iter()
+                .any(|option_name| option_name.len() == 1 && name.starts_with(option_name));
         let is_conflict = option_names.contains(&name.as_str())
+            || is_attached_short_option
             || normalized_boolean.is_some_and(|name| boolean_option_names.contains(&name));
 
         is_conflict.then(|| arg.to_string())
@@ -199,6 +219,7 @@ pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
 /// dies and its pipe is closed.
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -242,6 +263,7 @@ impl DataDir {
 /// Resolve and create a daemon or indexer data directory.
 #[cfg(any(
     feature = "bitcoind",
+    feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx"
@@ -281,6 +303,7 @@ pub(crate) fn init_data_dir(
     test,
     any(
         feature = "bitcoind",
+        feature = "florestad",
         feature = "utreexod",
         feature = "electrs",
         feature = "electrumx"

@@ -106,6 +106,9 @@ pub trait Node {
     /// # Errors
     ///
     /// Returns an error if block generation fails.
+    ///
+    /// Implementations whose daemon cannot generate blocks return
+    /// [`Error::UnsupportedCommand`].
     fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error>;
 
     /// Get the [`Node`]'s current chain height.
@@ -120,6 +123,9 @@ pub trait Node {
     /// # Errors
     ///
     /// Returns an error if the node cannot report its current compact-filter height.
+    ///
+    /// Implementations whose daemon cannot report compact-filter progress
+    /// return [`Error::UnsupportedCommand`].
     fn get_filter_tip(&self) -> Result<u32, Error>;
 
     /// Get the [`BlockHash`] of the block at `height`.
@@ -141,7 +147,11 @@ pub trait Node {
     /// Returns an error if the JSON-RPC call fails.
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
 
-    /// Get the [`Node`]'s P2P [`SocketAddr`].
+    /// Get the [`Node`]'s inbound P2P [`SocketAddr`].
+    ///
+    /// # Panics
+    ///
+    /// An implementation may panic when its daemon has no inbound P2P listener.
     fn get_p2p_socket(&self) -> SocketAddr;
 
     /// Check whether the [`Node`] is connected to a peer with a specific [`SocketAddr`].
@@ -187,31 +197,39 @@ pub trait Node {
 
 /// Connect [`Node`] A to [`Node`] B.
 ///
+/// The ordering is significant for nodes without an inbound P2P listener. In
+/// particular, `FlorestaD` may be used as `a` but not as `b`.
+///
 /// # Errors
 ///
-/// Returns an error if either node cannot add or confirm the peer connection
-/// before [`CONNECTION_TIMEOUT`].
+/// Returns an error if node A cannot add or confirm the peer connection before
+/// [`CONNECTION_TIMEOUT`].
+///
+/// # Panics
+///
+/// Panics if node B is `FlorestaD`, which does not provide an inbound P2P listener.
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
-    let socket_a = a.get_p2p_socket();
+    assert_ne!(
+        B::get_name(),
+        "FlorestaD",
+        "FlorestaD cannot be node B because it has no inbound P2P listener"
+    );
+
     let socket_b = b.get_p2p_socket();
 
     debug!(
-        "Connecting {} at socket={} to {} at socket={}",
+        "Connecting {} outbound to {} at socket={}",
         A::get_bin_name(),
-        socket_a,
         B::get_bin_name(),
         socket_b
     );
 
     a.add_peer(socket_b)?;
 
-    let is_connected =
-        || -> Result<bool, Error> { Ok(a.has_peer(socket_b)? || b.has_peer(socket_a)?) };
+    let is_connected = || a.has_peer(socket_b);
 
-    // Wait for either side to confirm the connection by listening port.
-    // We check both because `utreexod` does not expose the peer's listening
-    // port in `getpeerinfo` for inbound connections, so only one side may
-    // be able to verify by socket address.
+    // The outbound node can always identify its peer by the peer's listening
+    // socket, including when the peer does not expose inbound peer metadata.
     let start = Instant::now();
     while start.elapsed() < CONNECTION_TIMEOUT {
         if is_connected()? {
@@ -220,9 +238,8 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
             sleep(CONNECTION_INTERVAL * 4);
             if is_connected()? {
                 info!(
-                    "Connecting {} at socket={} to {} at socket={}",
+                    "Connected {} outbound to {} at socket={}",
                     A::get_bin_name(),
-                    socket_a,
                     B::get_bin_name(),
                     socket_b
                 );
@@ -242,6 +259,10 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 ///
 /// Returns an error if the nodes cannot connect, either chain height cannot be
 /// queried, or either node fails to reach the shared height before its timeout.
+///
+/// # Panics
+///
+/// Panics if node B is `FlorestaD`, which does not provide an inbound P2P listener.
 pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     connect(a, b)?;
 
@@ -315,6 +336,10 @@ pub fn wait_for_height_with_timeout<N: Node>(
 /// # Errors
 ///
 /// Returns an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
+///
+/// # Panics
+///
+/// Panics if the node does not expose compact-filter progress.
 pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
     debug!(
         "Waiting for {} to reach filter_height={}",

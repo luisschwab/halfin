@@ -14,6 +14,7 @@ edition = "2024"
 [features]
 default = ["bitcoind", "utreexod"]
 bitcoind = []
+florestad = ["dep:electrum-client", "dep:miniscript"]
 utreexod = []
 electrs = ["dep:electrum-client"]
 electrumx = ["dep:electrum-client"]
@@ -37,6 +38,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 corepc-client = { version = "=0.16.0", features = ["client-sync"] }
 electrum-client = { version = "=0.25.0", default-features = false, optional = true }
+miniscript = { version = "=13.1.0", default-features = false, features = ["std"], optional = true }
 tempfile = { version = "=3.27.0", default-features = false }
 serde_json = { version = "=1.0.150", default-features = false }
 tracing = { version = "=0.1.44", default-features = false, features = ["std"] }
@@ -60,11 +62,12 @@ lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
 version = "0.5.2"
 toolchains = { stable = "1.97.1", nightly = "nightly-2026-08-12" }
 tools = { cargo-audit = "=0.22.2", zizmor = "=1.26.1" }
-lint = { allowed_duplicates = ["base64"] }
+lint = { allowed_duplicates = ["base64", "hex-conservative"] }
 
 [package.metadata.rbmt.test]
 exact_features = [
     ["bitcoind", "utreexod"],
+    ["florestad", "utreexod"],
     ["bitcoind", "electrs"],
     ["bitcoind", "electrumx"],
 ]
