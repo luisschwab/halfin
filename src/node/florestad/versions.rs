@@ -1,8 +1,10 @@
-/// [`FlorestaD`](crate::florestad::FlorestaD)'s human-readable name.
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+/// [`FlorestaD`](crate::node::florestad::FlorestaD)'s human-readable name.
 #[allow(unused)]
 pub(crate) const FLORESTAD_NAME: &str = "FlorestaD";
 
-/// [`FlorestaD`](crate::florestad::FlorestaD)'s binary name.
+/// [`FlorestaD`](crate::node::florestad::FlorestaD)'s binary name.
 #[allow(unused)]
 pub(crate) const FLORESTAD_BIN_NAME: &str = "florestad_v_0_9_1";
 

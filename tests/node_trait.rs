@@ -4,13 +4,13 @@
 
 #![cfg(any(feature = "bitcoind", feature = "utreexod"))]
 
-#[cfg(feature = "bitcoind")]
-use halfin::bitcoind::BitcoinD;
 use halfin::node::Node;
+#[cfg(feature = "bitcoind")]
+use halfin::node::bitcoind::BitcoinD;
 #[cfg(all(feature = "bitcoind", feature = "utreexod"))]
 use halfin::node::connect;
 #[cfg(feature = "utreexod")]
-use halfin::utreexod::UtreexoD;
+use halfin::node::utreexod::UtreexoD;
 
 /// Verify the shared RPC cookie's location, contents, and Unix permissions.
 fn assert_rpc_cookie<N: Node>(node: &N) {

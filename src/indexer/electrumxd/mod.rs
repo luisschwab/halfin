@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # `ElectrumxD`: spawn and interact with an `electrumx` process
+//! # `ElectrumxD`: spawn and interact with an `electrumx` indexer process
 //!
 //! A utility crate for spinning up `ElectrumX` processes connected to a local
 //! [`Node`] process.

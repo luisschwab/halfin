@@ -17,7 +17,7 @@
 // `electrs` release that the crate downloads.
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/src/electrsd/versions.rs"
+    "/src/indexer/electrsd/versions.rs"
 ));
 
 use std::env;

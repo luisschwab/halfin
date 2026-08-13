@@ -9,7 +9,7 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use halfin::electrsd::ElectrsD;
+//! use halfin::indexer::electrsd::ElectrsD;
 //! use halfin::node::Node;
 //!
 //! fn start_electrs(node: &impl Node) {

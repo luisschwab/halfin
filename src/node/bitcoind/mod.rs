@@ -8,7 +8,7 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use halfin::bitcoind::BitcoinD;
+//! use halfin::node::bitcoind::BitcoinD;
 //!
 //! // Start a node with default configuration.
 //! let node = BitcoinD::new().unwrap();

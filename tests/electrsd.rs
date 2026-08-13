@@ -6,9 +6,9 @@
 
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;
-use halfin::bitcoind::BitcoinD;
-use halfin::electrsd::ELECTRS_INDEXING_TIMEOUT;
-use halfin::electrsd::ElectrsD;
+use halfin::indexer::electrsd::ELECTRS_INDEXING_TIMEOUT;
+use halfin::indexer::electrsd::ElectrsD;
+use halfin::node::bitcoind::BitcoinD;
 use tracing::Level;
 use tracing::info;
 

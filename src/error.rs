@@ -86,32 +86,35 @@ pub enum Error {
         node: &'static str,
     },
 
-    /// [`BitcoinD`](crate::bitcoind::BitcoinD) is unresponsive (it's probably not running).
+    /// [`BitcoinD`](crate::node::bitcoind::BitcoinD) is unresponsive (it's probably not running).
     #[cfg(feature = "bitcoind")]
     UnresponsiveBitcoinD(corepc_client::client_sync::Error),
 
-    /// [`UtreexoD`](crate::utreexod::UtreexoD) is unresponsive (it's probably not running).
+    /// [`UtreexoD`](crate::node::utreexod::UtreexoD) is unresponsive (it's probably not running).
     #[cfg(feature = "utreexod")]
     UnresponsiveUtreexoD(corepc_client::client_sync::Error),
 
-    /// [`FlorestaD`](crate::florestad::FlorestaD) is unresponsive to Electrum requests.
+    /// [`FlorestaD`](crate::node::florestad::FlorestaD) is unresponsive to Electrum requests.
     #[cfg(feature = "florestad")]
     UnresponsiveFlorestaD(electrum_client::Error),
 
-    /// [`ElectrsD`](crate::electrsd::ElectrsD) is unresponsive (it's probably not running).
+    /// [`ElectrsD`](crate::indexer::electrsd::ElectrsD) is unresponsive (it's probably not
+    /// running).
     #[cfg(feature = "electrs")]
     UnresponsiveElectrsD(electrum_client::Error),
 
-    /// [`ElectrumxD`](crate::electrumxd::ElectrumxD) is unresponsive (it's probably not running).
+    /// [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD) is unresponsive (it's probably not
+    /// running).
     #[cfg(feature = "electrumx")]
     UnresponsiveElectrumxD(electrum_client::Error),
 
-    /// Timed out whilst waiting for [`ElectrsD`](crate::electrsd::ElectrsD) to index expected data.
+    /// Timed out whilst waiting for [`ElectrsD`](crate::indexer::electrsd::ElectrsD) to index
+    /// expected data.
     #[cfg(feature = "electrs")]
     ElectrsDIndexTimeout((String, Duration)),
 
-    /// Timed out whilst waiting for [`ElectrumxD`](crate::electrumxd::ElectrumxD) to index expected
-    /// data.
+    /// Timed out whilst waiting for [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD) to index
+    /// expected data.
     #[cfg(feature = "electrumx")]
     ElectrumxDIndexTimeout((String, Duration)),
 

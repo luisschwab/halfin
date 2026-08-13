@@ -12,9 +12,9 @@ use std::sync::Mutex;
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;
 use halfin::Error;
-use halfin::bitcoind::BitcoinD;
-use halfin::electrumxd::ELECTRUMX_INDEXING_TIMEOUT;
-use halfin::electrumxd::ElectrumxD;
+use halfin::indexer::electrumxd::ELECTRUMX_INDEXING_TIMEOUT;
+use halfin::indexer::electrumxd::ElectrumxD;
+use halfin::node::bitcoind::BitcoinD;
 use tracing::Level;
 use tracing::info;
 
