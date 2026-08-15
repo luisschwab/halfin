@@ -1,6 +1,10 @@
-//! # Error
+//! Error types for process management and backend operations.
 //!
-//! Error types returned by node and indexer process management helpers.
+//! [`Error`] contains errors that are common to [`Node`] and [`Indexer`] implementations.
+//! It also contains feature-gated [`Node`] and [`Indexer`] errors.
+//!
+//! [`Indexer`]: crate::indexer::Indexer
+//! [`Node`]: crate::node::Node
 
 use core::error;
 use core::fmt;
@@ -12,51 +16,55 @@ use crate::indexer::IndexerError;
 #[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 use crate::node::NodeError;
 
-/// Errors returned by node and indexer process management helpers.
+/// Errors returned by [`Node`](crate::node::Node) and [`Indexer`](crate::indexer::Indexer) process
+/// management helpers.
 #[derive(Debug)]
 pub enum Error {
     /// The binary path is not absolute.
     BinaryPathNotAbsolute {
-        /// Name of the binary whose path was rejected.
+        /// Name of the binary for the rejected path.
         bin_name: String,
-        /// Rejected filesystem path.
+        /// Rejected file system path.
         path: String,
     },
 
     /// The binary path is not a file.
     BinaryPathNotFile {
-        /// Name of the binary whose path was rejected.
+        /// Name of the binary for the rejected path.
         bin_name: String,
-        /// Rejected filesystem path.
+        /// Rejected file system path.
         path: String,
     },
 
     /// The binary was not found at the expected location.
     BinaryNotFound((String, PathBuf)),
 
-    /// Failed to spawn a process for a node or indexer.
+    /// The system could not start a [`Node`](crate::node::Node) or
+    /// [`Indexer`](crate::indexer::Indexer) process.
     FailedToSpawn(io::Error),
 
-    /// Failed to start a node or indexer after the configured number of attempts.
+    /// The process did not start after the configured number of attempts.
     StartupAttemptsExhausted(u8),
 
-    /// I/O errors.
+    /// An input or output operation failed.
     Io(io::Error),
 
-    /// Both `tmpdir` and `staticdir` were specified.
+    /// The configuration contains both `tmpdir` and `staticdir`.
     BothDirsSpecified,
 
-    /// Timed out whilst waiting for a node or indexer client to be ready.
+    /// A [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) client did not become
+    /// ready before the timeout.
     ClientSetupTimeout,
 
-    /// Received an unexpected response from a node or indexer.
+    /// A [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) returned an unexpected
+    /// response.
     UnexpectedResponse(String),
 
-    /// A node operation failed.
+    /// A [`Node`](crate::node::Node) operation failed.
     #[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
     Node(NodeError),
 
-    /// An indexer operation failed.
+    /// An [`Indexer`](crate::indexer::Indexer) operation failed.
     #[cfg(any(feature = "electrs", feature = "electrumx"))]
     Indexer(IndexerError),
 }

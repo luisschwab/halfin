@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # Integration Tests between [`ElectrsD`] and [`BitcoinD`].
+//! Integration tests for [`ElectrsD`] with a [`BitcoinD`] backend.
+//!
+//! These tests verify startup, indexing, mempool updates, and chain reorganization.
 
 #![cfg(all(feature = "bitcoind", feature = "electrs"))]
 
@@ -12,8 +14,8 @@ use halfin::node::bitcoind::BitcoinD;
 use tracing::Level;
 use tracing::info;
 
-/// Verify that [`ElectrsD`] connects to `BitcoinD`'s non-standard P2P port and
-/// accepts Electrum requests.
+/// Verify that [`ElectrsD`] uses the nonstandard P2P port of `BitcoinD`.
+/// Verify that it accepts Electrum requests.
 #[test]
 fn test_electrsd_spawns() {
     const REGTEST_DEFAULT_P2P_PORT: u16 = 18_444;
@@ -42,7 +44,7 @@ fn test_electrsd_spawns() {
     info!("Monitoring Socket: {}", electrsd.get_monitoring_socket());
 }
 
-/// Verify that [`ElectrsD`] tracks mempool transactions.
+/// Verify that [`ElectrsD`] indexes mempool transactions.
 #[test]
 fn test_electrsd_sees_mempool_transactions() {
     const BLOCK_COUNT: u32 = 101;
@@ -75,7 +77,7 @@ fn test_electrsd_sees_mempool_transactions() {
         .unwrap();
 }
 
-/// Verify that [`ElectrsD`] repeatedly syncs to [`BitcoinD`]'s chain tip.
+/// Verify repeated synchronization of [`ElectrsD`] with the [`BitcoinD`] chain tip.
 #[test]
 fn test_electrsd_syncs_blocks() {
     const BLOCK_COUNT: u32 = 1;
@@ -101,7 +103,7 @@ fn test_electrsd_syncs_blocks() {
     }
 }
 
-/// Verify that [`ElectrsD`] follows the replacement tip after a reorg.
+/// Verify that [`ElectrsD`] uses the replacement tip after a reorganization.
 #[test]
 fn test_electrsd_reindexes_reorgs() {
     let bitcoind = BitcoinD::new().unwrap();

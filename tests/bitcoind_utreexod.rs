@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Integration tests between [`BitcoinD`] and [`UtreexoD`].
+//! Integration tests for [`BitcoinD`] and [`UtreexoD`].
+//!
+//! These tests verify peer connections and block relay between the two [`Node`] types.
+//!
+//! [`Node`]: halfin::node::Node
 
 #![cfg(all(feature = "bitcoind", feature = "utreexod"))]
-
-//! Integration tests between [`BitcoinD`] and [`UtreexoD`].
 
 use halfin::node::bitcoind::BitcoinD;
 use halfin::node::connect;
 use halfin::node::utreexod::UtreexoD;
 use halfin::node::wait_for_height;
 
-/// Verify that [`BitcoinD`] and [`UtreexoD`] can connect to each other.
+/// Verify a connection between [`BitcoinD`] and [`UtreexoD`].
 #[test]
 fn test_bitcoind_utreexod_addnode() {
     let bitcoind = BitcoinD::new().unwrap();
@@ -26,7 +28,7 @@ fn test_bitcoind_utreexod_addnode() {
     assert_eq!(utreexod.get_peer_count().unwrap(), 1);
 }
 
-/// Verify that blocks mined on [`BitcoinD`] propagate to a connected [`UtreexoD`].
+/// Verify block propagation from [`BitcoinD`] to a connected [`UtreexoD`].
 #[test]
 fn test_bitcoind_blocks_propagate_to_utreexod() {
     let bitcoind = BitcoinD::new().unwrap();
@@ -42,14 +44,11 @@ fn test_bitcoind_blocks_propagate_to_utreexod() {
     assert_eq!(utreexod.get_chain_tip().unwrap(), 21);
 }
 
-/// Verify that blocks mined on [`BitcoinD`] *after* a [`UtreexoD`] peer is
-/// connected propagate live to that peer.
+/// Verify live block propagation from [`BitcoinD`] to [`UtreexoD`].
 ///
-/// The chain must be bootstrapped with at least one block before connecting.
-/// If [`BitcoinD`] is in initial block download and never establishes the
-/// header-sync relationship, and blocks mined afterwards are never announced.
-/// Mining one block first takes [`BitcoinD`] out of IBD, and thenlive block
-/// relay works.
+/// Mine one block before you connect the [`Node`](halfin::node::Node) implementations.
+/// This action removes [`BitcoinD`] from initial block download (IBD).
+/// The [`Node`](halfin::node::Node) can then announce new blocks to its peer.
 #[ignore]
 #[test]
 fn test_bitcoind_utreexod_chain_sync() {

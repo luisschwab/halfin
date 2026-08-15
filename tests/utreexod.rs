@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Integration tests for [`UtreexoD`].
+//!
+//! These tests verify startup, JSON-RPC operations, peer connections, and block relay.
 
 #![cfg(feature = "utreexod")]
 
@@ -11,8 +13,7 @@ use halfin::node::utreexod::get_utreexod_path;
 use halfin::node::wait_for_filter_height;
 use halfin::node::wait_for_height;
 
-/// Verify that [`UtreexoD`] starts successfully and
-/// exposes its PID, working directory, and P2P socket.
+/// Verify [`UtreexoD`] startup, process data, and P2P data.
 #[test]
 fn test_utreexod_starts() {
     let bin_path = get_utreexod_path().unwrap();
@@ -28,7 +29,7 @@ fn test_utreexod_starts() {
     assert_eq!(utreexod.get_config(), &conf);
 }
 
-/// Verify that typed transaction-index configuration starts successfully.
+/// Verify startup with typed transaction index configuration.
 #[test]
 fn test_utreexod_starts_with_txindex() {
     let mut conf = UtreexoDConf::default();
@@ -38,7 +39,7 @@ fn test_utreexod_starts_with_txindex() {
     assert!(utreexod.get_pid() > 0);
 }
 
-/// Verify that `generate` mines the requested number of blocks.
+/// Verify that `generate` mines the specified number of blocks.
 #[test]
 fn test_utreexod_generate() {
     let utreexod = UtreexoD::new().unwrap();
@@ -64,7 +65,7 @@ fn test_utreexod_get_filter_height() {
     assert_eq!(BLOCK_COUNT, utreexod.get_filter_tip().unwrap());
 }
 
-/// Verify that [`UtreexoD::get_block_hash`] returns the correct hash for a given height.
+/// Verify that [`UtreexoD::get_block_hash`] returns the correct hash for a specified height.
 #[test]
 fn test_utreexod_get_block_hash() {
     let utreexod = UtreexoD::new().unwrap();
@@ -76,8 +77,8 @@ fn test_utreexod_get_block_hash() {
     assert_eq!(last_block_hash, *block_hashes.last().unwrap());
 }
 
-/// Verify that two nodes can connect to each other via `connect`,
-/// and that the peer count reflects the new connection on both sides.
+/// Verify a connection between two [`Node`](halfin::node::Node) implementations through `connect`.
+/// Verify that both peer counts include the new connection.
 #[test]
 fn test_utreexod_addnode() {
     let utreexod_alpha = UtreexoD::new().unwrap();
@@ -92,7 +93,7 @@ fn test_utreexod_addnode() {
     assert_eq!(utreexod_beta.get_peer_count().unwrap(), 1);
 }
 
-/// Verify that blocks mined on one node propagate to a peer.
+/// Verify block propagation from one [`Node`](halfin::node::Node) to a peer.
 #[test]
 fn test_utreexod_blocks_propagate() {
     let utreexod_alpha = UtreexoD::new().unwrap();

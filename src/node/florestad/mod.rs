@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # `FlorestaD`: spawn and interact with a `florestad` node process
+//! Start and control a `florestad` [`Node`] process.
 //!
-//! This module runs the bundled Floresta daemon with an isolated data directory
-//! and ephemeral JSON-RPC and Electrum ports.
+//! [`FlorestaD`] starts the Floresta daemon with an isolated data directory.
+//! It assigns local JSON-RPC and Electrum ports.
+//! Use it as an outbound peer because this version does not accept inbound peer connections.
+//!
+//! [`Node`]: crate::node::Node
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
@@ -51,9 +54,8 @@ mod versions;
 
 /// Return the path to the downloaded `florestad` binary.
 ///
-/// The path is resolved at compile time from the `HALFIN_FLORESTAD_PATH`
-/// environment variable, which is set by `build.rs` after downloading and
-/// extracting the binary.
+/// At compile time, `build.rs` downloads and extracts the binary.
+/// It stores the binary path in `HALFIN_FLORESTAD_PATH`.
 ///
 /// # Errors
 ///
@@ -78,41 +80,41 @@ pub fn get_florestad_path() -> Result<PathBuf, Error> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct FlorestaDArgs {
-    /// Whether to discover peers using DNS seeds.
+    /// Enables peer discovery through DNS seeds.
     pub dns_seeds: bool,
-    /// Whether automatic peer connections may fall back from `P2Pv2` to `P2Pv1`.
+    /// Permits automatic peer connections to use `P2Pv1` if `P2Pv2` fails.
     ///
-    /// This does not select the transport used by [`FlorestaD::add_peer`];
-    /// that method uses [`NodeArgs::v2_transport`].
+    /// This field does not select the transport for [`FlorestaD::add_peer`].
+    /// That method uses [`NodeArgs::v2_transport`].
     pub allow_v1_fallback: bool,
-    /// Whether to use Floresta's assume-Utreexo snapshot.
+    /// Uses the Floresta assume-Utreexo snapshot.
     pub assume_utreexo: bool,
-    /// Whether to validate skipped blocks in the background.
+    /// Validates skipped blocks in the background.
     pub backfill: bool,
-    /// Output descriptors whose transactions Floresta should index.
+    /// Output descriptors for transactions that Floresta indexes.
     pub wallet_descriptors: Vec<Descriptor<DescriptorPublicKey>>,
 }
 
 /// Configuration for a [`FlorestaD`] instance.
 ///
-/// Exactly one of `tmpdir` and `staticdir` may be set. By default, each node
-/// uses a fresh temporary directory that is removed when the node is dropped.
+/// Set only `tmpdir` or `staticdir`.
+/// By default, each [`Node`] uses a new temporary directory that [`Drop`] deletes.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FlorestaDConf {
     /// Arguments shared with other [`Node`] implementations.
     pub args: NodeArgs,
     /// Arguments specific to `florestad`.
     pub florestad_args: FlorestaDArgs,
-    /// Extra CLI arguments forwarded verbatim to `florestad`.
+    /// Extra CLI arguments sent unchanged to `florestad`.
     ///
-    /// Arguments managed by typed configuration or by halfin itself are
-    /// rejected with [`NodeError::ConflictingArgument`].
+    /// Do not duplicate arguments that typed configuration or `halfin` controls.
+    /// A duplicate argument returns [`NodeError::ConflictingArgument`].
     pub raw_args: Vec<String>,
-    /// Root under which a fresh temporary working directory is created.
+    /// Root for the new temporary working directory.
     pub tmpdir: Option<PathBuf>,
-    /// Persistent base data directory, which is not removed on drop.
+    /// Persistent base data directory that remains after `Drop`.
     pub staticdir: Option<PathBuf>,
-    /// Number of process-spawn attempts before returning an error.
+    /// Maximum number of process start attempts.
     pub max_retries: u8,
 }
 
@@ -147,23 +149,24 @@ impl AsRef<NodeArgs> for FlorestaDConf {
     }
 }
 
-/// A running `florestad` node.
+/// A running `florestad` [`Node`].
 ///
-/// Floresta v0.9.1 does not accept inbound P2P connections and does not expose
-/// block generation or compact-filter progress through JSON-RPC. Unsupported
-/// commands return [`NodeError::UnsupportedCommand`]; requesting its P2P listener
-/// panics because [`Node::get_p2p_socket`] cannot return an error.
+/// Floresta v0.9.1 does not accept inbound P2P connections.
+/// Its JSON-RPC interface does not supply block generation or compact filter progress.
+/// Unsupported commands return [`NodeError::UnsupportedCommand`].
+/// A request for its P2P listener causes a panic because [`Node::get_p2p_socket`] cannot return an
+/// error.
 #[derive(Debug)]
 pub struct FlorestaD {
-    /// Handle to the spawned `florestad` child process.
+    /// Handle for the `florestad` child process.
     process: Child,
     /// Unauthenticated JSON-RPC client connected to Floresta.
     pub client: Client,
-    /// Plaintext Electrum client connected to Floresta's embedded server.
+    /// Plaintext Electrum client connected to the embedded Floresta server.
     pub electrum_client: RawClient<ElectrumPlaintextStream>,
-    /// Owns and optionally cleans up the base data directory.
+    /// Base data directory and its cleanup state.
     working_directory: DataDir,
-    /// Complete configuration used to start the node.
+    /// Complete configuration used to start the [`Node`].
     config: FlorestaDConf,
     /// Address of the JSON-RPC listener.
     rpc_socket: SocketAddr,
@@ -225,7 +228,7 @@ impl FlorestaD {
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be found or the daemon cannot be started.
+    /// Returns an error if the function cannot find the binary or start the daemon.
     pub fn new() -> Result<Self, Error> {
         Self::from_bin(get_florestad_path()?)
     }
@@ -234,8 +237,8 @@ impl FlorestaD {
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be found, the configuration is
-    /// invalid, or the daemon cannot be started.
+    /// Returns an error if the function cannot find the binary or start the daemon.
+    /// Returns an error if the configuration is not valid.
     pub fn new_with_conf(conf: &FlorestaDConf) -> Result<Self, Error> {
         Self::from_bin_with_conf(get_florestad_path()?, conf)
     }
@@ -244,21 +247,21 @@ impl FlorestaD {
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary path is invalid or the daemon cannot be started.
+    /// Returns an error if the binary path is not valid or the function cannot start the daemon.
     pub fn from_bin<P: AsRef<Path>>(florestad_bin: P) -> Result<Self, Error> {
         Self::from_bin_with_conf(florestad_bin, &FlorestaDConf::default())
     }
 
     /// Start the `florestad` binary at `florestad_bin` with `conf`.
     ///
-    /// Each attempt uses fresh ephemeral JSON-RPC and Electrum ports. The
-    /// Electrum port is managed because Floresta starts that server even when
-    /// only its node interface is needed.
+    /// Each attempt uses new temporary JSON-RPC and Electrum ports.
+    /// Floresta starts its Electrum server when only the [`Node`] interface is necessary.
+    /// Thus, `halfin` also controls the Electrum port.
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary path or configuration is invalid, the
-    /// data directory cannot be created, or all spawn attempts fail.
+    /// Returns an error if the binary path or configuration is not valid.
+    /// Returns an error if directory creation or all start attempts fail.
     #[allow(clippy::too_many_lines)]
     pub fn from_bin_with_conf<P: AsRef<Path>>(
         florestad_bin: P,
@@ -387,7 +390,7 @@ impl FlorestaD {
         Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
-    /// Gracefully stop Floresta through JSON-RPC and wait for it to exit.
+    /// Stop Floresta through JSON-RPC and wait for it to exit.
     ///
     /// # Errors
     ///
@@ -407,7 +410,7 @@ impl FlorestaD {
         self.process.id()
     }
 
-    /// Return Floresta's data directory.
+    /// Return the Floresta data directory.
     pub fn get_working_directory(&self) -> PathBuf {
         self.working_directory.path()
     }
@@ -417,32 +420,32 @@ impl FlorestaD {
         &self.config
     }
 
-    /// Return a reference to Floresta's JSON-RPC client.
+    /// Return a reference to the Floresta JSON-RPC client.
     pub fn get_rpc_client(&self) -> &Client {
         &self.client
     }
 
-    /// Return Floresta's JSON-RPC listener address.
+    /// Return the Floresta JSON-RPC listener address.
     pub fn get_rpc_socket(&self) -> SocketAddr {
         self.rpc_socket
     }
 
-    /// Return a reference to Floresta's Electrum client.
+    /// Return a reference to the Floresta Electrum client.
     pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
         &self.electrum_client
     }
 
-    /// Return Floresta's Electrum listener address.
+    /// Return the Floresta Electrum listener address.
     pub fn get_electrum_socket(&self) -> SocketAddr {
         self.electrum_socket
     }
 
-    /// Return Floresta's Electrum server URL.
+    /// Return the Floresta Electrum server URL.
     pub fn get_electrum_url(&self) -> String {
         self.electrum_socket.to_string()
     }
 
-    /// Return Floresta's current chain height.
+    /// Return the current Floresta chain height.
     ///
     /// # Errors
     ///
@@ -547,7 +550,7 @@ impl FlorestaD {
         Err(NodeError::ConnectionTimeout(CONNECTION_TIMEOUT).into())
     }
 
-    /// Return Floresta's outbound peer count.
+    /// Return the outbound Floresta peer count.
     ///
     /// # Errors
     ///
@@ -661,7 +664,7 @@ impl FlorestaD {
         Err(Error::ClientSetupTimeout)
     }
 
-    /// Wait until Floresta's Electrum server answers `server.ping`.
+    /// Wait until the Floresta Electrum server answers `server.ping`.
     fn wait_for_electrum_client(
         electrum_socket: SocketAddr,
         process: &mut Child,

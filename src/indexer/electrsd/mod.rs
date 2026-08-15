@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # `ElectrsD`: spawn and interact with an `electrs` process
+//! Start and control an `electrs` [`Indexer`] process.
 //!
-//! A utility crate for spinning up `electrs` processes connected to a local
-//! [`Node`], useful for integration testing Electrum consumers against a
-//! Bitcoin chain.
+//! [`ElectrsD`] starts `electrs` and connects it to a local [`Node`].
+//! It gives an Electrum client and wait operations for integration tests.
 //!
-//! ## Quick Start
+//! ## Start an [`Indexer`]
 //!
 //! ```rust,no_run
 //! use halfin::indexer::electrsd::ElectrsD;
@@ -19,11 +18,14 @@
 //! }
 //! ```
 //!
-//! ## Directory Handling
+//! ## Select a data directory
 //!
-//! By default each [`ElectrsD`] instance uses a temporary directory that is
-//! cleaned up when the instance is dropped. Pass a `staticdir` in
-//! [`ElectrsDConf`] to keep data between runs.
+//! By default, each [`ElectrsD`] instance uses a temporary directory.
+//! [`Drop`] removes this directory.
+//! Set [`ElectrsDConf::staticdir`] to keep the data after the process stops.
+//!
+//! [`Indexer`]: crate::indexer::Indexer
+//! [`Node`]: crate::node::Node
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
@@ -72,7 +74,7 @@ mod versions;
 /// The default timeout for [`ElectrsD`] indexing helpers.
 pub const ELECTRS_INDEXING_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Wrap an Electrum client failure with indexer context.
+/// Wrap an Electrum client failure with [`Indexer`] context.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     IndexerError::UnresponsiveIndexer {
         indexer: ElectrsD::get_name(),
@@ -82,9 +84,8 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
 
 /// Return the path to the downloaded `electrs` binary.
 ///
-/// The path is resolved at compile time from the `HALFIN_ELECTRS_PATH`
-/// environment variable, which is set by `build.rs` after reading and
-/// extracting the local archive.
+/// At compile time, `build.rs` reads and extracts the local archive.
+/// It stores the binary path in `HALFIN_ELECTRS_PATH`.
 ///
 /// # Errors
 ///
@@ -108,42 +109,41 @@ pub fn get_electrs_path() -> Result<PathBuf, Error> {
 
 /// Configuration for an [`ElectrsD`] instance.
 ///
-/// Build one explicitly or call [`ElectrsDConf::default`] for sensible regtest
-/// defaults.
+/// Specify each field or use [`ElectrsDConf::default`] for standard regtest values.
 ///
 /// # Directory precedence
 ///
-/// Exactly one of `tmpdir` / `staticdir` may be set at a time; setting both
-/// returns [`Error::BothDirsSpecified`].
+/// Set only `tmpdir` or `staticdir`.
+/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
-/// | `None`   | `None`      | System temp dir (auto-cleaned on drop) |
-/// | `Some`   | `None`      | Custom temp root (auto-cleaned on drop) |
-/// | `None`   | `Some`      | Persistent directory (not cleaned on drop) |
+/// | `None`   | `None`      | System temporary directory (deleted at `Drop`) |
+/// | `Some`   | `None`      | Custom temporary root (deleted at `Drop`) |
+/// | `None`   | `Some`      | Persistent directory (kept at `Drop`) |
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ElectrsDConf {
-    /// Extra CLI arguments forwarded verbatim to the `electrs` process.
+    /// Extra CLI arguments sent unchanged to the `electrs` process.
     ///
-    /// Raw arguments must not configure an option owned dynamically by
-    /// `halfin`. Such duplicates return [`IndexerError::ConflictingArgument`].
+    /// Do not use a raw argument for an option that `halfin` controls.
+    /// A duplicate option returns [`IndexerError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root directory under which a fresh temporary working directory is
-    /// created for each instance. Falls back to the `TEMPDIR_ROOT`
-    /// environment variable, then the system temp dir.
+    /// Root for the new temporary directory of each instance.
+    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory. The directory is created if it does not
-    /// exist. Data survives [`Drop`]; the process is stopped but files are
-    /// kept so you can inspect or reuse them.
+    /// Persistent data directory.
+    /// The function creates the directory if necessary.
+    /// [`Drop`] stops the process but keeps the files.
     pub staticdir: Option<PathBuf>,
 
-    /// How many times to retry spawning `electrs` before giving up.
+    /// Maximum number of attempts to start `electrs`.
     ///
-    /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`SPAWN_ATTEMPTS`].
+    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
+    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -158,36 +158,35 @@ impl Default for ElectrsDConf {
     }
 }
 
-/// A running `electrs` indexer.
+/// A running `electrs` [`Indexer`].
 ///
-/// The indexer is started in [`ElectrsD::from_bin`] (or one of its siblings),
-/// connected to the supplied [`Node`], and stopped when this value is
-/// dropped.
+/// [`ElectrsD::from_bin`] and related functions start the [`Indexer`].
+/// The [`Indexer`] connects to the specified [`Node`].
+/// [`Drop`] stops the [`Indexer`].
 ///
 /// # Networking
 ///
-/// The Electrum RPC and monitoring ports are chosen from the OS's ephemeral
-/// range at startup. Use [`get_electrum_socket`](ElectrsD::get_electrum_socket)
-/// and [`get_monitoring_socket`](ElectrsD::get_monitoring_socket) to discover them after
-/// construction.
+/// At startup, the operating system selects temporary Electrum RPC and monitoring ports.
+/// Use [`get_electrum_socket`](ElectrsD::get_electrum_socket) to get the Electrum RPC port.
+/// Use [`get_monitoring_socket`](ElectrsD::get_monitoring_socket) to get the monitoring port.
 #[derive(Debug)]
 pub struct ElectrsD {
-    /// Handle to the spawned `electrs` child process.
+    /// Handle for the `electrs` child process.
     process: Child,
 
     /// Plaintext Electrum client connected to `electrs`.
     pub client: RawClient<ElectrumPlaintextStream>,
 
-    /// Owns (and optionally cleans up) the indexer's data directory.
+    /// Data directory of the [`Indexer`] and its cleanup state.
     working_directory: DataDir,
 
-    /// Complete configuration used to start the indexer.
+    /// Complete configuration used to start the [`Indexer`].
     config: ElectrsDConf,
 
-    /// Address the Electrum RPC server is bound to.
+    /// Address of the Electrum RPC server.
     electrum_socket: SocketAddr,
 
-    /// Address the monitoring server is bound to.
+    /// Address of the monitoring server.
     monitoring_socket: SocketAddr,
 }
 
@@ -230,67 +229,64 @@ impl Indexer for ElectrsD {
 
 #[rustfmt::skip]
 impl ElectrsD {
-    /// [`ElectrsD`]'s human-readable name.
+    /// Human-readable name of [`ElectrsD`].
     pub fn get_name() -> &'static str { versions::ELECTRS_NAME }
 
-    /// [`ElectrsD`]'s binary name.
+    /// Binary name of [`ElectrsD`].
     pub fn get_bin_name() -> &'static str { versions::ELECTRS_BIN_NAME }
 }
 
 impl ElectrsD {
     // ----> ELECTRS
 
-    /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with the
-    /// default [`ElectrsDConf`].
+    /// Start an [`ElectrsD`] [`Indexer`] with the binary from [`get_electrs_path`].
+    /// Use the default [`ElectrsDConf`].
     ///
-    /// The indexer connects to the supplied [`Node`].
+    /// The [`Indexer`] connects to the specified [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, the node is not ready,
-    /// or the indexer cannot be started.
+    /// Returns an error if the function cannot find the binary or start the [`Indexer`].
+    /// Returns an error if the [`Node`] is not ready.
     pub fn new<N: Node>(node: &N) -> Result<Self, Error> {
         Self::from_bin(get_electrs_path()?, node)
     }
 
-    /// Start an [`ElectrsD`] indexer using the binary located by [`get_electrs_path`], with a
-    /// custom [`ElectrsDConf`].
+    /// Start an [`ElectrsD`] [`Indexer`] with the binary from [`get_electrs_path`].
+    /// Use the specified [`ElectrsDConf`].
     ///
-    /// The indexer connects to the supplied [`Node`].
+    /// The [`Indexer`] connects to the specified [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, the configuration is
-    /// invalid, the node is not ready, or the indexer cannot be started.
+    /// Returns an error if the function cannot find the binary or start the [`Indexer`].
+    /// Returns an error if the configuration is not valid or the [`Node`] is not ready.
     pub fn new_with_conf<N: Node>(node: &N, conf: &ElectrsDConf) -> Result<Self, Error> {
         Self::from_bin_with_conf(get_electrs_path()?, node, conf)
     }
 
-    /// Create an [`ElectrsD`] instance running the binary at [`Path`] with the default
-    /// [`ElectrsDConf`].
+    /// Start the binary at [`Path`] with the default [`ElectrsDConf`].
     ///
     /// # Errors
     ///
-    /// Returns an error if `electrs_bin` is invalid, the node is not ready,
-    /// or the indexer cannot be started.
+    /// Returns an error if `electrs_bin` is not valid or the [`Node`] is not ready.
+    /// Returns an error if the function cannot start the [`Indexer`].
     pub fn from_bin<P: AsRef<Path>, N: Node>(electrs_bin: P, node: &N) -> Result<Self, Error> {
         Self::from_bin_with_conf(electrs_bin, node, &ElectrsDConf::default())
     }
 
-    /// Create an [`ElectrsD`] instance running the binary at [`Path`] with a custom
-    /// [`ElectrsDConf`].
+    /// Start the binary at [`Path`] with the specified [`ElectrsDConf`].
     ///
-    /// The method retries up to [`ElectrsDConf::max_retries`] times. On each
-    /// attempt it:
+    /// The method uses at most [`ElectrsDConf::max_retries`] attempts.
     ///
-    /// 1. Picks fresh ephemeral Electrum and monitoring ports.
-    /// 2. Spawns `electrs` pointed at the supplied [`Node`]'s RPC and P2P sockets.
-    /// 3. Waits for the Electrum RPC server to become responsive (up to 10 s).
+    /// 1. Select new temporary Electrum and monitoring ports.
+    /// 2. Start `electrs` with the RPC and P2P sockets of the specified [`Node`].
+    /// 3. Wait a maximum of 10 seconds for the Electrum RPC server to respond.
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary path is invalid, the backing [`Node`]
-    /// is not ready, the working directory cannot be created, or all attempts are exhausted.
+    /// Returns an error if the binary path is not valid or the [`Node`] is not ready.
+    /// Returns an error if directory creation or all start attempts fail.
     #[allow(clippy::too_many_lines)]
     pub fn from_bin_with_conf<P: AsRef<Path>, N: Node>(
         electrs_bin: P,
@@ -429,11 +425,11 @@ impl ElectrsD {
 
     /// Send `SIGUSR1` to trigger a rescan on Unix-derived platforms.
     ///
-    /// This is a no-op on Windows.
+    /// This method does nothing on Windows.
     ///
     /// # Errors
     ///
-    /// Returns an error if the signal command cannot be run or exits unsuccessfully.
+    /// Returns an error if the signal command cannot run or returns an error status.
     #[cfg(not(target_os = "windows"))]
     pub fn trigger(&self) -> Result<(), Error> {
         debug!(
@@ -458,11 +454,11 @@ impl ElectrsD {
         }
     }
 
-    /// No-op rescan trigger on Windows.
+    /// Do not start a rescan on Windows.
     ///
     /// # Errors
     ///
-    /// This implementation currently never returns an error.
+    /// This implementation does not return an error.
     #[cfg(target_os = "windows")]
     pub fn trigger(&self) -> Result<(), Error> {
         debug!("{}: skipped rescan trigger on Windows", Self::get_name());
@@ -470,23 +466,21 @@ impl ElectrsD {
         Ok(())
     }
 
-    /// Kill the `electrs` process and wait for it to exit.
+    /// Terminate the `electrs` process and wait for it to exit.
     ///
-    /// Calling this method is **not required** in normal usage because [`Drop`]
-    /// kills the process automatically. It is provided for cases where you
-    /// need the exit status or want to ensure the indexer has fully shut down
-    /// before proceeding.
+    /// [`Drop`] stops the process without a call to this method.
+    /// Call this method to get the exit status or confirm that the process has stopped.
     ///
     /// # Errors
     ///
-    /// Returns an error if the child process cannot be waited on.
+    /// Returns an error if the function cannot wait for the child process.
     pub fn stop(&mut self) -> Result<std::process::ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         let _ = self.process.kill();
         self.process.wait().map_err(Error::Io)
     }
 
-    /// Return the OS process ID of the running `electrs` process.
+    /// Return the operating system process ID of `electrs`.
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
@@ -495,7 +489,7 @@ impl ElectrsD {
         pid
     }
 
-    /// Get [`ElectrsD`]'s data directory.
+    /// Return the data directory of [`ElectrsD`].
     pub fn get_working_directory(&self) -> PathBuf {
         let working_directory = self.working_directory.path();
 
@@ -508,12 +502,12 @@ impl ElectrsD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this indexer.
+    /// Return the complete configuration used to start this [`Indexer`].
     pub fn get_config(&self) -> &ElectrsDConf {
         &self.config
     }
 
-    /// Get a reference to [`ElectrsD`]'s Electrum [`RawClient`].
+    /// Return a reference to the Electrum [`RawClient`] of [`ElectrsD`].
     pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
         debug!(
             "{}: got electrum client for socket={}",
@@ -524,7 +518,7 @@ impl ElectrsD {
         &self.client
     }
 
-    /// Return the Electrum RPC [`SocketAddr`] the indexer is listening on.
+    /// Return the Electrum RPC [`SocketAddr`] of the [`Indexer`].
     pub fn get_electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
@@ -535,7 +529,7 @@ impl ElectrsD {
         self.electrum_socket
     }
 
-    /// Return the Electrum RPC URL for the indexer.
+    /// Return the Electrum RPC URL for the [`Indexer`].
     pub fn get_electrum_url(&self) -> String {
         let electrum_url = self.electrum_socket.to_string();
 
@@ -548,7 +542,7 @@ impl ElectrsD {
         electrum_url
     }
 
-    /// Return the monitoring [`SocketAddr`] the indexer is listening on.
+    /// Return the monitoring [`SocketAddr`] of the [`Indexer`].
     pub fn get_monitoring_socket(&self) -> SocketAddr {
         debug!(
             "{}: got monitoring socket at socket={}",
@@ -559,15 +553,15 @@ impl ElectrsD {
         self.monitoring_socket
     }
 
-    /// Poll until this [`ElectrsD`]'s Electrum header tip matches a [`Node`]'s tip.
+    /// Poll until the Electrum header tip matches the tip of a [`Node`].
     ///
-    /// Both the tip height and block hash are verified. Pass `None` to use
-    /// [`ELECTRS_INDEXING_TIMEOUT`].
+    /// The function verifies the tip height and block hash.
+    /// Specify `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the backing node cannot be queried or the indexer
-    /// does not catch up before the timeout.
+    /// Returns an error if the function cannot query the [`Node`].
+    /// Returns an error if the [`Indexer`] does not reach the [`Node`] tip before the timeout.
     pub fn wait_until_caught_up(
         &self,
         node: &impl Node,
@@ -586,15 +580,15 @@ impl ElectrsD {
         self.wait_until_block(height, Some(hash), timeout)
     }
 
-    /// Poll until this [`ElectrsD`]'s Electrum header tip reaches `exp_height`.
+    /// Poll until the Electrum header tip of [`ElectrsD`] reaches `exp_height`.
     ///
-    /// The block hash at `exp_height` is verified against `exp_hash`.
-    /// Pass `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
+    /// The function compares the block hash at `exp_height` with `exp_hash`.
+    /// Specify `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the indexer cannot be queried or does not reach the
-    /// expected tip before the timeout.
+    /// Returns an error if the function cannot query the [`Indexer`].
+    /// Returns an error if the [`Indexer`] does not reach the expected tip before the timeout.
     pub fn wait_until_tip(
         &self,
         exp_height: u32,
@@ -611,10 +605,9 @@ impl ElectrsD {
         self.wait_until_block(exp_height, Some(exp_hash), timeout)
     }
 
-    /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for
-    /// `spk`.
+    /// Poll until the history of `spk` contains `txid` as an unconfirmed transaction.
     ///
-    /// If `timeout` is `None`, the default [`ELECTRS_INDEXING_TIMEOUT`] will be used.
+    /// If `timeout` is `None`, the function uses [`ELECTRS_INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -691,7 +684,7 @@ impl ElectrsD {
 
     // ----> INTERNAL
 
-    /// Render indexer-owned arguments after validating raw arguments.
+    /// Validate raw arguments and create [`Indexer`] arguments.
     fn configured_args(conf: &ElectrsDConf, network: Network) -> Result<Vec<String>, Error> {
         const OPTIONS: &[&str] = &[
             "cookie-file",
@@ -718,7 +711,7 @@ impl ElectrsD {
         Ok(vec!["--network".to_string(), network.to_string()])
     }
 
-    /// Return whether this `spk`'s history contains `txid` as an unconfirmed transaction.
+    /// Return whether the history of `spk` contains `txid` as an unconfirmed transaction.
     fn script_history_has_mempool_tx(&self, spk: &Script, txid: Txid) -> Result<bool, Error> {
         self.client
             .script_get_history(spk)
@@ -739,11 +732,10 @@ impl ElectrsD {
             .map_err(|source| unresponsive_indexer(source).into())
     }
 
-    /// Wait for an Electrum block-header notification proving `exp_height`/`exp_hash` is indexed.
+    /// Wait for an Electrum block header notification for `exp_height` and `exp_hash`.
     ///
-    /// Electrs sends header notifications only after its confirmed script
-    /// histories are current for the notified tip, so this waits on
-    /// notifications instead of polling block headers directly.
+    /// Electrs sends a header notification after it updates confirmed script histories for that
+    /// tip. Thus, this function uses notifications and does not poll block headers directly.
     fn wait_until_block(
         &self,
         exp_height: u32,
@@ -801,7 +793,7 @@ impl ElectrsD {
         .into())
     }
 
-    /// Reject node configurations that electrs cannot index.
+    /// Reject [`Node`] configurations that electrs cannot index.
     fn validate_node_args(args: NodeArgs) -> Result<(), Error> {
         if args.prune != PruneMode::Disabled {
             return Err(IndexerError::InvalidConfiguration(
@@ -812,10 +804,10 @@ impl ElectrsD {
         Ok(())
     }
 
-    /// Poll `server.ping` until it succeeds, building
-    /// and returning the Electrum client on success.
+    /// Poll `server.ping` until it succeeds.
+    /// Then, create and return the Electrum client.
     ///
-    /// Returns `Err` if the indexer is not responsive within `timeout`.
+    /// Returns `Err` if the [`Indexer`] is not responsive within `timeout`.
     fn wait_for_client(
         electrum_socket: SocketAddr,
         process: &mut Child,
@@ -848,10 +840,9 @@ impl ElectrsD {
 }
 
 impl Drop for ElectrsD {
-    /// Kills the `electrs` process and waits for it to exit.
+    /// Terminate the `electrs` process and wait for it to exit.
     ///
-    /// Errors from `kill` and `wait` are silently discarded so that [`Drop`]
-    /// never panics.
+    /// Ignore errors from `kill` and `wait` to prevent a panic in [`Drop`].
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
@@ -863,11 +854,10 @@ impl Drop for ElectrsD {
     }
 }
 
-/// Check whether an Electrum header notification proves [`ElectrsD`] has indexed up to
-/// `exp_height`.
+/// Check whether an Electrum header notification shows that [`ElectrsD`] indexed `exp_height`.
 ///
-/// If the notification has advanced past `exp_height`, fetch the header at `exp_height` explicitly
-/// so `exp_hash` can still be verified.
+/// If the notification is above `exp_height`, get the header at `exp_height`.
+/// Then, compare its hash with `exp_hash`.
 fn electrs_header_matches(
     client: &RawClient<ElectrumPlaintextStream>,
     notification: &HeaderNotification,

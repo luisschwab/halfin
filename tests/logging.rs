@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Integration test that exercises `tracing` logging for node and indexer
-//! processes: halfin's own `debug!` instrumentation as well as each process's
-//! `stdout` & `stderr` piped in as `trace!` events.
+//! Integration test for [`Node`] and [`Indexer`] log output.
+//!
+//! This test writes halfin `debug!` events to the test output.
+//! It also writes child process `stdout` and `stderr` as `trace!` events.
+//! Use this command to show the events:
 //!
 //! ```sh
 //! cargo test --test logging -- --nocapture
 //! ```
+//!
+//! [`Indexer`]: halfin::indexer::Indexer
+//! [`Node`]: halfin::node::Node
 
 #![cfg(all(feature = "bitcoind", feature = "utreexod", feature = "electrs"))]
 
@@ -20,7 +25,7 @@ use halfin::node::utreexod::UtreexoD;
 use tracing::Level;
 
 #[test]
-/// Run with `cargo test --test logging -- --nocapture` to see the tracing events.
+/// Use `cargo test --test logging -- --nocapture` to show the tracing events.
 fn test_logging_all() {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)

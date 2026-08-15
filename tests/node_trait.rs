@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Integration tests for [`Node`] trait.
+//! Integration tests for the [`Node`] trait.
+//!
+//! These tests apply the same RPC and connection operations to each enabled [`Node`].
+//!
+//! [`Node`]: halfin::node::Node
 
 #![cfg(any(feature = "bitcoind", feature = "utreexod"))]
 
@@ -12,7 +16,7 @@ use halfin::node::connect;
 #[cfg(feature = "utreexod")]
 use halfin::node::utreexod::UtreexoD;
 
-/// Verify the shared RPC cookie's location, contents, and Unix permissions.
+/// Verify the location, contents, and Unix permissions of the shared RPC cookie.
 fn assert_rpc_cookie<N: Node>(node: &N) {
     let cookie_file = node.get_working_directory().join(".cookie");
 
@@ -31,7 +35,7 @@ fn assert_rpc_cookie<N: Node>(node: &N) {
     }
 }
 
-/// Verify that every enabled [`Node`] exposes the shared RPC cookie.
+/// Verify that every enabled [`Node`] supplies the shared RPC cookie.
 #[test]
 fn test_rpc_cookies() {
     #[cfg(feature = "bitcoind")]
@@ -41,7 +45,7 @@ fn test_rpc_cookies() {
     assert_rpc_cookie(&UtreexoD::new().unwrap());
 }
 
-/// Verify that [`Node::call`] works by calling `uptime`.
+/// Verify [`Node::call`] with the `uptime` method.
 #[cfg(all(feature = "bitcoind", feature = "utreexod"))]
 #[test]
 fn test_node_call() {
@@ -55,7 +59,7 @@ fn test_node_call() {
     println!("UtreexoD uptime: {}", utreexod_uptime);
 }
 
-/// Verify that [`connect`] connects any combination of [`Node`] implementations.
+/// Verify [`connect`] with each combination of [`Node`] implementations.
 #[cfg(all(feature = "bitcoind", feature = "utreexod"))]
 #[test]
 fn test_connect() {

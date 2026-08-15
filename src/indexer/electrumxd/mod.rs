@@ -1,9 +1,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # `ElectrumxD`: spawn and interact with an `electrumx` indexer process
+//! Start and control an `ElectrumX` [`Indexer`] process.
 //!
-//! A utility crate for spinning up `ElectrumX` processes connected to a local
-//! [`Node`] process.
+//! [`ElectrumxD`] starts `ElectrumX` and connects it to a local [`Node`].
+//! It gives Electrum and administration clients for integration tests.
+//!
+//! By default, each [`ElectrumxD`] instance uses a temporary directory.
+//! [`Drop`] removes this directory.
+//! Set [`ElectrumxDConf::staticdir`] to keep the data after the process stops.
+//!
+//! The bundled launcher requires Python 3.10.
+//! On Windows ARM64, it requires Python 3.11.
+//!
+//! [`Indexer`]: crate::indexer::Indexer
+//! [`Node`]: crate::node::Node
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
@@ -57,7 +67,7 @@ mod versions;
 /// The default timeout for [`ElectrumxD`] indexing helpers.
 pub const ELECTRUMX_INDEXING_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Wrap an Electrum client failure with indexer context.
+/// Wrap an Electrum client failure with [`Indexer`] context.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     IndexerError::UnresponsiveIndexer {
         indexer: ElectrumxD::get_name(),
@@ -67,9 +77,8 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
 
 /// Return the path to the locally extracted `ElectrumX` launcher.
 ///
-/// The path is resolved at compile time from the `HALFIN_ELECTRUMX_PATH`
-/// environment variable, which is set by `build.rs` after extracting the local
-/// archive produced by `contrib/compile_electrumx`.
+/// At compile time, `build.rs` extracts the local archive from `contrib/compile_electrumx`.
+/// It stores the launcher path in `HALFIN_ELECTRUMX_PATH`.
 ///
 /// # Errors
 ///
@@ -101,42 +110,41 @@ pub struct ElectrumxDArgs {
 ///
 /// # Directory precedence
 ///
-/// Exactly one of `tmpdir` / `staticdir` may be set at a time; setting both
-/// returns [`Error::BothDirsSpecified`].
+/// Set only `tmpdir` or `staticdir`.
+/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
-/// | `None`   | `None`      | System temp dir (auto-cleaned on drop) |
-/// | `Some`   | `None`      | Custom temp root (auto-cleaned on drop) |
-/// | `None`   | `Some`      | Persistent directory (not cleaned on drop) |
+/// | `None`   | `None`      | System temporary directory (deleted at `Drop`) |
+/// | `Some`   | `None`      | Custom temporary root (deleted at `Drop`) |
+/// | `None`   | `Some`      | Persistent directory (kept at `Drop`) |
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ElectrumxDConf {
     /// Arguments specific to `ElectrumX`.
     pub electrumx_args: ElectrumxDArgs,
 
-    /// Extra CLI arguments forwarded verbatim to the `ElectrumX` launcher.
+    /// Extra CLI arguments sent unchanged to the `ElectrumX` launcher.
     ///
-    /// Raw arguments must not configure an option represented by
-    /// [`electrumx_args`](Self::electrumx_args), or owned
-    /// dynamically by `halfin`. Such duplicates return
-    /// [`IndexerError::ConflictingArgument`].
+    /// Do not use a raw argument for an option in [`electrumx_args`](Self::electrumx_args).
+    /// Do not duplicate an option that `halfin` controls.
+    /// A duplicate option returns [`IndexerError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root directory under which a fresh temporary working directory is
-    /// created for each instance. Falls back to the `TEMPDIR_ROOT`
-    /// environment variable, then the system temp dir.
+    /// Root for the new temporary directory of each instance.
+    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory. The directory is created if it does not
-    /// exist. Data survives [`Drop`]; the process is stopped but files are
-    /// kept so you can inspect or reuse them.
+    /// Persistent data directory.
+    /// The function creates the directory if necessary.
+    /// [`Drop`] stops the process but keeps the files.
     pub staticdir: Option<PathBuf>,
 
-    /// How many times to retry spawning `ElectrumX` before giving up.
+    /// Maximum number of attempts to start `ElectrumX`.
     ///
-    /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`SPAWN_ATTEMPTS`].
+    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
+    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -154,25 +162,25 @@ impl Default for ElectrumxDConf {
     }
 }
 
-/// A running `ElectrumX` indexer.
+/// A running `ElectrumX` [`Indexer`].
 #[derive(Debug)]
 pub struct ElectrumxD {
-    /// Handle to the spawned `ElectrumX` child process.
+    /// Handle for the `ElectrumX` child process.
     process: Child,
 
     /// Plaintext Electrum client connected to `ElectrumX`.
     pub client: RawClient<ElectrumPlaintextStream>,
 
-    /// Owns the indexer's data directory.
+    /// Data directory of the [`Indexer`] and its cleanup state.
     working_directory: DataDir,
 
-    /// Complete configuration used to start the indexer.
+    /// Complete configuration used to start the [`Indexer`].
     config: ElectrumxDConf,
 
-    /// Address the Electrum RPC server is bound to.
+    /// Address of the Electrum RPC server.
     electrum_socket: SocketAddr,
 
-    /// Address the admin RPC server is bound to.
+    /// Address of the admin RPC server.
     rpc_socket: SocketAddr,
 }
 
@@ -215,38 +223,38 @@ impl Indexer for ElectrumxD {
 
 #[rustfmt::skip]
 impl ElectrumxD {
-    /// [`ElectrumxD`]'s human-readable name.
+    /// Human-readable name of [`ElectrumxD`].
     pub fn get_name() -> &'static str { versions::ELECTRUMX_NAME }
 
-    /// [`ElectrumxD`]'s binary name.
+    /// Binary name of [`ElectrumxD`].
     pub fn get_bin_name() -> &'static str { versions::ELECTRUMX_BIN_NAME }
 }
 
 impl ElectrumxD {
-    /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with the
-    /// default [`ElectrumxDConf`].
+    /// Start an [`ElectrumxD`] [`Indexer`] with the binary from [`get_electrumx_path`].
+    /// Use the default [`ElectrumxDConf`].
     ///
-    /// The indexer connects to the supplied [`Node`].
+    /// The [`Indexer`] connects to the specified [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns [`IndexerError::InvalidPython`] if the bundled launcher's Python version is
-    /// unavailable. Returns an error if the binary cannot be located, the node is not ready, or
-    /// the indexer cannot be started.
+    /// Returns [`IndexerError::InvalidPython`] if the required Python version is not available.
+    /// Returns an error if the function cannot find the binary or start the [`Indexer`].
+    /// Returns an error if the [`Node`] is not ready.
     pub fn new<N: Node>(node: &N) -> Result<Self, Error> {
         Self::new_with_conf(node, &ElectrumxDConf::default())
     }
 
-    /// Start an [`ElectrumxD`] indexer using the binary located by [`get_electrumx_path`], with a
-    /// custom [`ElectrumxDConf`].
+    /// Start an [`ElectrumxD`] [`Indexer`] with the binary from [`get_electrumx_path`].
+    /// Use the specified [`ElectrumxDConf`].
     ///
-    /// The indexer connects to the supplied [`Node`].
+    /// The [`Indexer`] connects to the specified [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns [`IndexerError::InvalidPython`] if the bundled launcher's Python version is
-    /// unavailable. Returns an error if the binary cannot be located, the configuration is
-    /// invalid, the node is not ready, or the indexer cannot be started.
+    /// Returns [`IndexerError::InvalidPython`] if the required Python version is not available.
+    /// Returns an error if the function cannot find the binary or start the [`Indexer`].
+    /// Returns an error if the configuration is not valid or the [`Node`] is not ready.
     pub fn new_with_conf<N: Node>(node: &N, conf: &ElectrumxDConf) -> Result<Self, Error> {
         Self::validate_python_version()?;
 
@@ -254,24 +262,22 @@ impl ElectrumxD {
         Self::from_bin_with_conf(electrumx_path, node, conf)
     }
 
-    /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with the default
-    /// [`ElectrumxDConf`].
+    /// Start the binary at [`Path`] with the default [`ElectrumxDConf`].
     ///
     /// # Errors
     ///
-    /// Returns an error if `electrumx_bin` is invalid, the node is not ready,
-    /// or the indexer cannot be started.
+    /// Returns an error if `electrumx_bin` is not valid or the [`Node`] is not ready.
+    /// Returns an error if the function cannot start the [`Indexer`].
     pub fn from_bin<P: AsRef<Path>, N: Node>(electrumx_bin: P, node: &N) -> Result<Self, Error> {
         Self::from_bin_with_conf(electrumx_bin, node, &ElectrumxDConf::default())
     }
 
-    /// Create an [`ElectrumxD`] instance running the binary at [`Path`] with a custom
-    /// [`ElectrumxDConf`].
+    /// Start the binary at [`Path`] with the specified [`ElectrumxDConf`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary path is invalid, the backing [`Node`]
-    /// is not ready, the working directory cannot be created, or all attempts are exhausted.
+    /// Returns an error if the binary path is not valid or the [`Node`] is not ready.
+    /// Returns an error if directory creation or all start attempts fail.
     #[allow(clippy::too_many_lines)]
     pub fn from_bin_with_conf<P: AsRef<Path>, N: Node>(
         electrumx_bin: P,
@@ -399,21 +405,20 @@ impl ElectrumxD {
         Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
-    /// Trigger `ElectrumX` to check the backing daemon for updated chain state.
+    /// Tell `ElectrumX` to check its [`Node`] for new chain data.
     ///
-    /// This sends the local admin RPC command `reorg` with `count = 0`. In
-    /// `ElectrumX` this wakes the block processor without intentionally backing
-    /// up indexed blocks.
+    /// This function sends the local admin RPC command `reorg` with `count = 0`.
+    /// The command starts the `ElectrumX` block processor but does not remove indexed blocks.
     ///
     /// # Errors
     ///
-    /// Returns an error if the admin RPC socket cannot be reached, written to,
-    /// read from, or returns an error response.
+    /// Returns an error if the function cannot connect, write, or read through the admin RPC
+    /// socket. Returns an error if the socket returns an error response.
     pub fn trigger(&self) -> Result<(), Error> {
         self.trigger_reorg(0)
     }
 
-    /// Trigger `ElectrumX`'s local admin `reorg` command with `count`.
+    /// Start the local `ElectrumX` admin command `reorg` with `count`.
     fn trigger_reorg(&self, count: u32) -> Result<(), Error> {
         debug!(
             "{}: triggering daemon refresh rpc_socket={} reorg_count={}",
@@ -464,23 +469,21 @@ impl ElectrumxD {
         Ok(())
     }
 
-    /// Kill the `ElectrumX` process and wait for it to exit.
+    /// Terminate the `ElectrumX` process and wait for it to exit.
     ///
-    /// Calling this method is **not required** in normal usage because [`Drop`]
-    /// kills the process automatically. It is provided for cases where you
-    /// need the exit status or want to ensure the indexer has fully shut down
-    /// before proceeding.
+    /// [`Drop`] stops the process without a call to this method.
+    /// Call this method to get the exit status or confirm that the process has stopped.
     ///
     /// # Errors
     ///
-    /// Returns an error if the child process cannot be waited on.
+    /// Returns an error if the function cannot wait for the child process.
     pub fn stop(&mut self) -> Result<std::process::ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         let _ = self.process.kill();
         self.process.wait().map_err(Error::Io)
     }
 
-    /// Return the OS process ID of the running `ElectrumX` process.
+    /// Return the operating system process ID of `ElectrumX`.
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
@@ -489,7 +492,7 @@ impl ElectrumxD {
         pid
     }
 
-    /// Get [`ElectrumxD`]'s data directory.
+    /// Return the data directory of [`ElectrumxD`].
     pub fn get_working_directory(&self) -> PathBuf {
         let working_directory = self.working_directory.path();
 
@@ -502,12 +505,12 @@ impl ElectrumxD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this indexer.
+    /// Return the complete configuration used to start this [`Indexer`].
     pub fn get_config(&self) -> &ElectrumxDConf {
         &self.config
     }
 
-    /// Get a reference to [`ElectrumxD`]'s Electrum [`RawClient`].
+    /// Return a reference to the Electrum [`RawClient`] of [`ElectrumxD`].
     pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
         debug!(
             "{}: got electrum client for socket={}",
@@ -518,7 +521,7 @@ impl ElectrumxD {
         &self.client
     }
 
-    /// Return the Electrum RPC [`SocketAddr`] the indexer is listening on.
+    /// Return the Electrum RPC [`SocketAddr`] of the [`Indexer`].
     pub fn get_electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
@@ -529,7 +532,7 @@ impl ElectrumxD {
         self.electrum_socket
     }
 
-    /// Return the Electrum RPC URL for the indexer.
+    /// Return the Electrum RPC URL for the [`Indexer`].
     pub fn get_electrum_url(&self) -> String {
         let electrum_url = self.electrum_socket.to_string();
 
@@ -542,7 +545,7 @@ impl ElectrumxD {
         electrum_url
     }
 
-    /// Return the admin RPC [`SocketAddr`] the indexer is listening on.
+    /// Return the admin RPC [`SocketAddr`] of the [`Indexer`].
     pub fn get_rpc_socket(&self) -> SocketAddr {
         debug!(
             "{}: got admin RPC socket at socket={}",
@@ -553,12 +556,12 @@ impl ElectrumxD {
         self.rpc_socket
     }
 
-    /// Poll until this [`ElectrumxD`]'s Electrum header tip matches a [`Node`]'s tip.
+    /// Poll until the Electrum header tip matches the tip of a [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the backing node cannot be queried or the indexer
-    /// does not catch up before the timeout.
+    /// Returns an error if the function cannot query the [`Node`].
+    /// Returns an error if the [`Indexer`] does not reach the [`Node`] tip before the timeout.
     pub fn wait_until_caught_up(
         &self,
         node: &impl Node,
@@ -577,12 +580,12 @@ impl ElectrumxD {
         self.wait_until_block(height, Some(hash), timeout)
     }
 
-    /// Poll until this [`ElectrumxD`]'s Electrum header tip reaches `exp_height`.
+    /// Poll until the Electrum header tip of [`ElectrumxD`] reaches `exp_height`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the indexer cannot be queried or does not reach the
-    /// expected tip before the timeout.
+    /// Returns an error if the function cannot query the [`Indexer`].
+    /// Returns an error if the [`Indexer`] does not reach the expected tip before the timeout.
     pub fn wait_until_tip(
         &self,
         exp_height: u32,
@@ -599,10 +602,9 @@ impl ElectrumxD {
         self.wait_until_block(exp_height, Some(exp_hash), timeout)
     }
 
-    /// Poll until a transaction with [`Txid`]=`txid` appears as an unconfirmed transaction for
-    /// `spk`.
+    /// Poll until the history of `spk` contains `txid` as an unconfirmed transaction.
     ///
-    /// If `timeout` is `None`, the default [`ELECTRUMX_INDEXING_TIMEOUT`] will be used.
+    /// If `timeout` is `None`, the function uses [`ELECTRUMX_INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -678,7 +680,7 @@ impl ElectrumxD {
         result
     }
 
-    /// Render indexer-owned arguments after validating raw arguments.
+    /// Validate raw arguments and create [`Indexer`] arguments.
     fn configured_args(conf: &ElectrumxDConf, network: Network) -> Result<Vec<String>, Error> {
         const OPTIONS: &[&str] = &[
             "coin",
@@ -710,7 +712,7 @@ impl ElectrumxD {
         ])
     }
 
-    /// Return whether this `spk`'s history contains `txid` as an unconfirmed transaction.
+    /// Return whether the history of `spk` contains `txid` as an unconfirmed transaction.
     fn script_history_has_mempool_tx(
         client: &RawClient<ElectrumPlaintextStream>,
         spk: &Script,
@@ -790,7 +792,7 @@ impl ElectrumxD {
         .into())
     }
 
-    /// Reject node configurations that `ElectrumX` cannot index.
+    /// Reject [`Node`] configurations that `ElectrumX` cannot index.
     fn validate_node_args(args: NodeArgs) -> Result<(), Error> {
         if !args.txindex {
             return Err(IndexerError::InvalidConfiguration(
@@ -803,13 +805,14 @@ impl ElectrumxD {
 
     /// Validate that the Python version required by the bundled `ElectrumX` launcher is available.
     ///
-    /// The `PYTHON` environment variable selects an explicit interpreter. Otherwise, Unix uses
-    /// `python3.10`, Windows uses `py -3.10`, and Windows ARM64 uses `py -3.11`.
+    /// Use `PYTHON` to select an interpreter.
+    /// Without `PYTHON`, Unix uses `python3.10` and Windows uses `py -3.10`.
+    /// Windows ARM64 uses `py -3.11`.
     ///
     /// # Errors
     ///
-    /// Returns [`IndexerError::InvalidPython`] if the selected command cannot be started or its
-    /// `--version` check exits unsuccessfully.
+    /// Returns [`IndexerError::InvalidPython`] if the selected command cannot start.
+    /// It also returns this error if the `--version` check returns an error status.
     fn validate_python_version() -> Result<(), Error> {
         // Python version required by the bundled `ElectrumX` launcher.
         const PYTHON_VERSION: &str = "3.10";
@@ -843,7 +846,7 @@ impl ElectrumxD {
         Ok(())
     }
 
-    /// Build a short-lived Electrum client for subscription wait helpers.
+    /// Create a temporary Electrum client for subscription wait functions.
     fn fresh_electrum_client(&self) -> Result<RawClient<ElectrumPlaintextStream>, Error> {
         RawClient::new(self.electrum_socket, Some(Duration::from_secs(5)), None)
             .map_err(|source| unresponsive_indexer(source).into())
@@ -880,10 +883,9 @@ impl ElectrumxD {
 }
 
 impl Drop for ElectrumxD {
-    /// Kills the `electrumx` process and waits for it to exit.
+    /// Terminate the `electrumx` process and wait for it to exit.
     ///
-    /// Errors from `kill` and `wait` are silently discarded so that [`Drop`]
-    /// never panics.
+    /// Ignore errors from `kill` and `wait` to prevent a panic in [`Drop`].
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
@@ -904,7 +906,7 @@ impl Drop for ElectrumxD {
     }
 }
 
-/// Treat a nonblocking empty subscription read as "no script notification yet".
+/// Interpret an empty nonblocking subscription read as no script notification.
 fn empty_read_is_no_script_notification(err: ElectrumError) -> Result<Option<ScriptStatus>, Error> {
     if is_empty_subscription_read(&err) {
         return Ok(None);
@@ -913,7 +915,7 @@ fn empty_read_is_no_script_notification(err: ElectrumError) -> Result<Option<Scr
     Err(unresponsive_indexer(err).into())
 }
 
-/// Treat a nonblocking empty read during a wait-loop ping as "still waiting".
+/// Interpret an empty nonblocking read during a wait loop as an incomplete wait.
 fn empty_read_is_no_ping_response(err: ElectrumError) -> Result<(), Error> {
     if is_empty_subscription_read(&err) {
         return Ok(());
@@ -922,7 +924,7 @@ fn empty_read_is_no_ping_response(err: ElectrumError) -> Result<(), Error> {
     Err(unresponsive_indexer(err).into())
 }
 
-/// Return whether an Electrum client error means the subscribed socket had no queued message.
+/// Return whether an Electrum client error means that the subscribed socket has no queued message.
 fn is_empty_subscription_read(err: &ElectrumError) -> bool {
     matches!(
         err,
@@ -941,8 +943,8 @@ fn is_empty_subscription_read(err: &ElectrumError) -> bool {
     )
 }
 
-/// Return whether an Electrum block-header lookup failed because the indexer has not reached it
-/// yet.
+/// Return whether a block header request failed because the [`Indexer`] has not reached that
+/// header.
 fn is_header_not_ready(err: &ElectrumError) -> bool {
     is_empty_subscription_read(err) || matches!(err, ElectrumError::Protocol(_))
 }

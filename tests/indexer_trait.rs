@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Integration tests for the [`Indexer`](halfin::indexer::Indexer) trait.
+//! Integration tests for the [`Indexer`] trait.
+//!
+//! These tests apply the same operations to all enabled [`Indexer`] implementations.
+//!
+//! [`Indexer`]: halfin::indexer::Indexer
 
 #![cfg(all(feature = "bitcoind", feature = "electrs", feature = "electrumx"))]
 
@@ -15,8 +19,7 @@ use halfin::indexer::electrumxd::ElectrumxD;
 use halfin::indexer::electrumxd::ElectrumxDConf;
 use halfin::node::bitcoind::BitcoinD;
 
-/// Verify that both Electrum servers implement the complete [`Indexer`](halfin::indexer::Indexer)
-/// API.
+/// Verify the complete [`Indexer`](halfin::indexer::Indexer) API for both Electrum servers.
 #[test]
 fn test_indexer_trait() {
     const BLOCK_COUNT: u32 = 101;

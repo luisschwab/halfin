@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Integration tests between [`UtreexoD`] and [`ElectrsD`].
+//! Integration test for an unsupported [`UtreexoD`] and [`ElectrsD`] combination.
+//!
+//! This test verifies that validation occurs before data directory creation.
 
 #![cfg(all(feature = "utreexod", feature = "electrs"))]
 
@@ -10,7 +12,8 @@ use halfin::indexer::electrsd::ElectrsD;
 use halfin::indexer::electrsd::ElectrsDConf;
 use halfin::node::utreexod::UtreexoD;
 
-/// Verify that `UtreexoD` is rejected before creating the indexer's data directory.
+/// Verify that rejection of `UtreexoD` occurs before [`Indexer`](halfin::indexer::Indexer)
+/// directory creation.
 #[test]
 fn test_electrsd_rejects_utreexod() {
     let utreexod = UtreexoD::new().unwrap();

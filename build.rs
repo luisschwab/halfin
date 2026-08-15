@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Build script for fetching and exposing binaries.
+//! Get the program files for the enabled backends.
 //!
-//! The script downloads `bitcoind`, `florestad`, `utreexod`, `electrs`, and `electrumx`
-//! archives when their features are enabled, verifies their checksums, extracts the needed
-//! binaries, and publishes their paths through Cargo compile-time environment variables.
+//! This build script downloads the required archives and verifies their checksums.
+//! It extracts the required program files and caches them in the build directory.
+//! It gives each file path to Cargo in a compile-time environment variable.
 
 #[cfg(any(
     feature = "bitcoind",
@@ -37,10 +37,10 @@ mod binary {
     use flate2::read::GzDecoder;
     use tar::Archive;
 
-    /// Per-request timeout, in seconds, for binary archive downloads.
+    /// Download timeout for each request, in seconds.
     const BIN_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
-    /// Base URLs tried when downloading cached binary archives.
+    /// Base URLs for binary archive downloads.
     const BIN_DOWNLOAD_MIRRORS: &[&str] =
         &["https://bin.luisschwab.net", "https://bin.lab.vinteum.org"];
 
@@ -63,7 +63,7 @@ mod binary {
         file.set_permissions(perms).unwrap();
     }
 
-    /// Build-time metadata needed to fetch, verify, cache, and expose a binary.
+    /// Build metadata to download, verify, cache, and supply a binary.
     pub(crate) struct Binary {
         /// Name of the executable inside the downloaded archive.
         pub(crate) name: &'static str,
@@ -71,13 +71,13 @@ mod binary {
         /// Version displayed in build warnings and used in destination paths.
         pub(crate) version: &'static str,
 
-        /// Compile-time environment variable that exposes the extracted binary path.
+        /// Compile-time environment variable that contains the extracted binary path.
         pub(crate) env_var: &'static str,
 
         /// Prefix for the versioned directory that stores this binary.
         pub(crate) destination_dir_prefix: &'static str,
 
-        /// Bundled SHA256SUMS file for this binary's archives.
+        /// Bundled `SHA256SUMS` file for the binary archives.
         pub(crate) checksum_file: PathBuf,
 
         /// Top-level remote directory for this binary on the mirror.
@@ -89,7 +89,7 @@ mod binary {
         /// Platform-specific archive selected by the binary module.
         pub(crate) archive_filename: PathBuf,
 
-        /// Whether macOS aarch64 builds should ad-hoc sign the extracted binary.
+        /// Enables ad hoc signing for extracted macOS `AArch64` binaries.
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         pub(crate) codesign_on_macos_aarch64: bool,
     }
@@ -100,7 +100,7 @@ mod binary {
             format!("{}-{}", self.destination_dir_prefix, self.version)
         }
 
-        /// Return the non-Windows path emitted as this binary's `HALFIN_*_PATH`.
+        /// Return the non-Windows path for the `HALFIN_*_PATH` variable.
         fn destination_path(&self, download_directory: &Path) -> PathBuf {
             download_directory
                 .join(self.destination_dir_name())
@@ -118,7 +118,7 @@ mod binary {
             }
         }
 
-        /// Return the URL for this binary's selected platform archive on the selected mirror.
+        /// Return the archive URL for the selected platform and mirror.
         fn download_url(&self, base_url: &str, archive_filename: &str) -> Url {
             Url::parse(&format!(
                 "{}/{}/{}/{}",
@@ -144,11 +144,10 @@ mod binary {
 
         /// Download, verify, and extract this binary.
         ///
-        /// The binary is extracted into `<OUT_DIR>/bin/<destination-dir-prefix>-<VERSION>/<name>`,
-        /// or `<HALFIN_BIN_DIR>/<destination-dir-prefix>-<VERSION>/<name>` if the
-        /// `HALFIN_BIN_DIR` environment variable is set.
+        /// Extract the binary to `<OUT_DIR>/bin/<destination-dir-prefix>-<VERSION>/<name>`.
+        /// If `HALFIN_BIN_DIR` is set, extract it below that directory instead.
         ///
-        /// Download is skipped if the binary is already cached from the expected archive.
+        /// Do not download the binary if the expected archive is already in the cache.
         pub(crate) fn download_and_install(self) {
             println!("cargo:rerun-if-changed={}", self.checksum_file.display());
 
@@ -204,13 +203,13 @@ mod binary {
             download_directory.join(self.destination_dir_name())
         }
 
-        /// Return the sidecar file recording the archive hash used for the extracted binary.
+        /// Return the sidecar file that contains the archive hash of the extracted binary.
         fn archive_hash_marker_path(&self, download_directory: &Path) -> PathBuf {
             self.destination_directory(download_directory)
                 .join(".archive.sha256")
         }
 
-        /// Return whether the cached binary was extracted from the expected archive hash.
+        /// Return whether the archive hash of the cached binary is the expected hash.
         fn cached_archive_hash_matches(
             &self,
             download_directory: &Path,
@@ -221,9 +220,9 @@ mod binary {
                 .is_ok_and(|hash| hash.trim() == expected_hash.to_string())
         }
 
-        /// Look up the expected SHA256 hash for this binary's archive.
+        /// Get the expected SHA256 hash for the binary archive.
         ///
-        /// Panics if the filename is not found in the checksum file.
+        /// Panics if the file name is not in the checksum file.
         #[allow(clippy::lines_filter_map_ok)]
         fn expected_sha256(&self) -> sha256::Hash {
             let file = File::open(&self.checksum_file)
@@ -253,7 +252,7 @@ mod binary {
             );
         }
 
-        /// Download this binary's archive and return its raw bytes.
+        /// Download the binary archive and return its raw bytes.
         fn download_archive(&self) -> Vec<u8> {
             let mut last_error = None;
             let start = self.random_download_base_url_index();
@@ -337,7 +336,7 @@ mod binary {
                 .unwrap();
         }
 
-        /// Extract the selected archive format into this binary's destination directory.
+        /// Extract the selected archive format into the binary destination directory.
         fn extract_archive(&self, archive_bytes: &[u8], download_directory: &Path) {
             let destination_directory = self.destination_directory(download_directory);
             if destination_directory.exists() {
@@ -478,7 +477,7 @@ fn main() {
     }
 }
 
-/// Downloads and verifies the `bitcoind` binary based on the enabled version feature.
+/// Download and verify the `bitcoind` binary for the enabled version feature.
 #[cfg(feature = "bitcoind")]
 mod bitcoind {
     use super::binary::Binary;
@@ -489,9 +488,9 @@ mod bitcoind {
     /// Compile-time environment variable containing the extracted `bitcoind` path.
     const HALFIN_BITCOIND_PATH: &str = "HALFIN_BITCOIND_PATH";
 
-    /// Return the platform-specific tarball filename for this version of `bitcoind`.
+    /// Return the platform-specific tarball file name for this `bitcoind` version.
     ///
-    /// Panics if the current OS/architecture combination is not supported.
+    /// Panics if the current operating system and architecture are not supported.
     fn get_download_filename() -> String {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             return format!("bitcoin-{}-arm64-apple-darwin.tar.gz", BITCOIND_VERSION);
@@ -511,12 +510,11 @@ mod bitcoind {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Download, verify, and extract the `bitcoind` binary into
-    /// `<OUT_DIR>/bin/bitcoin-<VERSION>/bitcoind`, or
-    /// `<HALFIN_BIN_DIR>/bitcoin-<VERSION>/bitcoind` if the
-    /// `HALFIN_BIN_DIR` environment variable is set.
+    /// Download, verify, and extract the `bitcoind` binary.
+    /// Use `<OUT_DIR>/bin/bitcoin-<VERSION>/bitcoind` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
     ///
-    /// Skips the download if the binary is already cached from a previous build.
+    /// Do not download the binary if it is already in the build cache.
     pub(crate) fn download() {
         Binary {
             name: "bitcoind",
@@ -537,7 +535,7 @@ mod bitcoind {
     }
 }
 
-/// Downloads and verifies the `florestad` binary based on the enabled version feature.
+/// Download and verify the `florestad` binary for the enabled version feature.
 #[cfg(feature = "florestad")]
 mod florestad {
     use super::binary::Binary;
@@ -548,9 +546,9 @@ mod florestad {
     /// Compile-time environment variable containing the extracted `florestad` path.
     const HALFIN_FLORESTAD_PATH: &str = "HALFIN_FLORESTAD_PATH";
 
-    /// Return the platform-specific archive filename for this version of `florestad`.
+    /// Return the platform-specific archive file name for this `florestad` version.
     ///
-    /// Panics if the current OS/architecture combination is not supported.
+    /// Panics if the current operating system and architecture are not supported.
     fn get_download_filename() -> String {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             return "florestad-darwin-arm64.tar.gz".to_string();
@@ -567,12 +565,11 @@ mod florestad {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Download, verify, and extract the `florestad` binary into
-    /// `<OUT_DIR>/bin/florestad-<VERSION>/florestad`, or
-    /// `<HALFIN_BIN_DIR>/florestad-<VERSION>/florestad` if the
-    /// `HALFIN_BIN_DIR` environment variable is set.
+    /// Download, verify, and extract the `florestad` binary.
+    /// Use `<OUT_DIR>/bin/florestad-<VERSION>/florestad` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
     ///
-    /// Skips the download if the binary is already cached from a previous build.
+    /// Do not download the binary if it is already in the build cache.
     pub(crate) fn download() {
         Binary {
             name: "florestad",
@@ -593,7 +590,7 @@ mod florestad {
     }
 }
 
-/// Downloads and verifies the `utreexod` binary based on the enabled version feature.
+/// Download and verify the `utreexod` binary for the enabled version feature.
 #[cfg(feature = "utreexod")]
 mod utreexod {
     use super::binary::Binary;
@@ -604,9 +601,9 @@ mod utreexod {
     /// Compile-time environment variable containing the extracted `utreexod` path.
     const HALFIN_UTREEXOD_PATH: &str = "HALFIN_UTREEXOD_PATH";
 
-    /// Return the platform-specific tarball filename for this version of `utreexod`.
+    /// Return the platform-specific tarball file name for this `utreexod` version.
     ///
-    /// Panics if the current OS/architecture combination is not supported.
+    /// Panics if the current operating system and architecture are not supported.
     fn get_download_filename() -> String {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             return "utreexod-darwin-arm64.tar.gz".to_string();
@@ -626,12 +623,11 @@ mod utreexod {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Download, verify, and extract the `utreexod` binary into
-    /// `<OUT_DIR>/bin/utreexod-<VERSION>/utreexod`, or
-    /// `<HALFIN_BIN_DIR>/utreexod-<VERSION>/utreexod` if the
-    /// `HALFIN_BIN_DIR` environment variable is set.
+    /// Download, verify, and extract the `utreexod` binary.
+    /// Use `<OUT_DIR>/bin/utreexod-<VERSION>/utreexod` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
     ///
-    /// Skips the download if the binary is already cached from a previous build.
+    /// Do not download the binary if it is already in the build cache.
     pub(crate) fn download() {
         Binary {
             name: "utreexod",
@@ -652,7 +648,7 @@ mod utreexod {
     }
 }
 
-/// Downloads and verifies the `electrs` binary based on the enabled version feature.
+/// Read and verify the `electrs` binary for the enabled version feature.
 #[cfg(feature = "electrs")]
 mod electrs {
     use super::binary::Binary;
@@ -663,9 +659,9 @@ mod electrs {
     /// Compile-time environment variable containing the extracted `electrs` path.
     const HALFIN_ELECTRS_PATH: &str = "HALFIN_ELECTRS_PATH";
 
-    /// Return the platform-specific archive filename for this version of `electrs`.
+    /// Return the platform-specific archive file name for this `electrs` version.
     ///
-    /// Panics if the current OS/architecture combination is not supported.
+    /// Panics if the current operating system and architecture are not supported.
     fn get_download_filename() -> String {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             return "electrs-darwin-arm64.tar.gz".to_string();
@@ -688,12 +684,11 @@ mod electrs {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Read, verify, and extract the `electrs` binary into
-    /// `<OUT_DIR>/bin/electrs-<VERSION>/electrs`, or
-    /// `<HALFIN_BIN_DIR>/electrs-<VERSION>/electrs` if the
-    /// `HALFIN_BIN_DIR` environment variable is set.
+    /// Read, verify, and extract the `electrs` binary.
+    /// Use `<OUT_DIR>/bin/electrs-<VERSION>/electrs` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
     ///
-    /// Skips extraction if the binary is already cached from a previous build.
+    /// Do not extract the binary if it is already in the build cache.
     pub(crate) fn download() {
         Binary {
             name: "electrs",
@@ -714,7 +709,7 @@ mod electrs {
     }
 }
 
-/// Downloads and verifies the `ElectrumX` launcher based on the enabled version feature.
+/// Download and verify the `ElectrumX` launcher for the enabled version feature.
 #[cfg(feature = "electrumx")]
 mod electrumx {
     use super::binary::Binary;
@@ -725,9 +720,9 @@ mod electrumx {
     /// Compile-time environment variable containing the extracted `ElectrumX` launcher path.
     const HALFIN_ELECTRUMX_PATH: &str = "HALFIN_ELECTRUMX_PATH";
 
-    /// Return the platform-specific archive filename for this version of `ElectrumX`.
+    /// Return the platform-specific archive file name for this `ElectrumX` version.
     ///
-    /// Panics if the current OS/architecture combination is not supported.
+    /// Panics if the current operating system and architecture are not supported.
     fn get_download_filename() -> String {
         if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
             return "electrumx-darwin-arm64.tar.gz".to_string();
@@ -750,12 +745,11 @@ mod electrumx {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Download, verify, and extract the `ElectrumX` launcher into
-    /// `<OUT_DIR>/bin/electrumx-<VERSION>/electrumx`, or
-    /// `<HALFIN_BIN_DIR>/electrumx-<VERSION>/electrumx` if the
-    /// `HALFIN_BIN_DIR` environment variable is set.
+    /// Download, verify, and extract the `ElectrumX` launcher.
+    /// Use `<OUT_DIR>/bin/electrumx-<VERSION>/electrumx` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
     ///
-    /// Skips the download if the binary is already cached from a previous build.
+    /// Do not download the launcher if it is already in the build cache.
     pub(crate) fn download() {
         Binary {
             name: "electrumx",

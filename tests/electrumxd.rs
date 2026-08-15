@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # Integration Tests between [`ElectrumxD`] and [`BitcoinD`].
+//! Integration tests for [`ElectrumxD`] with a [`BitcoinD`] backend.
+//!
+//! These tests verify Python selection, startup, indexing, and mempool updates.
 
 #![cfg(all(feature = "bitcoind", feature = "electrumx"))]
 
@@ -59,7 +61,8 @@ impl Drop for PythonEnvGuard {
     }
 }
 
-/// Verify that `PYTHON` takes precedence and missing overrides produce an actionable error.
+/// Verify that `PYTHON` overrides other interpreter selections.
+/// Verify the error for a missing interpreter.
 #[test]
 fn bundled_constructor_rejects_missing_python_override() {
     let _guard = electrumx_test_lock();
@@ -73,7 +76,7 @@ fn bundled_constructor_rejects_missing_python_override() {
     ));
 }
 
-/// Verify that custom executables do not inherit the bundled launcher's Python requirement.
+/// Verify that custom executables do not use the Python requirement of the bundled launcher.
 #[test]
 fn custom_binary_constructor_skips_python_preflight() {
     let _guard = electrumx_test_lock();
@@ -114,7 +117,7 @@ fn test_electrumxd_spawns() {
     info!("Admin RPC Socket: {}", electrumxd.get_rpc_socket());
 }
 
-/// Verify that [`ElectrumxD`] tracks mempool transactions.
+/// Verify that [`ElectrumxD`] indexes mempool transactions.
 #[test]
 fn test_electrumxd_sees_mempool_transactions() {
     const BLOCK_COUNT: u32 = 101;
@@ -153,7 +156,7 @@ fn test_electrumxd_sees_mempool_transactions() {
         .unwrap();
 }
 
-/// Verify that [`ElectrumxD`] repeatedly syncs to [`BitcoinD`]'s chain tip.
+/// Verify repeated synchronization of [`ElectrumxD`] with the [`BitcoinD`] chain tip.
 #[test]
 fn test_electrumxd_syncs_blocks() {
     const BLOCK_COUNT: u32 = 1;
@@ -186,7 +189,7 @@ fn test_electrumxd_syncs_blocks() {
     }
 }
 
-/// Verify that [`ElectrumxD`] follows the replacement tip after a reorg.
+/// Verify that [`ElectrumxD`] uses the replacement tip after a reorganization.
 #[test]
 #[ignore = "ElectrumX same-height reorg handling is shitty"]
 fn test_electrumxd_reindexes_reorgs() {

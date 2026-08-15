@@ -1,25 +1,23 @@
 //! # halfin
 //!
-//! A bitcoin node and indexer running utility for integration testing.
+//! Start local Bitcoin [`Node`] and Electrum [`Indexer`] implementations for integration tests.
 //!
-//! > A runner for bitcoin nodes and indexers 🏃‍♂️
+//! The crate finds each enabled program and starts it in an isolated data directory.
+//! It assigns local ports and supplies typed clients for test operations.
+//! It also stops each child process when Rust drops its handle.
 //!
-//! This crate makes it simple to run [`bitcoind`], [`florestad`], [`utreexod`],
-//! [`electrs`] and [`electrumx`] instances from Rust code, useful in integration
-//! test contexts.
-//!
-//! ## Supported Implementations
+//! ## Supported implementations
 //!
 //! | Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
 //! |---------|----------------|-----------|--------------|-----------------|-------------------|
-//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
-//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
-//! | Node    | `florestad`    | `v0.9.1`  | `florestad`  | No              |                   |
+//! | [`Node`] | `bitcoind` | `v31.0` | `bitcoind` | Yes | |
+//! | [`Node`] | `utreexod` | `v0.6.0` | `utreexod` | Yes | |
+//! | [`Node`] | `florestad` | `v0.9.1` | `florestad` | No | |
 //! |         |                |           |              |                 |                   |
-//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
-//! | Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              | Needs Python 3.10 |
+//! | [`Indexer`] | `electrs` | `v0.11.1` | `electrs` | No | |
+//! | [`Indexer`] | `electrumx` | `v1.20.0` | `electrumx` | No | Needs Python 3.10 |
 //!
-//! ## Example
+//! ## Start and connect two [`Node`] implementations
 //!
 //! ```rust,ignore
 //! use halfin::node::bitcoind::BitcoinD;
@@ -42,6 +40,8 @@
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
 //! [`electrs`]: <https://github.com/romanz/electrs>
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
+//! [`Indexer`]: crate::indexer::Indexer
+//! [`Node`]: crate::node::Node
 
 use core::net::Ipv4Addr;
 #[cfg(any(
@@ -118,10 +118,10 @@ pub mod node;
 /// IPv4 localhost address.
 const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
-/// Maximum number of attempts at spawning a process.
+/// Maximum number of process start attempts.
 pub const SPAWN_ATTEMPTS: u8 = 5;
 
-/// Period between attempts at spawning a process.
+/// Interval between process start attempts.
 pub const SPAWN_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Period between polls for [`connect`](crate::node::connect) and
@@ -132,17 +132,18 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// [`wait_for_height`](crate::node::wait_for_height).
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Period between successive attempts of [`Node`](crate::node::Node) connection.
+/// Interval between [`Node`](crate::node::Node) connection attempts.
 pub const CONNECTION_INTERVAL: Duration = Duration::from_millis(150);
 
 /// Timeout for [`Node`](crate::node::Node) connection.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Ask the OS for an available port, immediately unbind and return it.
+/// Ask the operating system for an available port, release the port, and return it.
 ///
 /// # Panics
 ///
-/// Panics if the OS cannot bind a localhost ephemeral port or report the local socket address.
+/// Panics if the operating system cannot bind a temporary localhost port or report its socket
+/// address.
 #[inline]
 pub fn get_available_port() -> u16 {
     TcpListener::bind((IPV4_LOCALHOST, 0))
@@ -186,12 +187,11 @@ pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
     })
 }
 
-/// Spawn a background thread that reads `reader` line by line and re-emits
-/// each line as an [`info!`] event, prefixed with `source`.
+/// Start a background thread that reads each line from `reader`.
+/// The thread emits each line as an [`info!`] event with the `source` prefix.
 ///
-/// Used to pipe a child process' `stdout`/`stderr`
-/// into [`tracing`]. The thread exits on EOF, which happens when the process
-/// dies and its pipe is closed.
+/// Use this function to send child process output to [`tracing`].
+/// The thread stops at the end of the input stream.
 #[cfg(any(
     feature = "bitcoind",
     feature = "florestad",
@@ -203,7 +203,7 @@ pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'sta
     std::thread::spawn(move || {
         let mut lines = BufReader::new(reader).lines();
         while let Some(Ok(line)) = lines.next() {
-            // Skip blank lines so the log stream mirrors the node's output.
+            // Skip blank lines so the log stream mirrors the output.
             if !line.trim().is_empty() {
                 info!("{source}: {line}");
             }
@@ -211,22 +211,21 @@ pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'sta
     });
 }
 
-/// Owns a node's working directory, either as a temporary or a persistent path.
+/// Stores a temporary or persistent process data directory.
 ///
-/// * [`DataDir::Temporary`]: backed by a [`TempDir`]; the directory is deleted automatically when
-///   this value is dropped.
-/// * [`DataDir::Persistent`]: backed by a plain [`PathBuf`]; the directory survives the process and
-///   is never cleaned up automatically.
+/// * [`DataDir::Temporary`] contains a [`TempDir`]. Rust deletes the directory when it drops this
+///   value.
+/// * [`DataDir::Persistent`] contains a [`PathBuf`]. Rust keeps this directory after `Drop`.
 #[derive(Debug)]
 pub enum DataDir {
-    /// A persistent directory that is **not** cleaned up on drop.
+    /// A persistent directory that remains after `Drop`.
     Persistent(PathBuf),
-    /// A temporary directory that is deleted when this value is dropped.
+    /// A temporary directory that Rust deletes at `Drop`.
     Temporary(TempDir),
 }
 
 impl DataDir {
-    /// Return the underlying filesystem path regardless of variant.
+    /// Return the file system path for either variant.
     pub fn path(&self) -> PathBuf {
         match self {
             Self::Persistent(path) => path.to_owned(),
@@ -235,7 +234,8 @@ impl DataDir {
     }
 }
 
-/// Resolve and create a daemon or indexer data directory.
+/// Resolve and create a [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) data
+/// directory.
 #[cfg(any(
     feature = "bitcoind",
     feature = "florestad",

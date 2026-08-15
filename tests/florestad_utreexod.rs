@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Integration tests for [`FlorestaD`] backed by [`UtreexoD`].
+//! Integration tests for [`FlorestaD`] with a [`UtreexoD`] peer.
+//!
+//! These tests verify startup, block synchronization, and wallet descriptor loading.
 
 #![cfg(all(feature = "florestad", feature = "utreexod"))]
 
@@ -27,7 +29,7 @@ use miniscript::DescriptorPublicKey;
 
 const SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Verify that Floresta starts and exposes its process and RPC state.
+/// Verify Floresta startup, process data, and RPC data.
 #[test]
 fn test_florestad_starts() {
     let conf = FlorestaDConf {
@@ -62,7 +64,7 @@ fn test_florestad_starts() {
     ));
 }
 
-/// Verify that Floresta synchronizes a chain mined by `utreexod`.
+/// Verify that Floresta synchronizes with a chain that `utreexod` mines.
 #[test]
 fn test_florestad_syncs_from_utreexod() {
     const HISTORICAL_BLOCKS: u32 = 6;
@@ -112,7 +114,7 @@ fn test_florestad_syncs_from_utreexod() {
     assert!(florestad.call("uptime", &[]).unwrap().is_number());
 }
 
-/// Verify that Floresta loads a descriptor and syncs blocks paying its script.
+/// Verify that Floresta loads a descriptor and synchronizes blocks that pay its script.
 #[test]
 fn test_florestad_loads_wallet_descriptor() {
     const BLOCK_COUNT: u32 = 3;

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Rewrite documentation following [ASD-STE100](https://asd-ste100.org)
 * Refactor errors into `Error`, `NodeError`, and `IndexerError`
 * Refactor module structure
 * `FlorestaD` support

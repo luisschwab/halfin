@@ -1,44 +1,50 @@
-//! Errors produced by indexer operations.
+//! Error types for [`Indexer`] configuration, startup, and operation.
+//!
+//! [`IndexerError`] identifies configuration errors, client errors, and indexing timeouts.
+//!
+//! [`Indexer`]: crate::indexer::Indexer
 
 use core::error;
 use core::fmt;
 use core::time::Duration;
 
-/// Errors produced by indexer configuration, startup, and operations.
+/// Errors produced by [`Indexer`](crate::indexer::Indexer) configuration, startup, and operations.
 #[derive(Debug)]
 pub enum IndexerError {
-    /// A raw CLI argument conflicts with typed or dynamic indexer configuration.
+    /// A raw CLI argument conflicts with typed or dynamic [`Indexer`](crate::indexer::Indexer)
+    /// configuration.
     ConflictingArgument(String),
 
-    /// Indexer configuration contains an unsupported combination or value.
+    /// [`Indexer`](crate::indexer::Indexer) configuration contains an unsupported combination or
+    /// value.
     InvalidConfiguration(String),
 
-    /// The Python interpreter required by the bundled `ElectrumX` launcher is unavailable or
-    /// cannot run.
+    /// The required Python interpreter is not available or cannot run.
     #[cfg(feature = "electrumx")]
     InvalidPython(String),
 
-    /// The node implementation cannot be used as an external indexer's backend.
+    /// An external [`Indexer`](crate::indexer::Indexer) does not support the
+    /// [`Node`](crate::node::Node) implementation.
     UnsupportedBackend {
-        /// Human-readable node name.
+        /// Human-readable [`Node`](crate::node::Node) name.
         node: &'static str,
     },
 
-    /// An indexer is unresponsive to Electrum requests.
+    /// An [`Indexer`](crate::indexer::Indexer) is unresponsive to Electrum requests.
     UnresponsiveIndexer {
-        /// Human-readable indexer name.
+        /// Human-readable [`Indexer`](crate::indexer::Indexer) name.
         indexer: &'static str,
-        /// Electrum client error that made the indexer unresponsive.
+        /// Electrum client error that made the [`Indexer`](crate::indexer::Indexer) unresponsive.
         source: electrum_client::Error,
     },
 
-    /// Timed out whilst waiting for an indexer to index expected data.
+    /// An [`Indexer`](crate::indexer::Indexer) did not index the expected data before the timeout.
     IndexingTimeout {
-        /// Human-readable indexer name.
+        /// Human-readable [`Indexer`](crate::indexer::Indexer) name.
         indexer: &'static str,
-        /// Description of the data that should have been indexed.
+        /// Description of the expected indexed data.
         description: String,
-        /// Maximum amount of time spent waiting.
+        /// Maximum wait time.
         timeout: Duration,
     },
 }

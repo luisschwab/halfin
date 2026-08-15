@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # Integration Tests for [`BitcoinD`].
+//! Integration tests for [`BitcoinD`].
+//!
+//! These tests verify startup, JSON-RPC operations, peer connections, and block relay.
 
 #![cfg(feature = "bitcoind")]
 
@@ -12,8 +14,7 @@ use halfin::node::connect;
 use halfin::node::wait_for_filter_height;
 use halfin::node::wait_for_height;
 
-/// Verify that [`BitcoinD`] starts successfully and
-/// exposes its PID, working directory, and P2P socket.
+/// Verify [`BitcoinD`] startup, process data, and P2P data.
 #[test]
 fn test_bitcoind_starts() {
     let bin = get_bitcoind_path().unwrap();
@@ -29,7 +30,7 @@ fn test_bitcoind_starts() {
     assert_eq!(bitcoind.get_config(), &conf);
 }
 
-/// Verify that `generate` mines the requested number of blocks.
+/// Verify that `generate` mines the specified number of blocks.
 #[test]
 fn test_bitcoind_generate() {
     let bitcoind = BitcoinD::new().unwrap();
@@ -43,8 +44,7 @@ fn test_bitcoind_generate() {
     assert_eq!(height, 10);
 }
 
-/// Verify that `generatetoaddress` mines the
-/// requested number of blocks to the specified [`Address`].
+/// Verify that `generatetoaddress` mines the specified number of blocks to an [`Address`].
 #[test]
 fn test_bitcoind_generate_to_address() {
     const BLOCK_COUNT: u32 = 21;
@@ -86,8 +86,8 @@ fn test_bitcoind_get_filter_height() {
     assert_eq!(BLOCK_COUNT, bitcoind.get_filter_tip().unwrap());
 }
 
-/// Verify that [`BitcoinD::get_block_hash`] returns
-/// the correct [`BlockHash`] for a given height.
+/// Verify that [`BitcoinD::get_block_hash`] returns the correct
+/// [`BlockHash`] for a specified height.
 #[test]
 fn test_bitcoind_get_block_hash() {
     let bitcoind = BitcoinD::new().unwrap();
@@ -99,8 +99,8 @@ fn test_bitcoind_get_block_hash() {
     assert_eq!(last_block_hash, *block_hashes.last().unwrap());
 }
 
-/// Verify that two nodes can connect to each other via `connect`
-/// and that the peer count reflects the new connection on both sides.
+/// Verify a connection between two [`Node`](halfin::node::Node) implementations through `connect`.
+/// Verify that both peer counts include the new connection.
 #[test]
 fn test_bitcoind_addnode() {
     let bitcoind_alpha = BitcoinD::new().unwrap();
@@ -115,7 +115,7 @@ fn test_bitcoind_addnode() {
     assert_eq!(bitcoind_beta.get_peer_count().unwrap(), 1);
 }
 
-/// Verify that blocks mined on one node propagate to a peer.
+/// Verify block propagation from one [`Node`](halfin::node::Node) to a peer.
 #[test]
 fn test_bitcoind_blocks_propagate() {
     let bitcoind_alpha = BitcoinD::new().unwrap();

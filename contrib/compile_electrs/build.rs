@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Local release builder for the `electrs` binaries.
+//! Build local release archives for `electrs`.
 //!
-//! This is wired as a Cargo example. Run it from the repository root with:
+//! Run this Cargo example from the repository root:
 //!
 //! ```text
 //! cargo run --example cross-compile-electrs
 //! ```
 //!
-//! The script checks out the pinned upstream release,
-//! builds every supported target, packages each binary
-//! as a single-file archive, and writes a `SHA256SUMS`
-//! file suitable for publishing.
+//! The program gets the specified upstream release and builds each supported target.
+//! It puts each program file in a separate archive.
+//! It also writes the `SHA256SUMS` file for publication.
 
 // Keep the builder pinned to the same
 // `electrs` release that the crate downloads.
@@ -35,8 +34,8 @@ const ELECTRS_REPO: &str = "https://github.com/romanz/electrs";
 
 /// Build backend used for a target triple.
 ///
-/// Native macOS targets use Cargo directly, Linux targets use `cross`, and
-/// Windows MSVC targets use `cargo-xwin`.
+/// Native macOS targets use Cargo.
+/// Linux targets use `cross`, and Windows MSVC targets use `cargo-xwin`.
 #[derive(Debug, Clone, Copy)]
 enum Builder {
     /// Use plain `cargo build` for targets the host toolchain can build directly.
@@ -52,7 +51,7 @@ enum Builder {
 struct Target {
     /// Rust target triple passed to Cargo.
     triple: &'static str,
-    /// Published archive filename expected by `build.rs`.
+    /// Published archive file name that `build.rs` expects.
     artifact_name: &'static str,
     /// Binary name inside the target release directory and final archive.
     exe_name: &'static str,
@@ -180,7 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Clone or reuse the upstream checkout and reset it to the pinned tag.
+/// Clone or reuse the upstream repository and reset it to the specified tag.
 fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let source_dir_s = path_string(source_dir);
 
@@ -210,7 +209,7 @@ fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-/// Return whether existing artifacts should be rebuilt.
+/// Return whether the build must replace existing artifacts.
 fn parse_args() -> Result<bool, Box<dyn std::error::Error>> {
     let mut force = false;
 
@@ -230,7 +229,7 @@ fn parse_args() -> Result<bool, Box<dyn std::error::Error>> {
     Ok(force)
 }
 
-/// Ensure all Rust target triples needed for published artifacts are installed.
+/// Install all Rust target triples that the published artifacts require.
 fn install_targets(sh: &Shell) -> Result<(), Box<dyn std::error::Error>> {
     for target in TARGETS {
         let triple = target.triple;
@@ -347,7 +346,7 @@ fn package_target(
     Ok(())
 }
 
-/// Remove stale host bindgen artifacts that can break later cross builds.
+/// Remove old host `bindgen` artifacts that can cause subsequent cross builds to fail.
 fn clean_stale_cross_bindgen_artifacts(
     source_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -413,7 +412,7 @@ fn write_sha256sums(dist_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Ensure published archives contain exactly the electrs binary and no paths.
+/// Make sure that each published archive contains only the `electrs` binary.
 fn verify_archive(artifact: &Path, exe_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let entries = if artifact.extension() == Some(OsStr::new("zip")) {
         output(Command::new("zip").arg("-sf").arg(artifact))?
@@ -443,7 +442,7 @@ fn verify_archive(artifact: &Path, exe_name: &str) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-/// Hash a packaged archive using whatever SHA256 tool is available locally.
+/// Hash an archive with an available local SHA256 tool.
 fn sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     if has_tool("shasum") {
         let out = output(Command::new("shasum").arg("-a").arg("256").arg(path))?;
@@ -521,7 +520,7 @@ fn require_cargo_subcommand(subcommand: &str) -> Result<(), Box<dyn std::error::
     }
 }
 
-/// Return whether `tool` resolves on `PATH`.
+/// Return whether `PATH` contains `tool`.
 fn has_tool(tool: &str) -> bool {
     Command::new("sh")
         .arg("-c")
@@ -532,7 +531,7 @@ fn has_tool(tool: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Run `command` quietly and return whether it exits successfully.
+/// Run `command` without output and return whether it succeeds.
 fn command_succeeds(command: &mut Command) -> bool {
     command
         .stdout(std::process::Stdio::null())
@@ -541,7 +540,7 @@ fn command_succeeds(command: &mut Command) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Return whether the host can execute binaries for `target` directly.
+/// Return whether the host can directly run binaries for `target`.
 fn host_can_run(target: &str) -> bool {
     target == host_target_triple()
 }
@@ -575,7 +574,8 @@ fn output(command: &mut Command) -> Result<String, Box<dyn std::error::Error>> {
     Ok(String::from_utf8(output.stdout)?)
 }
 
-/// Run `command` and return stdout, treating missing or unsuccessful commands as `None`.
+/// Run `command` and return standard output.
+/// Return `None` if the command is missing or fails.
 fn optional_output(command: &mut Command) -> Result<Option<String>, Box<dyn std::error::Error>> {
     match command.output() {
         Ok(output) if output.status.success() => Ok(Some(String::from_utf8(output.stdout)?)),
@@ -585,7 +585,7 @@ fn optional_output(command: &mut Command) -> Result<Option<String>, Box<dyn std:
     }
 }
 
-/// Convert a path to an owned lossy string for shell command interpolation.
+/// Convert a path to an owned, lossy string for shell command interpolation.
 fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
