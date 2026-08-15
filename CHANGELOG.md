@@ -2,11 +2,14 @@
 
 ## [Unreleased]
 
+* Exclude all features from `[package.metadata.rbmt.test]`, since
+  `cargo-rbmt` already runs an `--all-features` test unconditionally
+* Remove `bitcoind` and `utreexod` from the `default` feature
 * Rewrite documentation following [ASD-STE100](https://asd-ste100.org)
 * Refactor errors into `Error`, `NodeError`, and `IndexerError`
 * Refactor module structure
 * `FlorestaD` support
-* Drop `which`
+* Drop unused `which` dependency
 * `ElectrumxD`: assert Python is available at runtime
 * Fix naming inconsistencies
 * Bump `bitcoin_hashes` to v1.1.0

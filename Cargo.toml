@@ -12,10 +12,12 @@ rust-version = "1.85.0" # MSRV
 edition = "2024"
 
 [features]
-default = ["bitcoind", "utreexod"]
+default = []
+# Nodes
 bitcoind = []
 florestad = ["dep:electrum-client", "dep:miniscript"]
 utreexod = []
+# Indexers
 electrs = ["dep:electrum-client"]
 electrumx = ["dep:electrum-client"]
 
@@ -65,11 +67,13 @@ tools = { cargo-audit = "=0.22.2", zizmor = "=1.26.1" }
 lint = { allowed_duplicates = ["base64", "hex-conservative"] }
 
 [package.metadata.rbmt.test]
-exact_features = [
-    ["bitcoind", "utreexod"],
-    ["florestad", "utreexod"],
-    ["bitcoind", "electrs"],
-    ["bitcoind", "electrumx"],
+# rbmt already runs tests with `--all-features` unconditionally
+exclude_features = [
+    "bitcoind",
+    "florestad",
+    "utreexod",
+    "electrs",
+    "electrumx"
 ]
 
 [lints.rust]

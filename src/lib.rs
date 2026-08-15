@@ -8,14 +8,14 @@
 //!
 //! ## Supported implementations
 //!
-//! | Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
-//! |---------|----------------|-----------|--------------|-----------------|-------------------|
-//! | [`Node`] | `bitcoind` | `v31.0` | `bitcoind` | Yes | |
-//! | [`Node`] | `utreexod` | `v0.6.0` | `utreexod` | Yes | |
-//! | [`Node`] | `florestad` | `v0.9.1` | `florestad` | No | |
-//! |         |                |           |              |                 |                   |
-//! | [`Indexer`] | `electrs` | `v0.11.1` | `electrs` | No | |
-//! | [`Indexer`] | `electrumx` | `v1.20.0` | `electrumx` | No | Needs Python 3.10 |
+//! | Kind    | Implementation | Version   | Feature Flag | Notes             |
+//! |---------|----------------|-----------|--------------|-------------------|
+//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   |                   |
+//! | Node    | `florestad`    | `v0.9.1`  | `florestad`  |                   |
+//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   |                   |
+//! |         |                |           |              |                   |
+//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    |                   |
+//! | Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | Needs Python 3.10 |
 //!
 //! ## Start and connect two [`Node`] implementations
 //!

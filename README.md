@@ -22,14 +22,14 @@ instances from Rust code, useful in integration test contexts.
 
 ## Supported Implementations
 
-| Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
-|---------|----------------|-----------|--------------|-----------------|-------------------|
-| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
-| Node    | `florestad`    | `v0.9.1`  | `florestad`  | No              |                   |
-| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
-|         |                |           |              |                 |                   |
-| Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
-| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              | Needs Python 3.10 |
+| Kind    | Implementation | Version   | Feature Flag | Notes             |
+|---------|----------------|-----------|--------------|-------------------|
+| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   |                   |
+| Node    | `florestad`    | `v0.9.1`  | `florestad`  |                   |
+| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   |                   |
+|         |                |           |              |                   |
+| Indexer | `electrs`      | `v0.11.1` | `electrs`    |                   |
+| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | Needs Python 3.10 |
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
