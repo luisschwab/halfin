@@ -27,23 +27,23 @@ use std::io::Write;
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 use std::path::Path;
 use std::path::PathBuf;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 use std::thread::sleep;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 use tracing::debug;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 use tracing::info;
 
 pub use self::error::NodeClientError;
 pub use self::error::NodeError;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 use crate::CONNECTION_INTERVAL;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 use crate::CONNECTION_TIMEOUT;
 use crate::POLL_INTERVAL;
 use crate::WAIT_TIMEOUT;
@@ -226,7 +226,7 @@ pub trait Node {
 /// # Panics
 ///
 /// Panics if [`Node`] B is `FlorestaD` because it has no inbound P2P listener.
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     assert_ne!(
         B::get_name(),
@@ -282,7 +282,7 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 /// # Panics
 ///
 /// Panics if [`Node`] B is `FlorestaD` because it has no inbound P2P listener.
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     connect(a, b)?;
 
@@ -301,7 +301,7 @@ pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 /// # Errors
 ///
 /// Returns an error if the [`Node`] does not reach `height` within [`Node::wait_timeout`].
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     debug!("Waiting for {} to reach height={}", N::get_name(), height);
 
@@ -324,7 +324,7 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
 /// # Errors
 ///
 /// Returns an error if the [`Node`] does not reach `height` within `timeout`.
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 pub fn wait_for_height_with_timeout<N: Node>(
     node: &N,
     height: u32,
@@ -358,7 +358,7 @@ pub fn wait_for_height_with_timeout<N: Node>(
 /// # Panics
 ///
 /// Panics if the [`Node`] does not supply compact filter progress.
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
     debug!(
         "Waiting for {} to reach filter_height={}",

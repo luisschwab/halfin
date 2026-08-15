@@ -456,8 +456,31 @@ mod binary {
     }
 }
 
+/// Emit Cargo instructions for a custom configuration alias.
+///
+/// Register `name` as an accepted `cfg` name. Enable the name when `enabled` is `true`.
+fn emit_cfg_alias(name: &str, enabled: bool) {
+    println!("cargo::rustc-check-cfg=cfg({name})");
+
+    if enabled {
+        println!("cargo::rustc-cfg={name}");
+    }
+}
+
 fn main() {
     use std::env;
+
+    // Emit `halfin_node` if any `Node` feature is enabled
+    let node_enabled = cfg!(any(
+        feature = "bitcoind",
+        feature = "florestad",
+        feature = "utreexod"
+    ));
+    emit_cfg_alias("halfin_node", node_enabled);
+
+    // Emit `halfin_indexer` if any `Indexer` feature is enabled
+    let indexer_enabled = cfg!(any(feature = "electrs", feature = "electrumx"));
+    emit_cfg_alias("halfin_indexer", indexer_enabled);
 
     if env::var("DOCS_RS").is_err() {
         #[cfg(feature = "bitcoind")]

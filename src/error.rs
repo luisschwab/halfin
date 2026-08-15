@@ -11,9 +11,9 @@ use core::fmt;
 use std::io;
 use std::path::PathBuf;
 
-#[cfg(any(feature = "electrs", feature = "electrumx"))]
+#[cfg(halfin_indexer)]
 use crate::indexer::IndexerError;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 use crate::node::NodeError;
 
 /// Errors returned by [`Node`](crate::node::Node) and [`Indexer`](crate::indexer::Indexer) process
@@ -61,11 +61,11 @@ pub enum Error {
     UnexpectedResponse(String),
 
     /// A [`Node`](crate::node::Node) operation failed.
-    #[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+    #[cfg(halfin_node)]
     Node(NodeError),
 
     /// An [`Indexer`](crate::indexer::Indexer) operation failed.
-    #[cfg(any(feature = "electrs", feature = "electrumx"))]
+    #[cfg(halfin_indexer)]
     Indexer(IndexerError),
 }
 
@@ -82,9 +82,9 @@ impl fmt::Display for Error {
             Self::BothDirsSpecified => write!(f, "Both `tmpdir` and `staticdir` were specified. You must choose one or neither"),
             Self::ClientSetupTimeout => write!(f, "Timed out whilst waiting for the client to be ready"),
             Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from a node or indexer: {err}"),
-            #[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+            #[cfg(halfin_node)]
             Self::Node(err) => fmt::Display::fmt(err, f),
-            #[cfg(any(feature = "electrs", feature = "electrumx"))]
+            #[cfg(halfin_indexer)]
             Self::Indexer(err) => fmt::Display::fmt(err, f),
         }
     }
@@ -92,14 +92,14 @@ impl fmt::Display for Error {
 
 impl error::Error for Error {}
 
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(halfin_node)]
 impl From<NodeError> for Error {
     fn from(err: NodeError) -> Self {
         Self::Node(err)
     }
 }
 
-#[cfg(any(feature = "electrs", feature = "electrumx"))]
+#[cfg(halfin_indexer)]
 impl From<IndexerError> for Error {
     fn from(err: IndexerError) -> Self {
         Self::Indexer(err)
@@ -108,13 +108,13 @@ impl From<IndexerError> for Error {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+    #[cfg(halfin_node)]
     use super::Error;
-    #[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+    #[cfg(halfin_node)]
     use crate::node::NodeError;
 
     #[test]
-    #[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+    #[cfg(halfin_node)]
     fn node_error_conversion_preserves_display() {
         let err = Error::from(NodeError::JsonRpc(
             corepc_client::client_sync::Error::MissingUserPassword,

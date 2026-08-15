@@ -44,54 +44,18 @@
 //! [`Node`]: crate::node::Node
 
 use core::net::Ipv4Addr;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::env;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::fs;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::io::BufRead;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::io::BufReader;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::io::Read;
 use std::net::TcpListener;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -99,19 +63,13 @@ use std::time::Duration;
 pub use corepc_client::bitcoin;
 pub use serde_json;
 use tempfile::TempDir;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use tracing::info;
 
 pub use crate::error::Error;
 
 pub mod error;
-#[cfg(any(feature = "electrs", feature = "electrumx"))]
+#[cfg(halfin_indexer)]
 pub mod indexer;
 pub mod node;
 
@@ -154,13 +112,7 @@ pub fn get_available_port() -> u16 {
 }
 
 /// Find the first raw argument owned by typed or dynamic configuration.
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
     args: &[S],
     option_names: &[&str],
@@ -192,13 +144,7 @@ pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
 ///
 /// Use this function to send child process output to [`tracing`].
 /// The thread stops at the end of the input stream.
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
     std::thread::spawn(move || {
         let mut lines = BufReader::new(reader).lines();
@@ -236,13 +182,7 @@ impl DataDir {
 
 /// Resolve and create a [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) data
 /// directory.
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 pub(crate) fn init_data_dir(
     tmpdir: Option<&Path>,
     staticdir: Option<&Path>,
@@ -274,16 +214,7 @@ pub(crate) fn init_data_dir(
     }
 }
 
-#[cfg(all(
-    test,
-    any(
-        feature = "bitcoind",
-        feature = "florestad",
-        feature = "utreexod",
-        feature = "electrs",
-        feature = "electrumx"
-    )
-))]
+#[cfg(all(test, any(halfin_node, halfin_indexer)))]
 mod tests {
     use super::*;
 

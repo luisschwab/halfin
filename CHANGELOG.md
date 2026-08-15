@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Replace repeated feature gates with `halfin_node` and `halfin_indexer` aliases
 * Don't print Python version on `ElectrumxD` instantiation
 * Exclude all features from `[package.metadata.rbmt.test]`, since
   `cargo-rbmt` already runs an `--all-features` test unconditionally
