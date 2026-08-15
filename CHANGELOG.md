@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Don't print Python version on `ElectrumxD` instantiation
 * Exclude all features from `[package.metadata.rbmt.test]`, since
   `cargo-rbmt` already runs an `--all-features` test unconditionally
 * Remove `bitcoind` and `utreexod` from the `default` feature

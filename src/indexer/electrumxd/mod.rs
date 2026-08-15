@@ -834,9 +834,13 @@ impl ElectrumxD {
         } else {
             Command::new(format!("python{PYTHON_VERSION}"))
         };
-        let status = python.arg("--version").status().map_err(|e| {
-            IndexerError::InvalidPython(format!("failed to run Python version check: {e}"))
-        })?;
+        let status = python
+            .arg("--version")
+            .output()
+            .map_err(|e| {
+                IndexerError::InvalidPython(format!("failed to run Python version check: {e}"))
+            })?
+            .status;
         if !status.success() {
             return Err(IndexerError::InvalidPython(format!(
                 "Python version check failed with {status}"
