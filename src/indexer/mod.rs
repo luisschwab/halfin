@@ -6,6 +6,7 @@
 pub mod electrsd;
 #[cfg(feature = "electrumx")]
 pub mod electrumxd;
+pub mod error;
 
 use core::net::SocketAddr;
 use core::time::Duration;
@@ -21,6 +22,7 @@ use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
 use tracing::debug;
 
+pub use self::error::IndexerError;
 use crate::Error;
 use crate::node::Node;
 use crate::node::RPC_COOKIE_FILE_NAME;
@@ -28,9 +30,10 @@ use crate::node::RPC_COOKIE_FILE_NAME;
 /// Reject backing node implementations unsupported by every indexer.
 pub(crate) fn validate_backend<N: Node>() -> Result<(), Error> {
     if matches!(N::get_name(), "FlorestaD" | "UtreexoD") {
-        return Err(Error::UnsupportedIndexerBackend {
+        return Err(IndexerError::UnsupportedBackend {
             node: N::get_name(),
-        });
+        }
+        .into());
     }
     Ok(())
 }
@@ -72,9 +75,10 @@ pub(crate) fn read_backend_cookie(node: &impl Node) -> Result<(PathBuf, String),
         .split_once(':')
         .is_some_and(|(user, password)| !user.is_empty() && !password.is_empty());
     if !valid {
-        return Err(Error::InvalidIndexerConfiguration(
+        return Err(IndexerError::InvalidConfiguration(
             "backing node RPC cookie must contain user:password credentials".to_string(),
-        ));
+        )
+        .into());
     }
 
     Ok((cookie_file, credentials))

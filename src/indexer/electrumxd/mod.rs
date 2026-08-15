@@ -42,6 +42,7 @@ use crate::SPAWN_INTERVAL;
 use crate::find_conflicting_argument;
 use crate::get_available_port;
 use crate::indexer::Indexer;
+use crate::indexer::IndexerError;
 use crate::indexer::ensure_backend_ready;
 use crate::indexer::read_backend_cookie;
 use crate::indexer::validate_backend;
@@ -55,6 +56,14 @@ mod versions;
 
 /// The default timeout for [`ElectrumxD`] indexing helpers.
 pub const ELECTRUMX_INDEXING_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Wrap an Electrum client failure with indexer context.
+fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
+    IndexerError::UnresponsiveIndexer {
+        indexer: ElectrumxD::get_name(),
+        source,
+    }
+}
 
 /// Return the path to the locally extracted `ElectrumX` launcher.
 ///
@@ -111,7 +120,7 @@ pub struct ElectrumxDConf {
     /// Raw arguments must not configure an option represented by
     /// [`electrumx_args`](Self::electrumx_args), or owned
     /// dynamically by `halfin`. Such duplicates return
-    /// [`Error::ConflictingIndexerArgument`].
+    /// [`IndexerError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
     /// Root directory under which a fresh temporary working directory is
@@ -221,9 +230,9 @@ impl ElectrumxD {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidPython`] if the bundled launcher's Python version is unavailable.
-    /// Returns an error if the binary cannot be located, the node is not ready, or the indexer
-    /// cannot be started.
+    /// Returns [`IndexerError::InvalidPython`] if the bundled launcher's Python version is
+    /// unavailable. Returns an error if the binary cannot be located, the node is not ready, or
+    /// the indexer cannot be started.
     pub fn new<N: Node>(node: &N) -> Result<Self, Error> {
         Self::new_with_conf(node, &ElectrumxDConf::default())
     }
@@ -235,9 +244,9 @@ impl ElectrumxD {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidPython`] if the bundled launcher's Python version is unavailable.
-    /// Returns an error if the binary cannot be located, the configuration is invalid, the node is
-    /// not ready, or the indexer cannot be started.
+    /// Returns [`IndexerError::InvalidPython`] if the bundled launcher's Python version is
+    /// unavailable. Returns an error if the binary cannot be located, the configuration is
+    /// invalid, the node is not ready, or the indexer cannot be started.
     pub fn new_with_conf<N: Node>(node: &N, conf: &ElectrumxDConf) -> Result<Self, Error> {
         Self::validate_python_version()?;
 
@@ -387,7 +396,7 @@ impl ElectrumxD {
             let _ = process.wait();
         }
 
-        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
+        Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
     /// Trigger `ElectrumX` to check the backing daemon for updated chain state.
@@ -615,7 +624,7 @@ impl ElectrumxD {
         let (subscribed, initial_status) = match client.script_subscribe(spk) {
             Ok(status) => (true, status),
             Err(ElectrumError::AlreadySubscribed(_)) => (false, None),
-            Err(err) => return Err(Error::UnresponsiveElectrumxD(err)),
+            Err(err) => return Err(unresponsive_indexer(err).into()),
         };
 
         let timeout = timeout.unwrap_or(ELECTRUMX_INDEXING_TIMEOUT);
@@ -654,10 +663,12 @@ impl ElectrumxD {
                 sleep(2 * POLL_INTERVAL);
             }
 
-            Err(Error::ElectrumxDIndexTimeout((
-                format!("mempool transaction with txid={txid}"),
+            Err(IndexerError::IndexingTimeout {
+                indexer: Self::get_name(),
+                description: format!("mempool transaction with txid={txid}"),
                 timeout,
-            )))
+            }
+            .into())
         })();
 
         if subscribed {
@@ -680,7 +691,7 @@ impl ElectrumxD {
         const BOOLEAN_OPTIONS: &[&str] = &["peer-discovery"];
 
         if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
-            return Err(Error::ConflictingIndexerArgument(arg));
+            return Err(IndexerError::ConflictingArgument(arg).into());
         }
 
         let network = match network {
@@ -721,7 +732,7 @@ impl ElectrumxD {
 
                 has_tx
             })
-            .map_err(Error::UnresponsiveElectrumxD)
+            .map_err(|source| unresponsive_indexer(source).into())
     }
 
     /// Wait until the block header at `exp_height` matches `exp_hash`.
@@ -759,7 +770,7 @@ impl ElectrumxD {
                     sleep(2 * POLL_INTERVAL);
                     continue;
                 }
-                Err(err) => return Err(Error::UnresponsiveElectrumxD(err)),
+                Err(err) => return Err(unresponsive_indexer(err).into()),
             };
 
             if exp_hash.is_none_or(|exp_hash| header.block_hash() == exp_hash) {
@@ -771,15 +782,21 @@ impl ElectrumxD {
             sleep(2 * POLL_INTERVAL);
         }
 
-        Err(Error::ElectrumxDIndexTimeout((description, timeout)))
+        Err(IndexerError::IndexingTimeout {
+            indexer: Self::get_name(),
+            description,
+            timeout,
+        }
+        .into())
     }
 
     /// Reject node configurations that `ElectrumX` cannot index.
     fn validate_node_args(args: NodeArgs) -> Result<(), Error> {
         if !args.txindex {
-            return Err(Error::InvalidIndexerConfiguration(
+            return Err(IndexerError::InvalidConfiguration(
                 "ElectrumX requires a backing node with transaction indexing enabled".to_string(),
-            ));
+            )
+            .into());
         }
         Ok(())
     }
@@ -791,7 +808,7 @@ impl ElectrumxD {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidPython`] if the selected command cannot be started or its
+    /// Returns [`IndexerError::InvalidPython`] if the selected command cannot be started or its
     /// `--version` check exits unsuccessfully.
     fn validate_python_version() -> Result<(), Error> {
         // Python version required by the bundled `ElectrumX` launcher.
@@ -815,12 +832,13 @@ impl ElectrumxD {
             Command::new(format!("python{PYTHON_VERSION}"))
         };
         let status = python.arg("--version").status().map_err(|e| {
-            Error::InvalidPython(format!("failed to run Python version check: {e}"))
+            IndexerError::InvalidPython(format!("failed to run Python version check: {e}"))
         })?;
         if !status.success() {
-            return Err(Error::InvalidPython(format!(
+            return Err(IndexerError::InvalidPython(format!(
                 "Python version check failed with {status}"
-            )));
+            ))
+            .into());
         }
         Ok(())
     }
@@ -828,7 +846,7 @@ impl ElectrumxD {
     /// Build a short-lived Electrum client for subscription wait helpers.
     fn fresh_electrum_client(&self) -> Result<RawClient<ElectrumPlaintextStream>, Error> {
         RawClient::new(self.electrum_socket, Some(Duration::from_secs(5)), None)
-            .map_err(Error::UnresponsiveElectrumxD)
+            .map_err(|source| unresponsive_indexer(source).into())
     }
 
     /// Poll `server.ping` until it succeeds.
@@ -841,7 +859,7 @@ impl ElectrumxD {
         let mut last_error = None;
         while start.elapsed() < timeout {
             match process.try_wait() {
-                Ok(Some(_)) | Err(_) => return Err(Error::RpcClientSetupTimeout),
+                Ok(Some(_)) | Err(_) => return Err(Error::ClientSetupTimeout),
                 Ok(None) => {}
             }
 
@@ -855,7 +873,9 @@ impl ElectrumxD {
             sleep(Duration::from_millis(200));
         }
 
-        Err(last_error.map_or(Error::RpcClientSetupTimeout, Error::UnresponsiveElectrumxD))
+        Err(last_error.map_or(Error::ClientSetupTimeout, |source| {
+            unresponsive_indexer(source).into()
+        }))
     }
 }
 
@@ -890,7 +910,7 @@ fn empty_read_is_no_script_notification(err: ElectrumError) -> Result<Option<Scr
         return Ok(None);
     }
 
-    Err(Error::UnresponsiveElectrumxD(err))
+    Err(unresponsive_indexer(err).into())
 }
 
 /// Treat a nonblocking empty read during a wait-loop ping as "still waiting".
@@ -899,7 +919,7 @@ fn empty_read_is_no_ping_response(err: ElectrumError) -> Result<(), Error> {
         return Ok(());
     }
 
-    Err(Error::UnresponsiveElectrumxD(err))
+    Err(unresponsive_indexer(err).into())
 }
 
 /// Return whether an Electrum client error means the subscribed socket had no queued message.
@@ -1006,7 +1026,7 @@ mod tests {
 
             assert!(matches!(
                 ElectrumxD::configured_args(&conf, Network::Regtest),
-                Err(Error::ConflictingIndexerArgument(conflict)) if conflict == arg
+                Err(Error::Indexer(IndexerError::ConflictingArgument(conflict))) if conflict == arg
             ));
         }
     }

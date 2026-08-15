@@ -53,6 +53,7 @@ use crate::get_available_port;
 use crate::init_data_dir;
 use crate::node::Node;
 use crate::node::NodeArgs;
+use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::node::RPC_PASS;
 use crate::node::RPC_USER;
@@ -131,7 +132,7 @@ pub struct UtreexoDConf {
     /// Raw arguments must not configure an option represented by
     /// [`args`](Self::args), [`utreexod_args`](Self::utreexod_args),
     /// or an invariant owned by halfin. Such duplicates return
-    /// [`Error::ConflictingNodeArgument`].
+    /// [`NodeError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
     /// Root directory under which a fresh temporary working directory is
@@ -260,7 +261,7 @@ impl Node for UtreexoD {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
-        self.client.call(method, args).map_err(Error::JsonRpc)
+        Ok(self.client.call(method, args).map_err(NodeError::JsonRpc)?)
     }
 
     fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
@@ -455,7 +456,7 @@ impl UtreexoD {
             let _ = process.wait();
         }
 
-        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
+        Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
     /// Send `stop` via RPC and wait for the process to exit.
@@ -472,7 +473,7 @@ impl UtreexoD {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
 
         // Send a `stop` over RPC.
-        let _ = self.client.stop().map_err(Error::FailedToStop)?;
+        let _ = self.client.stop().map_err(NodeError::FailedToStop)?;
         // Wait for the process to terminate and get its exit status.
         let exit_status = self.process.wait().map_err(Error::Io)?;
 
@@ -552,7 +553,7 @@ impl UtreexoD {
         let height = self
             .client
             .call::<serde_json::Value>("getblockchaininfo", &[])
-            .map_err(Error::JsonRpc)?["blocks"]
+            .map_err(NodeError::JsonRpc)?["blocks"]
             .as_u64()
             .ok_or(Error::UnexpectedResponse(
                 "getblockchaininfo returned no `blocks` field".to_string(),
@@ -580,7 +581,7 @@ impl UtreexoD {
                     serde_json::Value::Number(0.into()),
                 ],
             )
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         debug!("{}: got filter tip at height={}", Self::get_name(), height);
 
@@ -596,7 +597,7 @@ impl UtreexoD {
         let hash = self
             .client
             .call::<serde_json::Value>("getblockhash", &[height.into()])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_str()
             .ok_or(Error::UnexpectedResponse(
                 "getblockhash returned a non-string value".to_string(),
@@ -632,7 +633,7 @@ impl UtreexoD {
         let proof_hex = self
             .client
             .call::<serde_json::Value>("getutreexoproof", &[block_hash.to_string().into()])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_str()
             .ok_or(Error::UnexpectedResponse(
                 "getutreexoproof returned a non-string value".to_string(),
@@ -650,7 +651,7 @@ impl UtreexoD {
         let peers = self
             .client
             .call::<serde_json::Value>("getpeerinfo", &[])
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         let has_peer = peers.as_array().is_some_and(|v| {
             v.iter().any(|p| {
@@ -695,7 +696,7 @@ impl UtreexoD {
 
         self.client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         let mut delay = CONNECTION_INTERVAL;
 
@@ -704,7 +705,7 @@ impl UtreexoD {
             let peers = self
                 .client
                 .call::<serde_json::Value>("getpeerinfo", &[])
-                .map_err(Error::JsonRpc)?;
+                .map_err(NodeError::JsonRpc)?;
             if peers.as_array().is_some_and(|v| {
                 v.iter().any(|p| {
                     p["addr"]
@@ -719,10 +720,7 @@ impl UtreexoD {
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
-        Err(Error::PeerConnectionTimeout((
-            self.get_p2p_socket(),
-            socket,
-        )))
+        Err(NodeError::PeerConnectionTimeout((self.get_p2p_socket(), socket)).into())
     }
 
     /// Get [`UtreexoD`]'s peer count.
@@ -734,7 +732,7 @@ impl UtreexoD {
         let peers = self
             .client
             .call::<serde_json::Value>("getpeerinfo", &[])
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
         let peer_count = peers
             .as_array()
             .ok_or(Error::UnexpectedResponse(
@@ -760,7 +758,7 @@ impl UtreexoD {
         let hashes = self
             .client
             .call::<serde_json::Value>("generate", &[serde_json::Value::Number(count.into())])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_array()
             .ok_or(Error::UnexpectedResponse(
                 "generate returned a non-array value".to_string(),
@@ -829,32 +827,36 @@ impl UtreexoD {
         validate_node_arguments(&conf.args)?;
 
         if conf.args.network == Network::Testnet4 {
-            return Err(Error::InvalidNodeConfiguration(
+            return Err(NodeError::InvalidConfiguration(
                 "utreexod does not support testnet4".to_string(),
-            ));
+            )
+            .into());
         }
         if conf.args.prune == PruneMode::Manual {
-            return Err(Error::InvalidNodeConfiguration(
+            return Err(NodeError::InvalidConfiguration(
                 "utreexod does not support manual pruning".to_string(),
-            ));
+            )
+            .into());
         }
         if conf.utreexod_args.proof_index_max_memory_mib < 250 {
-            return Err(Error::InvalidNodeConfiguration(format!(
+            return Err(NodeError::InvalidConfiguration(format!(
                 "Utreexo proof-index memory must be at least 250 MiB (got {} MiB)",
                 conf.utreexod_args.proof_index_max_memory_mib
-            )));
+            ))
+            .into());
         }
         if let Some(address) = &conf.utreexod_args.mining_address {
             if !address.is_valid_for_network(conf.args.network) {
-                return Err(Error::InvalidNodeConfiguration(format!(
+                return Err(NodeError::InvalidConfiguration(format!(
                     "mining address {} is incompatible with network {}",
                     address.assume_checked_ref(),
                     conf.args.network
-                )));
+                ))
+                .into());
             }
         }
         if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
-            return Err(Error::ConflictingNodeArgument(arg));
+            return Err(NodeError::ConflictingArgument(arg).into());
         }
 
         Ok(())
@@ -980,7 +982,7 @@ impl UtreexoD {
             sleep(Duration::from_millis(200));
         }
 
-        Err(Error::RpcClientSetupTimeout)
+        Err(Error::ClientSetupTimeout)
     }
 }
 
@@ -1007,7 +1009,7 @@ mod tests {
     fn assert_invalid(conf: &UtreexoDConf) {
         assert!(matches!(
             UtreexoD::configured_args(conf),
-            Err(Error::InvalidNodeConfiguration(_))
+            Err(Error::Node(NodeError::InvalidConfiguration(_)))
         ));
     }
 
@@ -1195,7 +1197,7 @@ mod tests {
             };
             assert!(matches!(
                 UtreexoD::configured_args(&conf),
-                Err(Error::ConflictingNodeArgument(conflict)) if conflict == arg
+                Err(Error::Node(NodeError::ConflictingArgument(conflict))) if conflict == arg
             ));
         }
 

@@ -14,6 +14,7 @@ use halfin::bitcoin::Network;
 use halfin::bitcoin::consensus::deserialize;
 use halfin::bitcoin::hex::FromHex;
 use halfin::node::Node;
+use halfin::node::NodeError;
 use halfin::node::connect_and_sync;
 use halfin::node::florestad::FlorestaD;
 use halfin::node::florestad::FlorestaDConf;
@@ -47,17 +48,17 @@ fn test_florestad_starts() {
     florestad.get_electrum_client().ping().unwrap();
     assert!(matches!(
         florestad.generate(1),
-        Err(Error::UnsupportedCommand {
+        Err(Error::Node(NodeError::UnsupportedCommand {
             node: "FlorestaD",
             command: "generate"
-        })
+        }))
     ));
     assert!(matches!(
         florestad.get_filter_tip(),
-        Err(Error::UnsupportedCommand {
+        Err(Error::Node(NodeError::UnsupportedCommand {
             node: "FlorestaD",
             command: "get_filter_tip"
-        })
+        }))
     ));
 }
 

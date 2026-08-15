@@ -56,6 +56,7 @@ use crate::SPAWN_INTERVAL;
 use crate::find_conflicting_argument;
 use crate::get_available_port;
 use crate::indexer::Indexer;
+use crate::indexer::IndexerError;
 use crate::indexer::ensure_backend_ready;
 use crate::indexer::read_backend_cookie;
 use crate::indexer::validate_backend;
@@ -70,6 +71,14 @@ mod versions;
 
 /// The default timeout for [`ElectrsD`] indexing helpers.
 pub const ELECTRS_INDEXING_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Wrap an Electrum client failure with indexer context.
+fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
+    IndexerError::UnresponsiveIndexer {
+        indexer: ElectrsD::get_name(),
+        source,
+    }
+}
 
 /// Return the path to the downloaded `electrs` binary.
 ///
@@ -118,7 +127,7 @@ pub struct ElectrsDConf {
     /// Extra CLI arguments forwarded verbatim to the `electrs` process.
     ///
     /// Raw arguments must not configure an option owned dynamically by
-    /// `halfin`. Such duplicates return [`Error::ConflictingIndexerArgument`].
+    /// `halfin`. Such duplicates return [`IndexerError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
     /// Root directory under which a fresh temporary working directory is
@@ -415,7 +424,7 @@ impl ElectrsD {
             let _ = process.wait();
         }
 
-        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
+        Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
     /// Send `SIGUSR1` to trigger a rescan on Unix-derived platforms.
@@ -626,7 +635,7 @@ impl ElectrsD {
         let (subscribed, initial_status) = match self.client.script_subscribe(spk) {
             Ok(status) => (true, status),
             Err(ElectrumError::AlreadySubscribed(_)) => (false, None),
-            Err(err) => return Err(Error::UnresponsiveElectrsD(err)),
+            Err(err) => return Err(unresponsive_indexer(err).into()),
         };
 
         let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
@@ -644,12 +653,12 @@ impl ElectrsD {
             let start = Instant::now();
             while start.elapsed() < timeout {
                 self.trigger()?;
-                self.client.ping().map_err(Error::UnresponsiveElectrsD)?;
+                self.client.ping().map_err(unresponsive_indexer)?;
 
                 if self
                     .client
                     .script_pop(spk)
-                    .map_err(Error::UnresponsiveElectrsD)?
+                    .map_err(unresponsive_indexer)?
                     .is_some()
                     && self.script_history_has_mempool_tx(spk, txid)?
                 {
@@ -665,10 +674,12 @@ impl ElectrsD {
                 sleep(2 * POLL_INTERVAL);
             }
 
-            Err(Error::ElectrsDIndexTimeout((
-                format!("mempool transaction with txid={txid}"),
+            Err(IndexerError::IndexingTimeout {
+                indexer: Self::get_name(),
+                description: format!("mempool transaction with txid={txid}"),
                 timeout,
-            )))
+            }
+            .into())
         })();
 
         if subscribed {
@@ -693,7 +704,7 @@ impl ElectrsD {
         ];
 
         if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, &[]) {
-            return Err(Error::ConflictingIndexerArgument(arg));
+            return Err(IndexerError::ConflictingArgument(arg).into());
         }
 
         let network = match network {
@@ -725,7 +736,7 @@ impl ElectrsD {
 
                 has_tx
             })
-            .map_err(Error::UnresponsiveElectrsD)
+            .map_err(|source| unresponsive_indexer(source).into())
     }
 
     /// Wait for an Electrum block-header notification proving `exp_height`/`exp_hash` is indexed.
@@ -743,7 +754,7 @@ impl ElectrsD {
         let mut next_notification = Some(
             client
                 .block_headers_subscribe()
-                .map_err(Error::UnresponsiveElectrsD)?,
+                .map_err(unresponsive_indexer)?,
         );
 
         let description = match exp_hash {
@@ -762,13 +773,11 @@ impl ElectrsD {
         let start = Instant::now();
         while start.elapsed() < timeout {
             self.trigger()?;
-            client.ping().map_err(Error::UnresponsiveElectrsD)?;
+            client.ping().map_err(unresponsive_indexer)?;
 
             let notification = match next_notification.take() {
                 Some(notification) => Some(notification),
-                None => client
-                    .block_headers_pop()
-                    .map_err(Error::UnresponsiveElectrsD)?,
+                None => client.block_headers_pop().map_err(unresponsive_indexer)?,
             };
             let Some(notification) = notification else {
                 sleep(2 * POLL_INTERVAL);
@@ -784,15 +793,21 @@ impl ElectrsD {
             sleep(2 * POLL_INTERVAL);
         }
 
-        Err(Error::ElectrsDIndexTimeout((description, timeout)))
+        Err(IndexerError::IndexingTimeout {
+            indexer: Self::get_name(),
+            description,
+            timeout,
+        }
+        .into())
     }
 
     /// Reject node configurations that electrs cannot index.
     fn validate_node_args(args: NodeArgs) -> Result<(), Error> {
         if args.prune != PruneMode::Disabled {
-            return Err(Error::InvalidIndexerConfiguration(
+            return Err(IndexerError::InvalidConfiguration(
                 "electrs requires an unpruned backing node".to_string(),
-            ));
+            )
+            .into());
         }
         Ok(())
     }
@@ -811,7 +826,7 @@ impl ElectrsD {
         while start.elapsed() < timeout {
             match process.try_wait() {
                 Ok(Some(_)) | Err(_) => {
-                    return Err(Error::RpcClientSetupTimeout);
+                    return Err(Error::ClientSetupTimeout);
                 }
                 Ok(None) => {}
             }
@@ -826,7 +841,9 @@ impl ElectrsD {
             sleep(Duration::from_millis(200));
         }
 
-        Err(last_error.map_or(Error::RpcClientSetupTimeout, Error::UnresponsiveElectrsD))
+        Err(last_error.map_or(Error::ClientSetupTimeout, |source| {
+            unresponsive_indexer(source).into()
+        }))
     }
 }
 
@@ -872,7 +889,7 @@ fn electrs_header_matches(
                 usize::try_from(exp_height)
                     .map_err(|err| Error::UnexpectedResponse(err.to_string()))?,
             )
-            .map_err(Error::UnresponsiveElectrsD)?
+            .map_err(unresponsive_indexer)?
     };
 
     Ok(exp_hash.is_none_or(|exp_hash| header.block_hash() == exp_hash))
@@ -941,7 +958,7 @@ mod tests {
 
             assert!(matches!(
                 ElectrsD::configured_args(&conf, Network::Regtest),
-                Err(Error::ConflictingIndexerArgument(conflict)) if conflict == arg
+                Err(Error::Indexer(IndexerError::ConflictingArgument(conflict))) if conflict == arg
             ));
         }
     }

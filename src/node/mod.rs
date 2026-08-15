@@ -7,6 +7,7 @@
 
 #[cfg(feature = "bitcoind")]
 pub mod bitcoind;
+pub mod error;
 #[cfg(feature = "florestad")]
 pub mod florestad;
 #[cfg(feature = "utreexod")]
@@ -21,15 +22,23 @@ use std::io::Write;
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 use std::path::Path;
 use std::path::PathBuf;
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 use std::thread::sleep;
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 use tracing::debug;
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 use tracing::info;
 
+pub use self::error::NodeClientError;
+pub use self::error::NodeError;
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 use crate::CONNECTION_INTERVAL;
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 use crate::CONNECTION_TIMEOUT;
 use crate::POLL_INTERVAL;
 use crate::WAIT_TIMEOUT;
@@ -115,7 +124,7 @@ pub trait Node {
     /// Returns an error if block generation fails.
     ///
     /// Implementations whose daemon cannot generate blocks return
-    /// [`Error::UnsupportedCommand`].
+    /// [`NodeError::UnsupportedCommand`].
     fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error>;
 
     /// Get the [`Node`]'s current chain height.
@@ -132,7 +141,7 @@ pub trait Node {
     /// Returns an error if the node cannot report its current compact-filter height.
     ///
     /// Implementations whose daemon cannot report compact-filter progress
-    /// return [`Error::UnsupportedCommand`].
+    /// return [`NodeError::UnsupportedCommand`].
     fn get_filter_tip(&self) -> Result<u32, Error>;
 
     /// Get the [`BlockHash`] of the block at `height`.
@@ -216,6 +225,7 @@ pub trait Node {
 /// # Panics
 ///
 /// Panics if node B is `FlorestaD`, which does not provide an inbound P2P listener.
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     assert_ne!(
         B::get_name(),
@@ -258,7 +268,7 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
         sleep(CONNECTION_INTERVAL);
     }
 
-    Err(Error::ConnectionTimeout(CONNECTION_TIMEOUT))
+    Err(NodeError::ConnectionTimeout(CONNECTION_TIMEOUT).into())
 }
 
 /// Connect [`Node`] A to [`Node`] B and wait for them to synchronize chains.
@@ -271,6 +281,7 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 /// # Panics
 ///
 /// Panics if node B is `FlorestaD`, which does not provide an inbound P2P listener.
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     connect(a, b)?;
 
@@ -289,6 +300,7 @@ pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 /// # Errors
 ///
 /// Returns an error if the node does not reach `height` within [`Node::wait_timeout`].
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     debug!("Waiting for {} to reach height={}", N::get_name(), height);
 
@@ -303,11 +315,7 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     }
 
     let curr_height = node.get_chain_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((
-        height,
-        curr_height,
-        N::wait_timeout(),
-    )))
+    Err(NodeError::ChainSyncTimeout((height, curr_height, N::wait_timeout())).into())
 }
 
 /// Poll a [`Node`] until its chain reaches `height` with a custom `timeout`.
@@ -315,6 +323,7 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
 /// # Errors
 ///
 /// Returns an error if the node does not reach `height` within `timeout`.
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 pub fn wait_for_height_with_timeout<N: Node>(
     node: &N,
     height: u32,
@@ -336,7 +345,7 @@ pub fn wait_for_height_with_timeout<N: Node>(
     }
 
     let curr_height = node.get_chain_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((height, curr_height, timeout)))
+    Err(NodeError::ChainSyncTimeout((height, curr_height, timeout)).into())
 }
 
 /// Poll a [`Node`] until its Compact Block Filters reach `height`.
@@ -348,6 +357,7 @@ pub fn wait_for_height_with_timeout<N: Node>(
 /// # Panics
 ///
 /// Panics if the node does not expose compact-filter progress.
+#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
 pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
     debug!(
         "Waiting for {} to reach filter_height={}",
@@ -369,11 +379,7 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
     }
 
     let curr_filter_height = node.get_filter_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((
-        filter_height,
-        curr_filter_height,
-        N::wait_timeout(),
-    )))
+    Err(NodeError::ChainSyncTimeout((filter_height, curr_filter_height, N::wait_timeout())).into())
 }
 
 /// Validate constraints common to every node implementation.
@@ -381,16 +387,18 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
 pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
     if let PruneMode::Automatic(target_mib) = args.prune {
         if target_mib < MIN_PRUNE_TARGET_MIB {
-            return Err(Error::InvalidNodeConfiguration(format!(
+            return Err(NodeError::InvalidConfiguration(format!(
                 "automatic pruning target must be at least {MIN_PRUNE_TARGET_MIB} MiB (got {target_mib} MiB)"
-            )));
+            ))
+            .into());
         }
     }
 
     if args.prune != PruneMode::Disabled && args.txindex {
-        return Err(Error::InvalidNodeConfiguration(
+        return Err(NodeError::InvalidConfiguration(
             "pruning and transaction indexing are mutually exclusive".to_string(),
-        ));
+        )
+        .into());
     }
 
     Ok(())

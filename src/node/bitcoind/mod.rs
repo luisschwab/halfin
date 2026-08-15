@@ -63,6 +63,8 @@ use crate::get_available_port;
 use crate::init_data_dir;
 use crate::node::Node;
 use crate::node::NodeArgs;
+use crate::node::NodeClientError;
+use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::node::RPC_PASS;
 use crate::node::RPC_USER;
@@ -131,7 +133,7 @@ pub struct BitcoinDConf {
     ///
     /// Raw arguments must not configure an option represented by [`args`](Self::args)
     /// or [`bitcoind_args`](Self::bitcoind_args). Such duplicates return
-    /// [`Error::ConflictingNodeArgument`].
+    /// [`NodeError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
     /// Root directory under which a fresh temporary working directory is
@@ -244,7 +246,7 @@ impl Node for BitcoinD {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
-        self.client.call(method, args).map_err(Error::JsonRpc)
+        Ok(self.client.call(method, args).map_err(NodeError::JsonRpc)?)
     }
 }
 
@@ -452,7 +454,7 @@ impl BitcoinD {
             });
         }
 
-        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
+        Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
     /// Send `stop` via RPC and wait for the process to exit.
@@ -468,7 +470,7 @@ impl BitcoinD {
     pub fn stop(&mut self) -> Result<ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         // Send a `stop` over RPC.
-        let _ = self.client.stop().map_err(Error::FailedToStop)?;
+        let _ = self.client.stop().map_err(NodeError::FailedToStop)?;
         // Wait for the process to terminate and get its exit status.
         let exit_status = self.process.wait().map_err(Error::Io)?;
 
@@ -556,7 +558,10 @@ impl BitcoinD {
     ///
     /// Returns an error if the JSON-RPC call fails.
     pub fn get_chain_tip(&self) -> Result<u32, Error> {
-        let response = self.client.get_blockchain_info().map_err(Error::JsonRpc)?;
+        let response = self
+            .client
+            .get_blockchain_info()
+            .map_err(NodeError::JsonRpc)?;
         let height = response.blocks as u32;
 
         debug!("{}: got chain tip at height={}", Self::get_name(), height);
@@ -570,7 +575,7 @@ impl BitcoinD {
     ///
     /// Returns an error if the JSON-RPC call fails or the block filter index is unavailable.
     pub fn get_filter_tip(&self) -> Result<u32, Error> {
-        let response = self.client.get_index_info().map_err(Error::JsonRpc)?;
+        let response = self.client.get_index_info().map_err(NodeError::JsonRpc)?;
         let filter_height = response
             .0
             .get("basic block filter index")
@@ -599,7 +604,7 @@ impl BitcoinD {
         let hash = self
             .client
             .get_block_hash(u64::from(height))
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .0
             .parse::<BlockHash>()
             .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
@@ -620,7 +625,7 @@ impl BitcoinD {
     ///
     /// Returns an error if the peer-info JSON-RPC call fails.
     pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
-        let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?;
+        let peers = self.client.get_peer_info().map_err(NodeError::JsonRpc)?;
         let has_peer = peers
             .0
             .iter()
@@ -648,13 +653,13 @@ impl BitcoinD {
 
         self.client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         let mut delay = CONNECTION_INTERVAL;
 
         let start = Instant::now();
         while start.elapsed() < CONNECTION_TIMEOUT {
-            let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?;
+            let peers = self.client.get_peer_info().map_err(NodeError::JsonRpc)?;
             if peers
                 .0
                 .iter()
@@ -667,10 +672,7 @@ impl BitcoinD {
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
-        Err(Error::PeerConnectionTimeout((
-            self.get_p2p_socket(),
-            socket,
-        )))
+        Err(NodeError::PeerConnectionTimeout((self.get_p2p_socket(), socket)).into())
     }
 
     /// Get [`BitcoinD`]'s peer count.
@@ -679,7 +681,7 @@ impl BitcoinD {
     ///
     /// Returns an error if the peer-info JSON-RPC call fails.
     pub fn get_peer_count(&self) -> Result<u32, Error> {
-        let peers = self.client.get_peer_info().map_err(Error::JsonRpc)?.0;
+        let peers = self.client.get_peer_info().map_err(NodeError::JsonRpc)?.0;
         let peer_count = peers.len() as u32;
 
         debug!("{}: got peer count value={}", Self::get_name(), peer_count);
@@ -697,11 +699,11 @@ impl BitcoinD {
     pub fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error> {
         debug!("{}: generating count={} block(s)", Self::get_name(), count);
 
-        let address = self.client.new_address().map_err(Error::JsonRpc)?;
+        let address = self.client.new_address().map_err(NodeError::JsonRpc)?;
         let hashes = self
             .client
             .generate_to_address(count as usize, &address)
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .0
             .iter()
             .map(|h| {
@@ -735,7 +737,7 @@ impl BitcoinD {
         let hashes = self
             .client
             .generate_to_address(count as usize, address)
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .0
             .iter()
             .map(|h| {
@@ -762,17 +764,19 @@ impl BitcoinD {
             let hash = self
                 .client
                 .get_best_block_hash()
-                .map_err(Error::JsonRpc)?
+                .map_err(NodeError::JsonRpc)?
                 .block_hash()
                 .map_err(|e| Error::UnexpectedResponse(e.to_string()))?;
 
             let height = self
                 .client
                 .get_blockchain_info()
-                .map_err(Error::JsonRpc)?
+                .map_err(NodeError::JsonRpc)?
                 .blocks as u32;
 
-            self.client.invalidate_block(hash).map_err(Error::JsonRpc)?;
+            self.client
+                .invalidate_block(hash)
+                .map_err(NodeError::JsonRpc)?;
             debug!(
                 "{}: invalidated block at height={} and hash={}",
                 Self::get_name(),
@@ -822,7 +826,7 @@ impl BitcoinD {
 
         validate_node_arguments(&conf.args)?;
         if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
-            return Err(Error::ConflictingNodeArgument(arg));
+            return Err(NodeError::ConflictingArgument(arg).into());
         }
 
         let prune = match conf.args.prune {
@@ -835,7 +839,7 @@ impl BitcoinD {
             .fallback_fee_rate
             .fee_vb(1_000)
             .ok_or_else(|| {
-                Error::InvalidNodeConfiguration("fallback fee rate is too large".to_string())
+                NodeError::InvalidConfiguration("fallback fee rate is too large".to_string())
             })?;
         let bool_value = |value: bool| if value { '1' } else { '0' };
 
@@ -861,8 +865,12 @@ impl BitcoinD {
             }
             sleep(Duration::from_millis(200));
         }
-        let client =
-            Client::new_with_auth(rpc_url, auth.clone()).map_err(Error::UnresponsiveBitcoinD)?;
+        let client = Client::new_with_auth(rpc_url, auth.clone()).map_err(|source| {
+            NodeError::UnresponsiveNode {
+                node: Self::get_name(),
+                source: NodeClientError::from(source),
+            }
+        })?;
 
         Ok(client)
     }
@@ -879,7 +887,7 @@ impl BitcoinD {
             sleep(Duration::from_millis(200));
         }
 
-        Err(Error::RpcClientSetupTimeout)
+        Err(Error::ClientSetupTimeout)
     }
 }
 
@@ -910,7 +918,7 @@ mod tests {
     fn assert_invalid(conf: &BitcoinDConf) {
         assert!(matches!(
             BitcoinD::configured_args(conf),
-            Err(Error::InvalidNodeConfiguration(_))
+            Err(Error::Node(NodeError::InvalidConfiguration(_)))
         ));
     }
 
@@ -1046,7 +1054,7 @@ mod tests {
             };
             assert!(matches!(
                 BitcoinD::configured_args(&conf),
-                Err(Error::ConflictingNodeArgument(conflict)) if conflict == arg
+                Err(Error::Node(NodeError::ConflictingArgument(conflict))) if conflict == arg
             ));
         }
 

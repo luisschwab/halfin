@@ -39,6 +39,8 @@ use crate::get_available_port;
 use crate::init_data_dir;
 use crate::node::Node;
 use crate::node::NodeArgs;
+use crate::node::NodeClientError;
+use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::pipe_to_tracing;
 
@@ -104,7 +106,7 @@ pub struct FlorestaDConf {
     /// Extra CLI arguments forwarded verbatim to `florestad`.
     ///
     /// Arguments managed by typed configuration or by halfin itself are
-    /// rejected with [`Error::ConflictingNodeArgument`].
+    /// rejected with [`NodeError::ConflictingArgument`].
     pub raw_args: Vec<String>,
     /// Root under which a fresh temporary working directory is created.
     pub tmpdir: Option<PathBuf>,
@@ -149,7 +151,7 @@ impl AsRef<NodeArgs> for FlorestaDConf {
 ///
 /// Floresta v0.9.1 does not accept inbound P2P connections and does not expose
 /// block generation or compact-filter progress through JSON-RPC. Unsupported
-/// commands return [`Error::UnsupportedCommand`]; requesting its P2P listener
+/// commands return [`NodeError::UnsupportedCommand`]; requesting its P2P listener
 /// panics because [`Node::get_p2p_socket`] cannot return an error.
 #[derive(Debug)]
 pub struct FlorestaD {
@@ -184,25 +186,27 @@ impl Node for FlorestaD {
     fn get_rpc_socket(&self) -> SocketAddr { self.get_rpc_socket() }
 
     fn generate(&self, _count: u32) -> Result<Vec<BlockHash>, Error> {
-        Err(Error::UnsupportedCommand {
+        Err(NodeError::UnsupportedCommand {
             node: Self::get_name(),
             command: "generate",
-        })
+        }
+        .into())
     }
 
     fn get_chain_tip(&self) -> Result<u32, Error> { self.get_chain_tip() }
 
     fn get_filter_tip(&self) -> Result<u32, Error> {
-        Err(Error::UnsupportedCommand {
+        Err(NodeError::UnsupportedCommand {
             node: Self::get_name(),
             command: "get_filter_tip",
-        })
+        }
+        .into())
     }
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
-        self.client.call(method, args).map_err(Error::JsonRpc)
+        Ok(self.client.call(method, args).map_err(NodeError::JsonRpc)?)
     }
 
     fn get_p2p_socket(&self) -> SocketAddr {
@@ -380,7 +384,7 @@ impl FlorestaD {
             let _ = process.wait();
         }
 
-        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
+        Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
     /// Gracefully stop Floresta through JSON-RPC and wait for it to exit.
@@ -394,7 +398,7 @@ impl FlorestaD {
         let _ = self
             .client
             .call::<serde_json::Value>("stop", &[])
-            .map_err(Error::FailedToStop)?;
+            .map_err(NodeError::FailedToStop)?;
         self.process.wait().map_err(Error::Io)
     }
 
@@ -447,7 +451,7 @@ impl FlorestaD {
         let height = self
             .client
             .call::<serde_json::Value>("getblockcount", &[])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_u64()
             .ok_or_else(|| {
                 Error::UnexpectedResponse("getblockcount returned a non-numeric value".to_string())
@@ -466,7 +470,7 @@ impl FlorestaD {
         let hash = self
             .client
             .call::<serde_json::Value>("getblockhash", &[height.into()])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_str()
             .ok_or_else(|| {
                 Error::UnexpectedResponse("getblockhash returned a non-string value".to_string())
@@ -492,7 +496,7 @@ impl FlorestaD {
         let peers = self
             .client
             .call::<serde_json::Value>("getpeerinfo", &[])
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
         let peers = peers.as_array().ok_or_else(|| {
             Error::UnexpectedResponse("getpeerinfo returned a non-array value".to_string())
         })?;
@@ -528,7 +532,7 @@ impl FlorestaD {
                     self.config.args.v2_transport.into(),
                 ],
             )
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         let mut delay = CONNECTION_INTERVAL;
         let start = Instant::now();
@@ -540,7 +544,7 @@ impl FlorestaD {
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
-        Err(Error::ConnectionTimeout(CONNECTION_TIMEOUT))
+        Err(NodeError::ConnectionTimeout(CONNECTION_TIMEOUT).into())
     }
 
     /// Return Floresta's outbound peer count.
@@ -552,7 +556,7 @@ impl FlorestaD {
         let peers = self
             .client
             .call::<serde_json::Value>("getpeerinfo", &[])
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
         let count = peers
             .as_array()
             .ok_or_else(|| {
@@ -592,17 +596,19 @@ impl FlorestaD {
         ];
 
         if conf.args.prune != PruneMode::Disabled {
-            return Err(Error::InvalidNodeConfiguration(
+            return Err(NodeError::InvalidConfiguration(
                 "FlorestaD does not expose configurable block pruning".to_string(),
-            ));
+            )
+            .into());
         }
         if conf.args.txindex {
-            return Err(Error::InvalidNodeConfiguration(
+            return Err(NodeError::InvalidConfiguration(
                 "FlorestaD does not support a full transaction index".to_string(),
-            ));
+            )
+            .into());
         }
         if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
-            return Err(Error::ConflictingNodeArgument(arg));
+            return Err(NodeError::ConflictingArgument(arg).into());
         }
 
         Ok(())
@@ -652,7 +658,7 @@ impl FlorestaD {
             sleep(Duration::from_millis(200));
         }
 
-        Err(Error::RpcClientSetupTimeout)
+        Err(Error::ClientSetupTimeout)
     }
 
     /// Wait until Floresta's Electrum server answers `server.ping`.
@@ -665,7 +671,7 @@ impl FlorestaD {
         let mut last_error = None;
         while start.elapsed() < timeout {
             match process.try_wait() {
-                Ok(Some(_)) | Err(_) => return Err(Error::RpcClientSetupTimeout),
+                Ok(Some(_)) | Err(_) => return Err(Error::ClientSetupTimeout),
                 Ok(None) => {}
             }
 
@@ -679,7 +685,13 @@ impl FlorestaD {
             sleep(Duration::from_millis(200));
         }
 
-        Err(last_error.map_or(Error::RpcClientSetupTimeout, Error::UnresponsiveFlorestaD))
+        Err(last_error.map_or(Error::ClientSetupTimeout, |source| {
+            NodeError::UnresponsiveNode {
+                node: Self::get_name(),
+                source: NodeClientError::from(source),
+            }
+            .into()
+        }))
     }
 }
 
@@ -792,14 +804,14 @@ mod tests {
         conf.args.prune = PruneMode::Automatic(550);
         assert!(matches!(
             FlorestaD::configured_args(&conf),
-            Err(Error::InvalidNodeConfiguration(_))
+            Err(Error::Node(NodeError::InvalidConfiguration(_)))
         ));
 
         conf.args.prune = PruneMode::Disabled;
         conf.args.txindex = true;
         assert!(matches!(
             FlorestaD::configured_args(&conf),
-            Err(Error::InvalidNodeConfiguration(_))
+            Err(Error::Node(NodeError::InvalidConfiguration(_)))
         ));
     }
 
@@ -826,7 +838,7 @@ mod tests {
             };
             assert!(matches!(
                 FlorestaD::configured_args(&conf),
-                Err(Error::ConflictingNodeArgument(conflict)) if conflict == arg
+                Err(Error::Node(NodeError::ConflictingArgument(conflict))) if conflict == arg
             ));
         }
     }

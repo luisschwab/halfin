@@ -5,6 +5,7 @@
 #![cfg(all(feature = "utreexod", feature = "electrumx"))]
 
 use halfin::Error;
+use halfin::indexer::IndexerError;
 use halfin::indexer::electrumxd::ElectrumxD;
 use halfin::indexer::electrumxd::ElectrumxDConf;
 use halfin::node::utreexod::UtreexoD;
@@ -22,7 +23,9 @@ fn test_electrumxd_rejects_utreexod() {
 
     assert!(matches!(
         ElectrumxD::new_with_conf(&utreexod, &electrumxd_conf),
-        Err(Error::UnsupportedIndexerBackend { node: "UtreexoD" })
+        Err(Error::Indexer(IndexerError::UnsupportedBackend {
+            node: "UtreexoD"
+        }))
     ));
     assert!(!indexer_dir.exists());
 }

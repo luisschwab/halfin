@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Refactor errors into `Error`, `NodeError`, and `IndexerError`
 * Refactor module structure
 * `FlorestaD` support
 * Drop `which`

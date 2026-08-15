@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use corepc_client::bitcoin::Amount;
 use electrum_client::ElectrumApi;
 use halfin::Error;
+use halfin::indexer::IndexerError;
 use halfin::indexer::electrumxd::ELECTRUMX_INDEXING_TIMEOUT;
 use halfin::indexer::electrumxd::ElectrumxD;
 use halfin::node::bitcoind::BitcoinD;
@@ -67,7 +68,7 @@ fn bundled_constructor_rejects_missing_python_override() {
 
     assert!(matches!(
         ElectrumxD::new(&bitcoind),
-        Err(Error::InvalidPython(description))
+        Err(Error::Indexer(IndexerError::InvalidPython(description)))
             if description.contains("failed to run Python version check")
     ));
 }
