@@ -250,8 +250,6 @@ impl Node for BitcoinD {
 }
 
 impl BitcoinD {
-    // ----> NODE
-
     /// Start [`BitcoinD`] with the binary from [`get_bitcoind_path`].
     /// Use the default [`BitcoinDConf`].
     ///
@@ -544,8 +542,6 @@ impl BitcoinD {
         &self.cookie_file
     }
 
-    // ----> RPC CALL WRAPPERS
-
     /// Return the current chain height.
     ///
     /// # Errors
@@ -782,8 +778,6 @@ impl BitcoinD {
         Ok(())
     }
 
-    // ----> INTERNAL
-
     /// Validate typed and raw configuration and create daemon arguments.
     fn configured_args(conf: &BitcoinDConf) -> Result<Vec<String>, Error> {
         const OPTIONS: &[&str] = &[
@@ -904,157 +898,5 @@ impl Drop for BitcoinD {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_invalid(conf: &BitcoinDConf) {
-        assert!(matches!(
-            BitcoinD::configured_args(conf),
-            Err(Error::Node(NodeError::InvalidConfiguration(_)))
-        ));
-    }
-
-    #[test]
-    fn default_configuration_preserves_existing_behavior() {
-        let conf = BitcoinDConf::default();
-
-        assert!(conf.raw_args.is_empty());
-        assert_eq!(conf.args.network, Network::Regtest);
-        assert!(conf.args.cbf_index);
-        assert_eq!(conf.args.prune, PruneMode::Disabled);
-        assert!(conf.args.v2_transport);
-        assert!(conf.args.txindex);
-        assert_eq!(
-            conf.bitcoind_args.fallback_fee_rate,
-            FeeRate::from_sat_per_vb_u32(10)
-        );
-        assert_eq!(
-            BitcoinD::configured_args(&conf).unwrap(),
-            [
-                "-chain=regtest",
-                "-blockfilterindex=1",
-                "-prune=0",
-                "-v2transport=1",
-                "-txindex=1",
-                "-fallbackfee=0.0001",
-            ]
-        );
-    }
-
-    #[test]
-    fn renders_all_networks() {
-        let cases = [
-            (Network::Bitcoin, "main"),
-            (Network::Testnet, "test"),
-            (Network::Testnet4, "testnet4"),
-            (Network::Signet, "signet"),
-            (Network::Regtest, "regtest"),
-        ];
-
-        for (network, core_arg) in cases {
-            let mut conf = BitcoinDConf::default();
-            conf.args.network = network;
-            let args = BitcoinD::configured_args(&conf).unwrap();
-            assert_eq!(args[0], format!("-chain={core_arg}"));
-        }
-    }
-
-    #[test]
-    fn renders_boolean_and_pruning_flags() {
-        let mut conf = BitcoinDConf::default();
-        conf.args.cbf_index = false;
-        conf.args.v2_transport = false;
-        conf.args.txindex = false;
-        conf.args.prune = PruneMode::Manual;
-        let args = BitcoinD::configured_args(&conf).unwrap();
-        assert!(args.contains(&"-blockfilterindex=0".to_string()));
-        assert!(args.contains(&"-prune=1".to_string()));
-        assert!(args.contains(&"-v2transport=0".to_string()));
-        assert!(args.contains(&"-txindex=0".to_string()));
-
-        conf.args.prune = PruneMode::Automatic(550);
-        let args = BitcoinD::configured_args(&conf).unwrap();
-        assert!(args.contains(&"-prune=550".to_string()));
-
-        conf.args.prune = PruneMode::Automatic(549);
-        assert_invalid(&conf);
-    }
-
-    #[test]
-    fn rejects_pruning_with_txindex() {
-        let mut conf = BitcoinDConf::default();
-        conf.args.prune = PruneMode::Automatic(550);
-        assert_invalid(&conf);
-    }
-
-    #[test]
-    fn formats_fallback_fee_with_bitcoin_amount() {
-        let cases = [
-            (FeeRate::from_sat_per_vb_u32(10), "-fallbackfee=0.0001"),
-            (FeeRate::from_sat_per_kwu(1), "-fallbackfee=0.00000004"),
-            (FeeRate::ZERO, "-fallbackfee=0"),
-            (FeeRate::from_sat_per_kwu(25_000_000), "-fallbackfee=1"),
-        ];
-
-        for (fee_rate, expected) in cases {
-            let mut conf = BitcoinDConf::default();
-            conf.bitcoind_args.fallback_fee_rate = fee_rate;
-            assert!(
-                BitcoinD::configured_args(&conf)
-                    .unwrap()
-                    .contains(&expected.to_string())
-            );
-        }
-
-        let mut conf = BitcoinDConf::default();
-        conf.bitcoind_args.fallback_fee_rate = FeeRate::MAX;
-        assert_invalid(&conf);
-    }
-
-    #[test]
-    fn rejects_raw_typed_argument_spellings() {
-        let conflicts = [
-            "-chain=signet",
-            "--regtest",
-            "-noregtest",
-            "-blockfilterindex=0",
-            "--blockfilterindex",
-            "-noblockfilterindex",
-            "--no-blockfilterindex",
-            "-prune=550",
-            "-noprune",
-            "-v2transport=0",
-            "-nov2transport",
-            "-txindex",
-            "--txindex=1",
-            "-notxindex",
-            "-fallbackfee=0.1",
-            "-bind=127.0.0.1:18444",
-            "-listen=0",
-            "-port=18444",
-            "-datadir=/tmp/bitcoin",
-            "-rpcbind=127.0.0.1",
-            "-rpcpassword=secret",
-            "-rpcport=18443",
-            "-rpcuser=user",
-        ];
-
-        for arg in conflicts {
-            let conf = BitcoinDConf {
-                raw_args: vec![arg.to_string()],
-                ..BitcoinDConf::default()
-            };
-            assert!(matches!(
-                BitcoinD::configured_args(&conf),
-                Err(Error::Node(NodeError::ConflictingArgument(conflict))) if conflict == arg
-            ));
-        }
-
-        let conf = BitcoinDConf {
-            raw_args: vec!["-debug=net".to_string(), "-maxconnections=8".to_string()],
-            ..BitcoinDConf::default()
-        };
-        assert!(BitcoinD::configured_args(&conf).is_ok());
-    }
-}
+#[cfg(all(test, halfin_node))]
+mod test;

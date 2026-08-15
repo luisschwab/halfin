@@ -427,10 +427,21 @@ impl ElectrumxD {
             count
         );
 
+        self.send_admin_rpc("reorg", &serde_json::json!({ "count": count }))?;
+
+        debug!("{}: triggered daemon refresh", Self::get_name());
+
+        Ok(())
+    }
+
+    /// Send a command to the local `ElectrumX` admin RPC socket.
+    ///
+    /// Return `false` if the server does not accept connections.
+    fn send_admin_rpc(&self, method: &str, params: &serde_json::Value) -> Result<bool, Error> {
         let mut stream = match TcpStream::connect_timeout(&self.rpc_socket, Duration::from_secs(1))
         {
             Ok(stream) => stream,
-            Err(err) if err.kind() == ErrorKind::ConnectionRefused => return Ok(()),
+            Err(err) if err.kind() == ErrorKind::ConnectionRefused => return Ok(false),
             Err(err) => return Err(Error::Io(err)),
         };
         stream
@@ -443,10 +454,8 @@ impl ElectrumxD {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 0,
-            "method": "reorg",
-            "params": {
-                "count": count
-            }
+            "method": method,
+            "params": params,
         });
         writeln!(stream, "{request}").map_err(Error::Io)?;
         stream.flush().map_err(Error::Io)?;
@@ -460,16 +469,14 @@ impl ElectrumxD {
 
         if let Some(error) = response.get("error").filter(|error| !error.is_null()) {
             return Err(Error::UnexpectedResponse(format!(
-                "failed to trigger ElectrumX refresh: {error}"
+                "ElectrumX admin method `{method}` failed: {error}"
             )));
         }
 
-        debug!("{}: triggered daemon refresh", Self::get_name());
-
-        Ok(())
+        Ok(true)
     }
 
-    /// Terminate the `ElectrumX` process and wait for it to exit.
+    /// Stop the `ElectrumX` process and wait for it to exit.
     ///
     /// [`Drop`] stops the process without a call to this method.
     /// Call this method to get the exit status or confirm that the process has stopped.
@@ -479,7 +486,20 @@ impl ElectrumxD {
     /// Returns an error if the function cannot wait for the child process.
     pub fn stop(&mut self) -> Result<std::process::ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
-        let _ = self.process.kill();
+        if !matches!(
+            self.send_admin_rpc("stop", &serde_json::json!({})),
+            Ok(true)
+        ) {
+            if cfg!(target_os = "windows") {
+                let _ = Command::new("taskkill")
+                    .args(["/PID", &self.process.id().to_string(), "/T", "/F"])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            } else {
+                let _ = self.process.kill();
+            }
+        }
         self.process.wait().map_err(Error::Io)
     }
 
@@ -887,26 +907,11 @@ impl ElectrumxD {
 }
 
 impl Drop for ElectrumxD {
-    /// Terminate the `electrumx` process and wait for it to exit.
+    /// Stop the `electrumx` process and wait for it to exit.
     ///
-    /// Ignore errors from `kill` and `wait` to prevent a panic in [`Drop`].
+    /// Ignore errors to prevent a panic in [`Drop`].
     fn drop(&mut self) {
-        debug!(
-            "{}: killing process with pid={}",
-            Self::get_name(),
-            self.process.id()
-        );
-
-        if cfg!(target_os = "windows") {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &self.process.id().to_string(), "/T", "/F"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-        } else {
-            let _ = self.process.kill();
-        }
-        let _ = self.process.wait();
+        let _ = self.stop();
     }
 }
 
@@ -953,100 +958,5 @@ fn is_header_not_ready(err: &ElectrumError) -> bool {
     is_empty_subscription_read(err) || matches!(err, ElectrumError::Protocol(_))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn configuration_defaults() {
-        let conf = ElectrumxDConf::default();
-
-        assert_eq!(conf.electrumx_args.coin, "Bitcoin");
-        assert!(conf.raw_args.is_empty());
-        assert_eq!(conf.max_retries, SPAWN_ATTEMPTS);
-        assert_eq!(
-            ElectrumxD::configured_args(&conf, Network::Regtest).unwrap(),
-            ["--coin", "Bitcoin", "--net", "regtest"]
-        );
-    }
-
-    #[test]
-    fn renders_every_network() {
-        let cases = [
-            (Network::Bitcoin, "mainnet"),
-            (Network::Testnet, "testnet"),
-            (Network::Testnet4, "testnet4"),
-            (Network::Signet, "signet"),
-            (Network::Regtest, "regtest"),
-        ];
-
-        for (network, expected) in cases {
-            let conf = ElectrumxDConf::default();
-
-            assert_eq!(
-                ElectrumxD::configured_args(&conf, network).unwrap(),
-                ["--coin", "Bitcoin", "--net", expected]
-            );
-        }
-    }
-
-    #[test]
-    fn renders_coin() {
-        let conf = ElectrumxDConf {
-            electrumx_args: ElectrumxDArgs {
-                coin: "Namecoin".to_string(),
-            },
-            ..ElectrumxDConf::default()
-        };
-
-        assert_eq!(
-            ElectrumxD::configured_args(&conf, Network::Regtest).unwrap(),
-            ["--coin", "Namecoin", "--net", "regtest"]
-        );
-    }
-
-    #[test]
-    fn rejects_owned_raw_arguments() {
-        let cases = [
-            "--coin",
-            "--coin=Bitcoin",
-            "--daemon-url",
-            "--daemon-url=http://user:pass@127.0.0.1:1",
-            "--db-directory",
-            "--db-directory=/tmp/electrumx",
-            "--net",
-            "--net=testnet",
-            "--peer-discovery",
-            "--peer-discovery=on",
-            "--no-peer-discovery",
-            "--nopeer-discovery",
-            "--services",
-            "--services=tcp://127.0.0.1:50001",
-        ];
-
-        for arg in cases {
-            let conf = ElectrumxDConf {
-                raw_args: vec![arg.to_string()],
-                ..ElectrumxDConf::default()
-            };
-
-            assert!(matches!(
-                ElectrumxD::configured_args(&conf, Network::Regtest),
-                Err(Error::Indexer(IndexerError::ConflictingArgument(conflict))) if conflict == arg
-            ));
-        }
-    }
-
-    #[test]
-    fn accepts_unmodeled_raw_arguments() {
-        let conf = ElectrumxDConf {
-            raw_args: vec![
-                "--log-level=debug".to_string(),
-                "--cache-mb=512".to_string(),
-            ],
-            ..ElectrumxDConf::default()
-        };
-
-        assert!(ElectrumxD::configured_args(&conf, Network::Regtest).is_ok());
-    }
-}
+#[cfg(all(test, halfin_indexer))]
+mod test;

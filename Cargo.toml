@@ -67,7 +67,7 @@ tools = { cargo-audit = "=0.22.2", zizmor = "=1.26.1" }
 lint = { allowed_duplicates = ["base64", "hex-conservative"] }
 
 [package.metadata.rbmt.test]
-# rbmt already runs tests with `--all-features` unconditionally
+# `cargo-rbmt` already runs tests with `--all-features` unconditionally
 exclude_features = [
     "bitcoind",
     "florestad",

@@ -427,3 +427,6 @@ pub(crate) fn write_rpc_cookie(data_dir: &Path) -> Result<PathBuf, Error> {
     write!(file, "{RPC_USER}:{RPC_PASS}").map_err(Error::Io)?;
     Ok(cookie_file)
 }
+
+#[cfg(all(test, halfin_node))]
+mod test;

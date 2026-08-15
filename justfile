@@ -10,6 +10,7 @@ alias sc := shellcheck
 alias z := zizmor
 alias p := pre-push
 
+stable_toolchain := `cargo rbmt toolchains --stable`
 export RBMT_LOG_LEVEL := env("RBMT_LOG_LEVEL", "progress")
 
 _default:
@@ -49,14 +50,36 @@ lock:
     cargo rbmt lock
 
 [doc: "Run Tests"]
-test:
-    RBMT_LOG_LEVEL=verbose cargo rbmt test
+[env("RBMT_LOG_LEVEL", "verbose")]
+test features="":
+    {{ if features == "" { \
+        "cargo rbmt test" \
+    } else { \
+        "cargo +" + stable_toolchain + \
+            " test --no-default-features --features " + quote(features) \
+    } }}
 
 [doc: "Run Tests with Lockfile and Toolchain Combos"]
-test-all:
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile recent
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
+[env("RBMT_LOG_LEVEL", "verbose")]
+test-all features="":
+    {{ if features == "" { \
+        "cargo rbmt test --toolchain stable --lockfile recent" \
+    } else { \
+        "cargo rbmt run --toolchain stable --lockfile recent -- test" + \
+            " --no-default-features --features " + quote(features) \
+    } }}
+    {{ if features == "" { \
+        "cargo rbmt test --toolchain stable --lockfile minimal" \
+    } else { \
+        "cargo rbmt run --toolchain stable --lockfile minimal -- test" + \
+            " --no-default-features --features " + quote(features) \
+    } }}
+    {{ if features == "" { \
+        "cargo rbmt test --toolchain msrv --lockfile minimal" \
+    } else { \
+        "cargo rbmt run --toolchain msrv --lockfile minimal -- test" + \
+            " --no-default-features --features " + quote(features) \
+    } }}
 
 [doc: "Update Stable and Nightly Toolchains"]
 toolchains:

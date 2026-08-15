@@ -73,6 +73,42 @@ pub mod error;
 pub mod indexer;
 pub mod node;
 
+/// Number of blocks used to confirm test transactions.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const CONFIRMATION_BLOCK_COUNT: u32 = 3;
+
+/// Number of confirmations required before a coinbase output can be spent.
+#[cfg(all(
+    test,
+    any(feature = "bitcoind", all(feature = "florestad", feature = "utreexod"))
+))]
+pub(crate) const COINBASE_MATURITY_BLOCK_COUNT: u32 = 100;
+
+/// Number of blocks used to test compact block filter progress.
+#[cfg(all(test, any(feature = "bitcoind", feature = "utreexod")))]
+pub(crate) const FILTER_BLOCK_COUNT: u32 = 21;
+
+/// Number of generated blocks that makes the first coinbase output mature.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const MATURE_COINBASE_BLOCK_COUNT: u32 = COINBASE_MATURITY_BLOCK_COUNT + 1;
+
+/// Number of blocks used to test persistent data directories.
+#[cfg(all(test, halfin_node))]
+pub(crate) const PERSISTENCE_BLOCK_COUNT: u32 = 3;
+
+/// Block batches used for repeated synchronization tests.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const SYNC_BLOCK_BATCHES: &[u32] = &[1, 2, 5];
+
+/// Number of blocks present before repeated synchronization tests start.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const SYNC_INITIAL_BLOCK_COUNT: u32 = 5;
+
+/// Public key used for watch-only wallet descriptor tests.
+#[cfg(all(test, feature = "florestad"))]
+pub(crate) const WALLET_PUBKEY: &str =
+    "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
+
 /// IPv4 localhost address.
 const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 

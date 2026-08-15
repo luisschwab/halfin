@@ -29,6 +29,7 @@
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
@@ -237,8 +238,6 @@ impl ElectrsD {
 }
 
 impl ElectrsD {
-    // ----> ELECTRS
-
     /// Start an [`ElectrsD`] [`Indexer`] with the binary from [`get_electrs_path`].
     /// Use the default [`ElectrsDConf`].
     ///
@@ -611,8 +610,8 @@ impl ElectrsD {
     ///
     /// # Errors
     ///
-    /// Returns an error if Electrum subscription/history calls fail or the
-    /// transaction does not appear before the timeout.
+    /// Returns an error if Electrum history calls fail or the transaction does
+    /// not appear before the timeout.
     pub fn wait_until_mempool_tx(
         &self,
         spk: &Script,
@@ -625,15 +624,12 @@ impl ElectrsD {
             txid
         );
 
-        let (subscribed, initial_status) = match self.client.script_subscribe(spk) {
-            Ok(status) => (true, status),
-            Err(ElectrumError::AlreadySubscribed(_)) => (false, None),
-            Err(err) => return Err(unresponsive_indexer(err).into()),
-        };
-
         let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
-        let result = (|| {
-            if initial_status.is_some() && self.script_history_has_mempool_tx(spk, txid)? {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            self.trigger()?;
+
+            if Self::script_history_has_mempool_tx(&self.client, spk, txid)? {
                 debug!(
                     "{}: found mempool transaction with txid={}",
                     Self::get_name(),
@@ -643,46 +639,16 @@ impl ElectrsD {
                 return Ok(());
             }
 
-            let start = Instant::now();
-            while start.elapsed() < timeout {
-                self.trigger()?;
-                self.client.ping().map_err(unresponsive_indexer)?;
-
-                if self
-                    .client
-                    .script_pop(spk)
-                    .map_err(unresponsive_indexer)?
-                    .is_some()
-                    && self.script_history_has_mempool_tx(spk, txid)?
-                {
-                    debug!(
-                        "{}: found mempool transaction with txid={}",
-                        Self::get_name(),
-                        txid
-                    );
-
-                    return Ok(());
-                }
-
-                sleep(2 * POLL_INTERVAL);
-            }
-
-            Err(IndexerError::IndexingTimeout {
-                indexer: Self::get_name(),
-                description: format!("mempool transaction with txid={txid}"),
-                timeout,
-            }
-            .into())
-        })();
-
-        if subscribed {
-            let _ = self.client.script_unsubscribe(spk);
+            sleep(2 * POLL_INTERVAL);
         }
 
-        result
+        Err(IndexerError::IndexingTimeout {
+            indexer: Self::get_name(),
+            description: format!("mempool transaction with txid={txid}"),
+            timeout,
+        }
+        .into())
     }
-
-    // ----> INTERNAL
 
     /// Validate raw arguments and create [`Indexer`] arguments.
     fn configured_args(conf: &ElectrsDConf, network: Network) -> Result<Vec<String>, Error> {
@@ -712,10 +678,13 @@ impl ElectrsD {
     }
 
     /// Return whether the history of `spk` contains `txid` as an unconfirmed transaction.
-    fn script_history_has_mempool_tx(&self, spk: &Script, txid: Txid) -> Result<bool, Error> {
-        self.client
-            .script_get_history(spk)
-            .map(|history| {
+    fn script_history_has_mempool_tx(
+        client: &RawClient<ElectrumPlaintextStream>,
+        spk: &Script,
+        txid: Txid,
+    ) -> Result<bool, Error> {
+        match client.script_get_history(spk) {
+            Ok(history) => {
                 let has_tx = history
                     .iter()
                     .any(|entry| entry.tx_hash == txid && entry.height == 0);
@@ -727,9 +696,11 @@ impl ElectrsD {
                     has_tx
                 );
 
-                has_tx
-            })
-            .map_err(|source| unresponsive_indexer(source).into())
+                Ok(has_tx)
+            }
+            Err(err) if is_incomplete_read(&err) => Ok(false),
+            Err(err) => Err(unresponsive_indexer(err).into()),
+        }
     }
 
     /// Wait for an Electrum block header notification for `exp_height` and `exp_hash`.
@@ -765,11 +736,22 @@ impl ElectrsD {
         let start = Instant::now();
         while start.elapsed() < timeout {
             self.trigger()?;
-            client.ping().map_err(unresponsive_indexer)?;
+            match client.ping() {
+                Ok(()) => {}
+                Err(err) if is_incomplete_read(&err) => {
+                    sleep(2 * POLL_INTERVAL);
+                    continue;
+                }
+                Err(err) => return Err(unresponsive_indexer(err).into()),
+            }
 
             let notification = match next_notification.take() {
                 Some(notification) => Some(notification),
-                None => client.block_headers_pop().map_err(unresponsive_indexer)?,
+                None => match client.block_headers_pop() {
+                    Ok(notification) => notification,
+                    Err(err) if is_incomplete_read(&err) => None,
+                    Err(err) => return Err(unresponsive_indexer(err).into()),
+                },
             };
             let Some(notification) = notification else {
                 sleep(2 * POLL_INTERVAL);
@@ -874,95 +856,43 @@ fn electrs_header_matches(
     let header = if notification_height == exp_height {
         notification.header
     } else {
-        client
-            .block_header(
-                usize::try_from(exp_height)
-                    .map_err(|err| Error::UnexpectedResponse(err.to_string()))?,
-            )
-            .map_err(unresponsive_indexer)?
+        match client.block_header(
+            usize::try_from(exp_height)
+                .map_err(|err| Error::UnexpectedResponse(err.to_string()))?,
+        ) {
+            Ok(header) => header,
+            Err(err) if is_incomplete_read(&err) => return Ok(false),
+            Err(err) => return Err(unresponsive_indexer(err).into()),
+        }
     };
 
     Ok(exp_hash.is_none_or(|exp_hash| header.block_hash() == exp_hash))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn configuration_defaults() {
-        let conf = ElectrsDConf::default();
-
-        assert!(conf.raw_args.is_empty());
-        assert_eq!(conf.max_retries, SPAWN_ATTEMPTS);
-        assert_eq!(
-            ElectrsD::configured_args(&conf, Network::Regtest).unwrap(),
-            ["--network", "regtest"]
-        );
-    }
-
-    #[test]
-    fn renders_every_network() {
-        let cases = [
-            (Network::Bitcoin, "bitcoin"),
-            (Network::Testnet, "testnet"),
-            (Network::Testnet4, "testnet4"),
-            (Network::Signet, "signet"),
-            (Network::Regtest, "regtest"),
-        ];
-
-        for (network, expected) in cases {
-            let conf = ElectrsDConf::default();
-
-            assert_eq!(
-                ElectrsD::configured_args(&conf, network).unwrap(),
-                ["--network", expected]
-            );
-        }
-    }
-
-    #[test]
-    fn rejects_owned_raw_arguments() {
-        let cases = [
-            "--network",
-            "--network=signet",
-            "--db-dir",
-            "--db-dir=/tmp/electrs",
-            "--daemon-rpc-addr",
-            "--daemon-rpc-addr=127.0.0.1:1",
-            "--daemon-p2p-addr",
-            "--daemon-p2p-addr=127.0.0.1:2",
-            "--electrum-rpc-addr",
-            "--electrum-rpc-addr=127.0.0.1:3",
-            "--monitoring-addr",
-            "--monitoring-addr=127.0.0.1:4",
-            "--cookie-file",
-            "--cookie-file=/tmp/.cookie",
-        ];
-
-        for arg in cases {
-            let conf = ElectrsDConf {
-                raw_args: vec![arg.to_string()],
-                ..ElectrsDConf::default()
-            };
-
-            assert!(matches!(
-                ElectrsD::configured_args(&conf, Network::Regtest),
-                Err(Error::Indexer(IndexerError::ConflictingArgument(conflict))) if conflict == arg
-            ));
-        }
-    }
-
-    #[test]
-    fn accepts_unmodeled_raw_arguments() {
-        let conf = ElectrsDConf {
-            raw_args: vec![
-                "--log-filters=debug".to_string(),
-                "--index-batch-size=100".to_string(),
-            ],
-            ..ElectrsDConf::default()
-        };
-
-        assert!(ElectrsD::configured_args(&conf, Network::Regtest).is_ok());
-    }
+/// Return whether an Electrum client error means that the socket has no complete response.
+fn is_incomplete_read(err: &ElectrumError) -> bool {
+    matches!(
+        err,
+        ElectrumError::IOError(io_err)
+            if matches!(
+                io_err.kind(),
+                ErrorKind::WouldBlock
+                    | ErrorKind::TimedOut
+                    | ErrorKind::UnexpectedEof
+                    | ErrorKind::BrokenPipe
+            )
+    ) || matches!(
+        err,
+        ElectrumError::SharedIOError(io_err)
+            if matches!(
+                io_err.kind(),
+                ErrorKind::WouldBlock
+                    | ErrorKind::TimedOut
+                    | ErrorKind::UnexpectedEof
+                    | ErrorKind::BrokenPipe
+            )
+    )
 }
+
+#[cfg(all(test, halfin_indexer))]
+mod test;

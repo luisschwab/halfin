@@ -272,8 +272,6 @@ impl Node for UtreexoD {
 }
 
 impl UtreexoD {
-    // ----> NODE
-
     /// Start [`UtreexoD`] with the binary from [`get_utreexod_path`].
     /// Use the default [`UtreexoDConf`].
     ///
@@ -538,8 +536,6 @@ impl UtreexoD {
         self.p2p_socket
     }
 
-    // ----> RPC CALL WRAPPERS
-
     /// Return the current chain height.
     ///
     /// # Errors
@@ -772,8 +768,6 @@ impl UtreexoD {
         Ok(hashes)
     }
 
-    // ----> INTERNAL
-
     /// Validate typed and raw configuration.
     fn validate_configuration(conf: &UtreexoDConf) -> Result<(), Error> {
         const OPTIONS: &[&str] = &[
@@ -997,209 +991,5 @@ impl Drop for UtreexoD {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_invalid(conf: &UtreexoDConf) {
-        assert!(matches!(
-            UtreexoD::configured_args(conf),
-            Err(Error::Node(NodeError::InvalidConfiguration(_)))
-        ));
-    }
-
-    #[test]
-    fn default_configuration_preserves_existing_behavior() {
-        let conf = UtreexoDConf::default();
-
-        assert!(conf.raw_args.is_empty());
-        assert_eq!(conf.args.network, Network::Regtest);
-        assert!(conf.args.cbf_index);
-        assert_eq!(conf.args.prune, PruneMode::Disabled);
-        assert!(conf.args.v2_transport);
-        assert!(!conf.args.txindex);
-        assert!(!conf.utreexod_args.dns_seed);
-        assert!(!conf.utreexod_args.assume_utreexo);
-        assert_eq!(conf.utreexod_args.proof_index_max_memory_mib, 256);
-        assert_eq!(
-            conf.utreexod_args
-                .mining_address
-                .as_ref()
-                .unwrap()
-                .assume_checked_ref()
-                .to_string(),
-            DEFAULT_MINING_ADDRESS
-        );
-        assert_eq!(
-            UtreexoD::configured_args(&conf).unwrap(),
-            [
-                "--regtest",
-                "--cfilters",
-                "--prune=0",
-                "--v2transport",
-                "--notls",
-                "--nodnsseed",
-                "--noassumeutreexo",
-                "--miningaddr=bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4yak",
-                "--flatutreexoproofindex",
-                "--utreexoproofindexmaxmemory=256",
-            ]
-        );
-    }
-
-    #[test]
-    fn renders_supported_networks_and_data_paths() {
-        let cases = [
-            (Network::Bitcoin, None, "mainnet"),
-            (Network::Testnet, Some("--testnet"), "testnet3"),
-            (Network::Signet, Some("--signet"), "signet"),
-            (Network::Regtest, Some("--regtest"), "regtest"),
-        ];
-
-        for (network, switch, data_dir) in cases {
-            let mut conf = UtreexoDConf::default();
-            conf.args.network = network;
-            conf.utreexod_args.mining_address = None;
-            let args = UtreexoD::configured_args(&conf).unwrap();
-            match switch {
-                Some(switch) => assert!(args.contains(&switch.to_string())),
-                None => {
-                    assert!(!args.iter().any(|arg| {
-                        ["--testnet", "--signet", "--regtest"].contains(&arg.as_str())
-                    }));
-                }
-            }
-            assert_eq!(UtreexoD::network_data_dir_name(network), data_dir);
-        }
-
-        assert_eq!(
-            UtreexoD::network_data_dir_name(Network::Testnet4),
-            "testnet4"
-        );
-    }
-
-    #[test]
-    fn rejects_testnet4() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.network = Network::Testnet4;
-        conf.utreexod_args.mining_address = None;
-        assert_invalid(&conf);
-    }
-
-    #[test]
-    fn renders_boolean_and_daemon_specific_flags() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.cbf_index = false;
-        conf.args.v2_transport = false;
-        conf.args.txindex = true;
-        conf.utreexod_args.dns_seed = true;
-        conf.utreexod_args.assume_utreexo = true;
-        conf.utreexod_args.mining_address = None;
-        conf.utreexod_args.proof_index_max_memory_mib = 512;
-
-        let args = UtreexoD::configured_args(&conf).unwrap();
-        assert!(!args.contains(&"--cfilters".to_string()));
-        assert!(!args.contains(&"--v2transport".to_string()));
-        assert!(args.contains(&"--txindex".to_string()));
-        assert!(!args.contains(&"--nodnsseed".to_string()));
-        assert!(!args.contains(&"--noassumeutreexo".to_string()));
-        assert!(!args.iter().any(|arg| arg.starts_with("--miningaddr=")));
-        assert!(args.contains(&"--notls".to_string()));
-        assert!(args.contains(&"--flatutreexoproofindex".to_string()));
-        assert!(args.contains(&"--utreexoproofindexmaxmemory=512".to_string()));
-    }
-
-    #[test]
-    fn validates_pruning_modes() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.prune = PruneMode::Automatic(550);
-        assert!(
-            UtreexoD::configured_args(&conf)
-                .unwrap()
-                .contains(&"--prune=550".to_string())
-        );
-
-        conf.args.prune = PruneMode::Automatic(549);
-        assert_invalid(&conf);
-
-        conf.args.prune = PruneMode::Manual;
-        assert_invalid(&conf);
-
-        conf.args.prune = PruneMode::Automatic(550);
-        conf.args.txindex = true;
-        assert_invalid(&conf);
-    }
-
-    #[test]
-    fn validates_proof_index_memory() {
-        let mut conf = UtreexoDConf::default();
-        conf.utreexod_args.proof_index_max_memory_mib = 249;
-        assert_invalid(&conf);
-
-        conf.utreexod_args.proof_index_max_memory_mib = 250;
-        assert!(UtreexoD::configured_args(&conf).is_ok());
-    }
-
-    #[test]
-    fn validates_mining_address_network() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.network = Network::Bitcoin;
-        assert_invalid(&conf);
-
-        conf.utreexod_args.mining_address = Some(
-            Address::from_str("1BitcoinEaterAddressDontSendf59kuE").expect("valid mainnet address"),
-        );
-        let args = UtreexoD::configured_args(&conf).unwrap();
-        assert!(args.contains(&"--miningaddr=1BitcoinEaterAddressDontSendf59kuE".to_string()));
-    }
-
-    #[test]
-    fn rejects_raw_typed_and_invariant_argument_spellings() {
-        let conflicts = [
-            "--regtest",
-            "--noregtest",
-            "--testnet=true",
-            "--cfilters",
-            "--nocfilters",
-            "--prune=0",
-            "--noprune",
-            "--v2transport",
-            "--nov2transport",
-            "--txindex=true",
-            "--notxindex",
-            "--dnsseed",
-            "--nodnsseed",
-            "--assumeutreexo",
-            "--noassumeutreexo",
-            "--miningaddr=bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4yak",
-            "--notls",
-            "--tls",
-            "--flatutreexoproofindex",
-            "--noflatutreexoproofindex",
-            "--utreexoproofindex",
-            "--utreexoproofindexmaxmemory=500",
-            "--datadir=/tmp/utreexo",
-            "--listen=127.0.0.1:18333",
-            "--rpcpass=secret",
-            "--rpclisten=127.0.0.1:18334",
-            "--rpcuser=user",
-        ];
-
-        for arg in conflicts {
-            let conf = UtreexoDConf {
-                raw_args: vec![arg.to_string()],
-                ..UtreexoDConf::default()
-            };
-            assert!(matches!(
-                UtreexoD::configured_args(&conf),
-                Err(Error::Node(NodeError::ConflictingArgument(conflict))) if conflict == arg
-            ));
-        }
-
-        let conf = UtreexoDConf {
-            raw_args: vec!["--debuglevel=trace".to_string(), "--maxpeers=8".to_string()],
-            ..UtreexoDConf::default()
-        };
-        assert!(UtreexoD::configured_args(&conf).is_ok());
-    }
-}
+#[cfg(all(test, halfin_node))]
+mod test;

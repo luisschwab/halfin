@@ -92,7 +92,7 @@ pub struct FlorestaDArgs {
     /// Validates skipped blocks in the background.
     pub backfill: bool,
     /// Output descriptors for transactions that Floresta indexes.
-    pub wallet_descriptors: Vec<Descriptor<DescriptorPublicKey>>,
+    pub descriptors: Vec<Descriptor<DescriptorPublicKey>>,
 }
 
 /// Configuration for a [`FlorestaD`] instance.
@@ -133,7 +133,7 @@ impl Default for FlorestaDConf {
                 allow_v1_fallback: false,
                 assume_utreexo: false,
                 backfill: false,
-                wallet_descriptors: Vec::new(),
+                descriptors: Vec::new(),
             },
             raw_args: Vec::new(),
             tmpdir: None,
@@ -639,7 +639,7 @@ impl FlorestaD {
         }
         args.extend(
             conf.florestad_args
-                .wallet_descriptors
+                .descriptors
                 .iter()
                 .map(|descriptor| format!("--wallet-descriptor={descriptor}")),
         );
@@ -713,136 +713,5 @@ impl Drop for FlorestaD {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_configuration_is_isolated_regtest() {
-        let conf = FlorestaDConf::default();
-
-        assert_eq!(conf.args.network, Network::Regtest);
-        assert!(conf.args.v2_transport);
-        assert!(conf.args.cbf_index);
-        assert_eq!(conf.args.prune, PruneMode::Disabled);
-        assert!(!conf.args.txindex);
-        assert!(!conf.florestad_args.dns_seeds);
-        assert!(!conf.florestad_args.allow_v1_fallback);
-        assert!(!conf.florestad_args.assume_utreexo);
-        assert!(!conf.florestad_args.backfill);
-        assert!(conf.florestad_args.wallet_descriptors.is_empty());
-        assert_eq!(
-            FlorestaD::configured_args(&conf).unwrap(),
-            [
-                "--network=regtest",
-                "--disable-dns-seeds",
-                "--no-assume-utreexo",
-                "--no-backfill",
-            ]
-        );
-    }
-
-    #[test]
-    fn renders_supported_flags() {
-        const PUBLIC_KEY: &str =
-            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
-
-        let mut conf = FlorestaDConf::default();
-        conf.args.network = Network::Testnet4;
-        conf.args.v2_transport = false;
-        conf.args.cbf_index = false;
-        conf.florestad_args.dns_seeds = true;
-        conf.florestad_args.allow_v1_fallback = true;
-        conf.florestad_args.assume_utreexo = true;
-        conf.florestad_args.backfill = true;
-        conf.florestad_args.wallet_descriptors = [
-            format!("wpkh({PUBLIC_KEY})"),
-            format!("sh(wpkh({PUBLIC_KEY}))"),
-        ]
-        .map(|descriptor| descriptor.parse().unwrap())
-        .to_vec();
-
-        assert_eq!(
-            FlorestaD::configured_args(&conf).unwrap(),
-            [
-                "--network=testnet4".to_string(),
-                "--no-cfilters".to_string(),
-                "--allow-v1-fallback".to_string(),
-                format!(
-                    "--wallet-descriptor={}",
-                    conf.florestad_args.wallet_descriptors[0]
-                ),
-                format!(
-                    "--wallet-descriptor={}",
-                    conf.florestad_args.wallet_descriptors[1]
-                ),
-            ]
-        );
-    }
-
-    #[test]
-    fn renders_v1_fallback_independently_from_manual_peer_transport() {
-        let mut conf = FlorestaDConf::default();
-        conf.args.v2_transport = false;
-
-        assert!(
-            !FlorestaD::configured_args(&conf)
-                .unwrap()
-                .contains(&"--allow-v1-fallback".to_string())
-        );
-
-        conf.args.v2_transport = true;
-        conf.florestad_args.allow_v1_fallback = true;
-
-        assert!(
-            FlorestaD::configured_args(&conf)
-                .unwrap()
-                .contains(&"--allow-v1-fallback".to_string())
-        );
-    }
-
-    #[test]
-    fn rejects_unsupported_typed_configuration() {
-        let mut conf = FlorestaDConf::default();
-        conf.args.prune = PruneMode::Automatic(550);
-        assert!(matches!(
-            FlorestaD::configured_args(&conf),
-            Err(Error::Node(NodeError::InvalidConfiguration(_)))
-        ));
-
-        conf.args.prune = PruneMode::Disabled;
-        conf.args.txindex = true;
-        assert!(matches!(
-            FlorestaD::configured_args(&conf),
-            Err(Error::Node(NodeError::InvalidConfiguration(_)))
-        ));
-    }
-
-    #[test]
-    fn rejects_owned_raw_arguments() {
-        for arg in [
-            "--network=bitcoin",
-            "-n=signet",
-            "-nregtest",
-            "--data-dir=/tmp/floresta",
-            "--rpc-address=127.0.0.1:8332",
-            "--electrum-address=127.0.0.1:50001",
-            "--no-cfilters",
-            "--disable-dns-seeds",
-            "--no-assume-utreexo",
-            "--no-backfill",
-            "--wallet-descriptor=raw(51)",
-            "--allow-v1-fallback",
-            "--daemon",
-        ] {
-            let conf = FlorestaDConf {
-                raw_args: vec![arg.to_string()],
-                ..FlorestaDConf::default()
-            };
-            assert!(matches!(
-                FlorestaD::configured_args(&conf),
-                Err(Error::Node(NodeError::ConflictingArgument(conflict))) if conflict == arg
-            ));
-        }
-    }
-}
+#[cfg(all(test, halfin_node))]
+mod test;

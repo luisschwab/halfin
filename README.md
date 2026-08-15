@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="static/halfin.webp" width="40%" alt="A Bitcoin Node Runner (Hal Finney)">
+    <img src="asset/image/halfin.webp" width="40%" alt="A Bitcoin Node Runner (Hal Finney)">
 </p>
 
 # halfin
@@ -92,7 +92,22 @@ let res = utreexod.call("uptime", &[]).unwrap();
 ### FlorestaD
 
 ```rust
-TODO
+use halfin::node::florestad::FlorestaD;
+use halfin::node::utreexod::UtreexoD;
+use halfin::node::{connect_and_sync, wait_for_height};
+
+// Mine blocks with a Utreexo peer
+let utreexod = UtreexoD::new().unwrap();
+utreexod.generate(10).unwrap();
+
+// Wait until the Utreexo forest is ready
+wait_for_height(&utreexod, 10).unwrap();
+
+// Connect Floresta outbound and wait for synchronization
+let florestad = FlorestaD::new().unwrap();
+connect_and_sync(&florestad, &utreexod).unwrap();
+
+assert_eq!(florestad.get_chain_tip().unwrap(), 10);
 ```
 
 ## Developing
@@ -111,23 +126,23 @@ A `justfile` is provided for convenience. Run `just` to see available commands:
 
 ```shell
 > halfin
-> A regtest runner for `bitcoind` and `utreexod`
+> A runner for bitcoin nodes and indexers
 
 Available recipes:
-    audit      # Run cargo-audit across all lockfiles and prune stale advisories [alias: a]
-    build      # Build `halfin` [alias: b]
-    check      # Check Formatting, Linting and Documentation [alias: c]
-    doc        # Generate Documentation [alias: d]
-    doc-open   # Generate and Open Documentation [alias: do]
-    fmt        # Format Code [alias: f]
-    lock       # Regenerate Lockfiles [alias: l]
-    pre-push   # Run pre-push checks [alias: p]
-    shellcheck # Run ShellCheck [alias: sc]
-    test       # Run Tests [alias: t]
-    test-all   # Run Tests with Lockfile and Toolchain Combos
-    toolchains # Update Stable and Nightly Toolchains
-    tools      # Install cargo-rbmt Tools
-    zizmor     # Run Zizmor Static Analysis [alias: z]
+    audit                # Run cargo-audit across all lockfiles and prune stale advisories [alias: a]
+    build                # Build `halfin` [alias: b]
+    check                # Check Formatting, Linting and Documentation [alias: c]
+    doc                  # Generate Documentation [alias: d]
+    doc-open             # Generate and Open Documentation [alias: do]
+    fmt                  # Format Code [alias: f]
+    lock                 # Regenerate Lockfiles [alias: l]
+    pre-push             # Run pre-push checks [alias: p]
+    shellcheck           # Run ShellCheck [alias: sc]
+    test features=""     # Run Tests [alias: t]
+    test-all features="" # Run Tests with Lockfile and Toolchain Combos
+    toolchains           # Update Stable and Nightly Toolchains
+    tools                # Install cargo-rbmt Tools
+    zizmor               # Run Zizmor Static Analysis [alias: z]
 ```
 
 ## Minimum Supported Rust Version

@@ -105,24 +105,3 @@ impl From<IndexerError> for Error {
         Self::Indexer(err)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg(halfin_node)]
-    use super::Error;
-    #[cfg(halfin_node)]
-    use crate::node::NodeError;
-
-    #[test]
-    #[cfg(halfin_node)]
-    fn node_error_conversion_preserves_display() {
-        let err = Error::from(NodeError::JsonRpc(
-            corepc_client::client_sync::Error::MissingUserPassword,
-        ));
-
-        assert_eq!(
-            err.to_string(),
-            "JSON-RPC error: missing user and/or password"
-        );
-    }
-}

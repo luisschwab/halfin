@@ -30,7 +30,6 @@ jobs:
                       // Paths of all the managed labels
                       const filePathsToLabels = {
                         '.github/': 'ci',
-                        'tests/': 'test',
                         'sha256/': 'sha256',
                         'src/node/bitcoind/': 'M-bitcoind',
                         'src/node/florestad/': 'M-florestad',

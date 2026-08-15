@@ -173,3 +173,6 @@ pub trait Indexer {
         timeout: Option<Duration>,
     ) -> Result<(), Error>;
 }
+
+#[cfg(all(test, halfin_indexer))]
+mod test;
