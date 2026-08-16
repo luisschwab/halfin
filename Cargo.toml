@@ -63,8 +63,12 @@ lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
 [package.metadata.rbmt]
 version = "0.5.2"
 toolchains = { stable = "1.97.1", nightly = "nightly-2026-08-12" }
-tools = { cargo-audit = "0.22.2", zizmor = "1.29.0" }
 lint = { allowed_duplicates = ["base64", "hex-conservative"] }
+
+[package.metadata.rbmt.tools]
+cargo-audit = "0.22.2"
+cargo-llvm-cov = "0.8.7"
+zizmor = "1.29.0"
 
 [package.metadata.rbmt.test]
 # `cargo-rbmt` already runs tests with `--all-features` unconditionally

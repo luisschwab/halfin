@@ -1,6 +1,7 @@
 alias a := audit
 alias b := build
 alias c := check
+alias cov := coverage
 alias d := doc
 alias do := doc-open
 alias f := fmt
@@ -10,7 +11,7 @@ alias sc := shellcheck
 alias z := zizmor
 alias p := pre-push
 
-stable_toolchain := `cargo rbmt toolchains --stable`
+stable := `cargo rbmt toolchains --stable`
 export RBMT_LOG_LEVEL := env("RBMT_LOG_LEVEL", "progress")
 
 _default:
@@ -55,7 +56,7 @@ test features="":
     {{ if features == "" { \
         "cargo rbmt test" \
     } else { \
-        "cargo +" + stable_toolchain + \
+        "cargo +" + stable + \
             " test --no-default-features --features " + quote(features) \
     } }}
 
@@ -83,6 +84,18 @@ test-all features="":
         "cargo rbmt run --toolchain msrv --lockfile minimal -- test" + \
             " --no-default-features --features " + quote(features) \
     } }}
+
+[doc: "Generate Code Coverage"]
+[env("CARGO_LLVM_COV_SETUP", "yes")]
+coverage:
+    cargo +{{ stable }} llvm-cov \
+        --all-features \
+        --html \
+        --ignore-filename-regex '(^|/)test[.]rs$'
+    cargo +{{ stable }} llvm-cov report \
+        --lcov \
+        --output-path target/llvm-cov/lcov.info \
+        --ignore-filename-regex '(^|/)test[.]rs$'
 
 [doc: "Update Stable and Nightly Toolchains"]
 toolchains:

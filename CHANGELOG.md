@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Add code coverage testing by way of `cargo-llvm-cov`
 * Add `fixed_peers` to `NodeArgs`
 * Relax dependency versions
 * Replace repeated feature gates with `halfin_node` and `halfin_indexer` aliases
