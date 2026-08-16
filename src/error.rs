@@ -105,3 +105,65 @@ impl From<IndexerError> for Error {
         Self::Indexer(err)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::path::PathBuf;
+
+    use super::Error;
+
+    /// Exercise every common error display branch.
+    #[test]
+    fn common_errors_are_displayable() {
+        let errors = [
+            Error::BinaryPathNotAbsolute {
+                bin_name: "daemon".to_string(),
+                path: "daemon".to_string(),
+            },
+            Error::BinaryPathNotFile {
+                bin_name: "daemon".to_string(),
+                path: "/missing/daemon".to_string(),
+            },
+            Error::BinaryNotFound(("daemon".to_string(), PathBuf::from("/missing/daemon"))),
+            Error::FailedToSpawn(io::Error::other("spawn failed")),
+            Error::StartupAttemptsExhausted(3),
+            Error::Io(io::Error::other("I/O failed")),
+            Error::BothDirsSpecified,
+            Error::ClientSetupTimeout,
+            Error::UnexpectedResponse("invalid response".to_string()),
+        ];
+
+        for error in errors {
+            drop(error.to_string());
+        }
+    }
+
+    /// Exercise the node error wrapper and conversion.
+    #[cfg(halfin_node)]
+    #[test]
+    fn node_errors_convert_to_common_errors() {
+        use crate::node::NodeError;
+
+        let error = Error::from(NodeError::ConflictingArgument("rpcport".to_string()));
+        assert!(matches!(
+            error,
+            Error::Node(NodeError::ConflictingArgument(_))
+        ));
+        drop(error.to_string());
+    }
+
+    /// Exercise the indexer error wrapper and conversion.
+    #[cfg(halfin_indexer)]
+    #[test]
+    fn indexer_errors_convert_to_common_errors() {
+        use crate::indexer::IndexerError;
+
+        let error = Error::from(IndexerError::ConflictingArgument("db-dir".to_string()));
+        assert!(matches!(
+            error,
+            Error::Indexer(IndexerError::ConflictingArgument(_))
+        ));
+        drop(error.to_string());
+    }
+}

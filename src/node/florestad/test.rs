@@ -2,12 +2,19 @@
 
 //! Configuration and runtime integration tests for [`FlorestaD`].
 
-#[cfg(feature = "utreexod")]
 use core::time::Duration;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Write;
+use std::net::TcpListener;
+#[cfg(unix)]
+use std::process::Command;
+use std::thread::JoinHandle;
 
 use corepc_client::bitcoin::Network;
 use electrum_client::ElectrumApi;
 
+use super::Client;
 use super::FlorestaD;
 use super::FlorestaDConf;
 use super::get_florestad_path;
@@ -20,6 +27,9 @@ use crate::node::NodeError;
 use crate::node::PruneMode;
 #[cfg(feature = "utreexod")]
 use crate::node::connect_and_sync;
+use crate::node::test::scripted_json_rpc_server;
+#[cfg(unix)]
+use crate::node::test::test_program;
 #[cfg(feature = "utreexod")]
 use crate::node::test::wait_for_fixed_peers;
 #[cfg(feature = "utreexod")]
@@ -30,6 +40,135 @@ use crate::node::wait_for_height_with_timeout;
 #[cfg(feature = "utreexod")]
 const SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Start an Electrum server that completes negotiation and drops the ping request.
+fn electrum_server_without_ping_response() -> (core::net::SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = String::new();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut request)
+            .unwrap();
+        let version_request: serde_json::Value = serde_json::from_str(&request).unwrap();
+        writeln!(
+            stream,
+            "{}",
+            serde_json::json!({
+                "id": version_request["id"].clone(),
+                "result": ["halfin-test", "1.4"]
+            })
+        )
+        .unwrap();
+
+        request.clear();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut request)
+            .unwrap();
+    });
+    (socket, handle)
+}
+
+/// Verify binary-path validation and zero start attempts.
+#[test]
+fn florestad_validates_binary_path_and_start_attempts() {
+    let error = FlorestaD::from_bin("florestad").unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotAbsolute { .. }));
+
+    let root = tempfile::tempdir().unwrap();
+    let error = FlorestaD::from_bin(root.path().join("missing-florestad")).unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotFile { .. }));
+
+    let config = FlorestaDConf {
+        max_retries: 0,
+        ..FlorestaDConf::default()
+    };
+    let error = FlorestaD::from_bin_with_conf(get_florestad_path().unwrap(), &config).unwrap_err();
+    assert!(matches!(error, Error::StartupAttemptsExhausted(0)));
+}
+
+/// Verify directory, spawn, retry, and client-timeout startup failures.
+#[cfg(unix)]
+#[test]
+fn florestad_reports_test_program_startup_failures() {
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = FlorestaDConf {
+        tmpdir: Some(program.clone()),
+        max_retries: 1,
+        ..FlorestaDConf::default()
+    };
+    assert!(matches!(
+        FlorestaD::from_bin_with_conf(&program, &config),
+        Err(Error::Io(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", false);
+    let config = FlorestaDConf {
+        max_retries: 1,
+        ..FlorestaDConf::default()
+    };
+    assert!(matches!(
+        FlorestaD::from_bin_with_conf(&program, &config),
+        Err(Error::FailedToSpawn(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = FlorestaDConf {
+        max_retries: 2,
+        ..FlorestaDConf::default()
+    };
+    assert!(matches!(
+        FlorestaD::from_bin_with_conf(&program, &config),
+        Err(Error::StartupAttemptsExhausted(2))
+    ));
+
+    let (_program_directory, program) = test_program("exec sleep 30", true);
+    let config = FlorestaDConf {
+        max_retries: 1,
+        ..FlorestaDConf::default()
+    };
+    assert!(matches!(
+        FlorestaD::from_bin_with_conf(&program, &config),
+        Err(Error::StartupAttemptsExhausted(1))
+    ));
+}
+
+/// Verify malformed successful RPC results are rejected by typed helpers.
+#[test]
+fn florestad_rejects_malformed_rpc_results() {
+    let mut florestad = FlorestaD::new().unwrap();
+    let (socket, server) = scripted_json_rpc_server(vec![
+        serde_json::json!("not-a-height"),
+        serde_json::json!(0),
+        serde_json::json!("not-a-block-hash"),
+        serde_json::Value::Null,
+        serde_json::Value::Null,
+    ]);
+    florestad.client = Client::new(&format!("http://{socket}"));
+
+    assert!(matches!(
+        florestad.get_chain_tip(),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        florestad.get_block_hash(0),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        florestad.get_block_hash(0),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        florestad.has_peer("127.0.0.1:18444".parse().unwrap()),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        florestad.get_peer_count(),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    server.join().unwrap();
+}
+
 /// Verify Floresta startup, process data, and RPC data.
 #[test]
 fn florestad_starts() {
@@ -37,12 +176,58 @@ fn florestad_starts() {
         raw_args: vec!["--debug".to_string()],
         ..FlorestaDConf::default()
     };
-    let florestad = FlorestaD::from_bin_with_conf(get_florestad_path().unwrap(), &config).unwrap();
+    let mut florestad =
+        FlorestaD::from_bin_with_conf(get_florestad_path().unwrap(), &config).unwrap();
 
     assert!(florestad.get_pid() > 0);
     assert!(florestad.get_working_directory().is_dir());
     assert_eq!(florestad.get_config(), &config);
+    assert_eq!(Node::get_config(&florestad), &config);
+    assert_eq!(config.as_ref(), &config.args);
+    let _ = florestad.get_rpc_client();
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let unavailable_socket = listener.local_addr().unwrap();
+    drop(listener);
+    assert!(matches!(
+        FlorestaD::wait_for_rpc_client(
+            &format!("http://{unavailable_socket}"),
+            Duration::from_millis(250),
+        ),
+        Err(Error::ClientSetupTimeout)
+    ));
+    assert!(matches!(
+        FlorestaD::wait_for_electrum_client(
+            unavailable_socket,
+            &mut florestad.process,
+            Duration::from_millis(250),
+        ),
+        Err(Error::Node(NodeError::UnresponsiveNode { .. }))
+    ));
+    let (socket, server) = electrum_server_without_ping_response();
+    assert!(matches!(
+        FlorestaD::wait_for_electrum_client(
+            socket,
+            &mut florestad.process,
+            Duration::from_millis(250),
+        ),
+        Err(Error::Node(NodeError::UnresponsiveNode { .. }))
+    ));
+    server.join().unwrap();
+    #[cfg(unix)]
+    {
+        let mut exited_process = Command::new("true").spawn().unwrap();
+        exited_process.wait().unwrap();
+        assert!(matches!(
+            FlorestaD::wait_for_electrum_client(
+                unavailable_socket,
+                &mut exited_process,
+                Duration::from_secs(1),
+            ),
+            Err(Error::ClientSetupTimeout)
+        ));
+    }
     assert_eq!(florestad.get_chain_tip().unwrap(), 0);
+    Node::get_block_hash(&florestad, 0).unwrap();
     assert_eq!(florestad.get_peer_count().unwrap(), 0);
     assert_eq!(
         florestad.get_electrum_url(),
@@ -63,6 +248,12 @@ fn florestad_starts() {
             command: "get_filter_tip"
         }))
     ));
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Node::get_p2p_socket(&florestad)
+        }))
+        .is_err()
+    );
 }
 
 /// Verify that Floresta synchronizes with a chain that `utreexod` mines.
@@ -129,6 +320,15 @@ fn florestad_connects_to_fixed_peer() {
 
     wait_for_fixed_peers(&florestad, &peers, Duration::from_secs(15));
     assert_eq!(florestad.get_peer_count().unwrap(), peers.len() as u32);
+
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let unavailable_socket = listener.local_addr().unwrap();
+    drop(listener);
+    assert!(matches!(
+        florestad.add_peer(unavailable_socket),
+        Err(Error::Node(NodeError::ConnectionTimeout(timeout)))
+            if timeout == crate::CONNECTION_TIMEOUT
+    ));
 }
 
 #[test]

@@ -2,16 +2,36 @@
 
 //! Configuration and runtime integration tests for [`ElectrsD`].
 
+use core::time::Duration;
+#[cfg(feature = "bitcoind")]
+use std::io::BufRead;
+#[cfg(feature = "bitcoind")]
+use std::io::BufReader;
 use std::io::Error as IoError;
 use std::io::ErrorKind;
+#[cfg(feature = "bitcoind")]
+use std::io::Write;
+#[cfg(any(feature = "bitcoind", unix))]
+use std::net::TcpListener;
+#[cfg(unix)]
+use std::process::Command;
 use std::sync::Arc;
+#[cfg(feature = "bitcoind")]
+use std::thread::JoinHandle;
 
 #[cfg(feature = "bitcoind")]
 use corepc_client::bitcoin::Amount;
 use corepc_client::bitcoin::Network;
+use corepc_client::bitcoin::ScriptBuf;
+use corepc_client::bitcoin::Txid;
+use corepc_client::bitcoin::consensus::serialize;
+use corepc_client::bitcoin::constants::genesis_block;
+use corepc_client::bitcoin::hashes::Hash;
+use corepc_client::bitcoin::hex::DisplayHex;
 #[cfg(feature = "bitcoind")]
 use electrum_client::ElectrumApi;
 use electrum_client::Error as ElectrumError;
+use electrum_client::HeaderNotification;
 #[cfg(feature = "bitcoind")]
 use tracing::Level;
 #[cfg(feature = "bitcoind")]
@@ -21,7 +41,12 @@ use tracing::info;
 use super::ELECTRS_INDEXING_TIMEOUT;
 use super::ElectrsD;
 use super::ElectrsDConf;
+#[cfg(feature = "bitcoind")]
+use super::electrs_header_matches;
+use super::electrs_header_matches_with;
+use super::get_electrs_path;
 use super::is_incomplete_read;
+use super::unresponsive_indexer;
 #[cfg(feature = "bitcoind")]
 use crate::CONFIRMATION_BLOCK_COUNT;
 use crate::Error;
@@ -35,6 +60,13 @@ use crate::SYNC_BLOCK_BATCHES;
 #[cfg(feature = "bitcoind")]
 use crate::SYNC_INITIAL_BLOCK_COUNT;
 use crate::indexer::IndexerError;
+use crate::indexer::test::FakeNode;
+use crate::indexer::test::scripted_electrum_client;
+#[cfg(feature = "bitcoind")]
+use crate::indexer::test::scripted_electrum_socket;
+#[cfg(unix)]
+use crate::indexer::test::test_program;
+use crate::node::PruneMode;
 #[cfg(feature = "bitcoind")]
 use crate::node::bitcoind::BitcoinD;
 #[cfg(feature = "florestad")]
@@ -42,19 +74,300 @@ use crate::node::florestad::FlorestaD;
 #[cfg(feature = "utreexod")]
 use crate::node::utreexod::UtreexoD;
 
+/// Start an Electrum server that queues an invalid raw header during two ping calls.
+#[cfg(feature = "bitcoind")]
+fn electrum_server_with_invalid_queued_header(
+    initial_header: serde_json::Value,
+    notification_height: u32,
+) -> (core::net::SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request_line = String::new();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut request_line)
+            .unwrap();
+        let version_request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+        writeln!(
+            stream,
+            "{}",
+            serde_json::json!({
+                "id": version_request["id"].clone(),
+                "result": ["halfin-test", "1.4"]
+            })
+        )
+        .unwrap();
+
+        request_line.clear();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut request_line)
+            .unwrap();
+        let subscribe_request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+        writeln!(
+            stream,
+            "{}",
+            serde_json::json!({
+                "id": subscribe_request["id"].clone(),
+                "result": initial_header
+            })
+        )
+        .unwrap();
+
+        for ping_index in 0..2 {
+            request_line.clear();
+            BufReader::new(stream.try_clone().unwrap())
+                .read_line(&mut request_line)
+                .unwrap();
+            let ping_request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+            if ping_index == 0 {
+                writeln!(
+                    stream,
+                    "{}",
+                    serde_json::json!({
+                        "method": "blockchain.headers.subscribe",
+                        "params": [{ "height": notification_height, "hex": "00" }]
+                    })
+                )
+                .unwrap();
+            }
+            writeln!(
+                stream,
+                "{}",
+                serde_json::json!({ "id": ping_request["id"].clone(), "result": null })
+            )
+            .unwrap();
+        }
+    });
+    (socket, handle)
+}
+
+/// Verify binary-path validation and zero start attempts.
+#[test]
+fn electrsd_validates_binary_path_and_start_attempts() {
+    let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }));
+
+    let error = ElectrsD::from_bin("electrs", &node).unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotAbsolute { .. }));
+
+    let root = tempfile::tempdir().unwrap();
+    let error = ElectrsD::from_bin(root.path().join("missing-electrs"), &node).unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotFile { .. }));
+
+    node.write_cookie("user:password");
+    let config = ElectrsDConf {
+        max_retries: 0,
+        ..ElectrsDConf::default()
+    };
+    let error =
+        ElectrsD::from_bin_with_conf(get_electrs_path().unwrap(), &node, &config).unwrap_err();
+    assert!(matches!(error, Error::StartupAttemptsExhausted(0)));
+}
+
+/// Verify directory, spawn, retry, and client-timeout startup failures.
+#[cfg(unix)]
+#[test]
+fn electrsd_reports_test_program_startup_failures() {
+    let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }));
+    node.write_cookie("user:password");
+
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = ElectrsDConf {
+        tmpdir: Some(program.clone()),
+        max_retries: 1,
+        ..ElectrsDConf::default()
+    };
+    assert!(matches!(
+        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::Io(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", false);
+    let config = ElectrsDConf {
+        max_retries: 1,
+        ..ElectrsDConf::default()
+    };
+    assert!(matches!(
+        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::FailedToSpawn(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = ElectrsDConf {
+        max_retries: 2,
+        ..ElectrsDConf::default()
+    };
+    assert!(matches!(
+        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::StartupAttemptsExhausted(2))
+    ));
+
+    let (_program_directory, program) = test_program("exec sleep 30", true);
+    let config = ElectrsDConf {
+        max_retries: 1,
+        ..ElectrsDConf::default()
+    };
+    assert!(matches!(
+        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::StartupAttemptsExhausted(1))
+    ));
+}
+
+/// Verify pruned backing nodes are rejected before startup.
+#[test]
+fn electrsd_rejects_pruned_backends() {
+    let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }))
+        .with_prune(PruneMode::Automatic(1));
+    node.write_cookie("user:password");
+
+    assert!(matches!(
+        ElectrsD::from_bin(get_electrs_path().unwrap(), &node),
+        Err(Error::Indexer(IndexerError::InvalidConfiguration(_)))
+    ));
+}
+
+/// Verify Electrum history transport and protocol failures are classified.
+#[test]
+fn electrsd_classifies_history_failures() {
+    let script = ScriptBuf::new();
+    let txid = Txid::all_zeros();
+
+    let (client, server) = scripted_electrum_client(None);
+    assert!(!ElectrsD::script_history_has_mempool_tx(&client, &script, txid).unwrap());
+    server.join().unwrap();
+
+    let (client, server) = scripted_electrum_client(Some(Err(serde_json::json!({
+        "code": 1,
+        "message": "unavailable"
+    }))));
+    assert!(matches!(
+        ElectrsD::script_history_has_mempool_tx(&client, &script, txid),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    server.join().unwrap();
+}
+
+/// Verify client setup distinguishes an exited process from an unavailable socket.
+#[cfg(unix)]
+#[test]
+fn electrsd_reports_client_setup_failures() {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    drop(listener);
+
+    let mut process = Command::new("sleep").arg("2").spawn().unwrap();
+    assert!(matches!(
+        ElectrsD::wait_for_client(socket, &mut process, Duration::from_millis(250)),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    process.kill().unwrap();
+    process.wait().unwrap();
+
+    let mut process = Command::new("true").spawn().unwrap();
+    process.wait().unwrap();
+    assert!(matches!(
+        ElectrsD::wait_for_client(socket, &mut process, Duration::from_secs(1)),
+        Err(Error::ClientSetupTimeout)
+    ));
+}
+
 /// Verify that socket timeouts are treated as incomplete reads.
 #[test]
 fn electrsd_treats_socket_timeouts_as_incomplete_reads() {
-    let error = ElectrumError::IOError(IoError::from(ErrorKind::TimedOut));
-    assert!(is_incomplete_read(&error));
+    for kind in [
+        ErrorKind::WouldBlock,
+        ErrorKind::TimedOut,
+        ErrorKind::UnexpectedEof,
+        ErrorKind::BrokenPipe,
+    ] {
+        let error = ElectrumError::IOError(IoError::from(kind));
+        assert!(is_incomplete_read(&error));
 
-    let error = ElectrumError::SharedIOError(Arc::new(IoError::from(ErrorKind::TimedOut)));
-    assert!(is_incomplete_read(&error));
+        let error = ElectrumError::SharedIOError(Arc::new(IoError::from(kind)));
+        assert!(is_incomplete_read(&error));
+    }
+
+    let error = ElectrumError::Message("complete error".to_string());
+    assert!(!is_incomplete_read(&error));
+
+    assert!(matches!(
+        unresponsive_indexer(error),
+        IndexerError::UnresponsiveIndexer {
+            indexer: "ElectrsD",
+            ..
+        }
+    ));
+}
+
+/// Verify Electrs header matching without a running server.
+#[test]
+fn electrsd_matches_header_notifications() {
+    let header = genesis_block(Network::Regtest).header;
+    let notification = HeaderNotification { height: 1, header };
+
+    let matched = electrs_header_matches_with(&notification, 2, None, |_| {
+        unreachable!("an older notification does not request a header")
+    })
+    .unwrap();
+    assert!(!matched);
+
+    let matched = electrs_header_matches_with(
+        &notification,
+        1,
+        Some(notification.header.block_hash()),
+        |_| unreachable!("an equal-height notification supplies the header"),
+    )
+    .unwrap();
+    assert!(matched);
+
+    let matched = electrs_header_matches_with(&notification, 0, None, |height| {
+        assert_eq!(height, 0);
+        Ok(header)
+    })
+    .unwrap();
+    assert!(matched);
+
+    let incomplete = ElectrumError::IOError(IoError::from(ErrorKind::UnexpectedEof));
+    let matched = electrs_header_matches_with(&notification, 0, None, |_| Err(incomplete)).unwrap();
+    assert!(!matched);
+
+    let error = electrs_header_matches_with(&notification, 0, None, |_| {
+        Err(ElectrumError::Message("unavailable".to_string()))
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::UnresponsiveIndexer { .. })
+    ));
+
+    let matched = electrs_header_matches_with(
+        &notification,
+        1,
+        Some(genesis_block(Network::Bitcoin).block_hash()),
+        |_| unreachable!("an equal-height notification supplies the header"),
+    )
+    .unwrap();
+    assert!(!matched);
+}
+
+/// Verify oversized notification heights are rejected.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn electrsd_rejects_oversized_notification_height() {
+    let header = genesis_block(Network::Regtest).header;
+    let notification = HeaderNotification {
+        height: usize::MAX,
+        header,
+    };
+
+    let error = electrs_header_matches_with(&notification, 0, None, |_| Ok(header)).unwrap_err();
+    assert!(matches!(error, Error::UnexpectedResponse(_)));
 }
 
 /// Verify that [`ElectrsD`] uses the selected Bitcoin Core P2P port and accepts requests.
 #[cfg(feature = "bitcoind")]
 #[test]
+#[allow(clippy::too_many_lines)]
 fn electrsd_accepts_bitcoind() {
     let _ = tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
@@ -64,8 +377,43 @@ fn electrsd_accepts_bitcoind() {
     let bitcoind = BitcoinD::new().unwrap();
     assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
 
-    let electrsd = ElectrsD::new(&bitcoind).unwrap();
+    let mut electrsd = ElectrsD::new(&bitcoind).unwrap();
     assert_eq!(bitcoind.get_peer_count().unwrap(), 1);
+
+    let height = bitcoind.get_chain_tip().unwrap();
+    let block_hash = bitcoind.get_block_hash(height).unwrap();
+    electrsd
+        .wait_until_block(height, None, Some(ELECTRS_INDEXING_TIMEOUT))
+        .unwrap();
+    let tip = electrsd.client.block_headers_subscribe().unwrap();
+    let notification = HeaderNotification {
+        height: tip.height + 1,
+        header: tip.header,
+    };
+    assert!(
+        electrs_header_matches(
+            &electrsd.client,
+            &notification,
+            u32::try_from(tip.height).unwrap(),
+            Some(tip.header.block_hash()),
+        )
+        .unwrap()
+    );
+    let error = electrsd
+        .wait_until_tip(height + 1, block_hash, Some(Duration::ZERO))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::IndexingTimeout { .. })
+    ));
+    assert!(matches!(
+        ElectrsD::wait_for_client(
+            electrsd.get_electrum_socket(),
+            &mut electrsd.process,
+            Duration::ZERO,
+        ),
+        Err(Error::ClientSetupTimeout)
+    ));
 
     electrsd.client.ping().unwrap();
 
@@ -77,6 +425,75 @@ fn electrsd_accepts_bitcoind() {
         electrsd.client.server_features().unwrap().protocol_max
     );
     info!("Monitoring Socket: {}", electrsd.get_monitoring_socket());
+
+    let notification = serde_json::json!({
+        "height": height,
+        "hex": serialize(&genesis_block(Network::Regtest).header).to_lower_hex_string(),
+    });
+    let protocol_error = serde_json::json!({ "code": 1, "message": "unavailable" });
+    let (socket, server) = scripted_electrum_socket(vec![
+        Some(Ok(notification.clone())),
+        Some(Err(protocol_error)),
+    ]);
+    electrsd.client =
+        electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
+            .unwrap();
+    assert!(matches!(
+        electrsd.wait_until_block(height, None, Some(Duration::from_secs(1))),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    server.join().unwrap();
+
+    let (socket, server) = scripted_electrum_socket(vec![Some(Ok(notification)), None]);
+    electrsd.client =
+        electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
+            .unwrap();
+    let result = electrsd.wait_until_block(height, None, Some(Duration::from_millis(250)));
+    #[cfg(not(target_os = "windows"))]
+    assert!(matches!(
+        result,
+        Err(Error::Indexer(IndexerError::IndexingTimeout { .. }))
+    ));
+    #[cfg(target_os = "windows")]
+    assert!(matches!(
+        result,
+        Err(Error::Indexer(
+            IndexerError::IndexingTimeout { .. } | IndexerError::UnresponsiveIndexer { .. }
+        ))
+    ));
+    server.join().unwrap();
+
+    let older_notification = serde_json::json!({
+        "height": height,
+        "hex": serialize(&genesis_block(Network::Regtest).header).to_lower_hex_string(),
+    });
+    let (socket, server) = scripted_electrum_socket(vec![
+        Some(Ok(older_notification)),
+        Some(Ok(serde_json::Value::Null)),
+        Some(Ok(serde_json::Value::Null)),
+    ]);
+    electrsd.client =
+        electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
+            .unwrap();
+    assert!(matches!(
+        electrsd.wait_until_block(height + 1, None, Some(Duration::from_millis(250))),
+        Err(Error::Indexer(IndexerError::IndexingTimeout { .. }))
+    ));
+    server.join().unwrap();
+
+    let initial_header = serde_json::json!({
+        "height": height,
+        "hex": serialize(&genesis_block(Network::Regtest).header).to_lower_hex_string(),
+    });
+    let (socket, server) = electrum_server_with_invalid_queued_header(initial_header, height);
+    electrsd.client =
+        electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
+            .unwrap();
+    assert!(matches!(
+        electrsd.wait_until_block(height + 1, None, Some(Duration::from_secs(1))),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    server.join().unwrap();
 }
 
 /// Verify that rejection of [`UtreexoD`] occurs before data directory creation.
@@ -140,6 +557,17 @@ fn electrsd_sees_mempool_transactions() {
         .unwrap()
         .assume_checked();
     let script_pubkey = address.script_pubkey();
+    let error = electrsd
+        .wait_until_mempool_tx(
+            &script_pubkey,
+            Txid::all_zeros(),
+            Some(Duration::from_millis(1)),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::IndexingTimeout { .. })
+    ));
     let txid = bitcoind
         .client
         .send_to_address(&address, Amount::from_int_btc(1))
@@ -147,6 +575,14 @@ fn electrsd_sees_mempool_transactions() {
         .txid()
         .unwrap();
     electrsd.trigger().unwrap();
+
+    let error = electrsd
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(Duration::ZERO))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::IndexingTimeout { .. })
+    ));
 
     electrsd
         .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRS_INDEXING_TIMEOUT))
@@ -307,6 +743,13 @@ fn electrsd_lifecycle_exposes_runtime_state_and_removes_temporary_directory() {
     electrsd.client.ping().unwrap();
 
     electrsd.stop().unwrap();
+    #[cfg(not(target_os = "windows"))]
+    assert!(matches!(
+        electrsd.trigger(),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    #[cfg(target_os = "windows")]
+    electrsd.trigger().unwrap();
     drop(electrsd);
     assert!(!directory.exists());
 }

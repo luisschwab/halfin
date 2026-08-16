@@ -114,3 +114,61 @@ impl fmt::Display for NodeError {
 }
 
 impl error::Error for NodeError {}
+
+#[cfg(test)]
+mod tests {
+    use core::net::SocketAddr;
+    use core::time::Duration;
+
+    use corepc_client::client_sync::Error as RpcError;
+
+    use super::NodeClientError;
+    use super::NodeError;
+
+    /// Exercise JSON-RPC client error conversion and display.
+    #[test]
+    fn json_rpc_client_errors_convert_and_display() {
+        let error = NodeClientError::from(RpcError::InvalidCookieFile);
+        assert!(matches!(error, NodeClientError::JsonRpc(_)));
+        drop(error.to_string());
+    }
+
+    /// Exercise Electrum client error conversion and display.
+    #[cfg(feature = "florestad")]
+    #[test]
+    fn electrum_client_errors_convert_and_display() {
+        let error =
+            NodeClientError::from(electrum_client::Error::Message("unavailable".to_string()));
+        assert!(matches!(error, NodeClientError::Electrum(_)));
+        drop(error.to_string());
+    }
+
+    /// Exercise every node error display branch.
+    #[test]
+    fn node_errors_are_displayable() {
+        let local_socket = SocketAddr::from(([127, 0, 0, 1], 18_444));
+        let remote_socket = SocketAddr::from(([127, 0, 0, 1], 18_445));
+        let timeout = Duration::from_secs(1);
+        let errors = [
+            NodeError::FailedToStop(RpcError::InvalidCookieFile),
+            NodeError::JsonRpc(RpcError::InvalidCookieFile),
+            NodeError::PeerConnectionTimeout((local_socket, remote_socket)),
+            NodeError::ConflictingArgument("rpcport".to_string()),
+            NodeError::InvalidConfiguration("invalid value".to_string()),
+            NodeError::UnsupportedCommand {
+                node: "FakeNode",
+                command: "generate",
+            },
+            NodeError::UnresponsiveNode {
+                node: "FakeNode",
+                source: NodeClientError::JsonRpc(RpcError::InvalidCookieFile),
+            },
+            NodeError::ChainSyncTimeout((10, 9, timeout)),
+            NodeError::ConnectionTimeout(timeout),
+        ];
+
+        for error in errors {
+            drop(error.to_string());
+        }
+    }
+}

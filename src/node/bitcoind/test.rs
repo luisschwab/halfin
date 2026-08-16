@@ -3,10 +3,13 @@
 //! Configuration and runtime integration tests for [`BitcoinD`].
 
 use std::fs;
+use std::time::Duration;
 
 use corepc_client::bitcoin::Amount;
 use corepc_client::bitcoin::FeeRate;
 use corepc_client::bitcoin::Network;
+use corepc_client::client_sync::Auth;
+use corepc_client::client_sync::v30::Client;
 
 use super::BitcoinD;
 use super::BitcoinDConf;
@@ -16,12 +19,144 @@ use crate::Error;
 use crate::FILTER_BLOCK_COUNT;
 use crate::MATURE_COINBASE_BLOCK_COUNT;
 use crate::PERSISTENCE_BLOCK_COUNT;
+use crate::node::Node;
 use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::node::connect;
+use crate::node::test::scripted_json_rpc_server;
+#[cfg(unix)]
+use crate::node::test::test_program;
 use crate::node::test::wait_for_fixed_peers;
 use crate::node::wait_for_filter_height;
 use crate::node::wait_for_height;
+
+/// Verify binary-path validation and zero start attempts.
+#[test]
+fn bitcoind_validates_binary_path_and_start_attempts() {
+    let error = BitcoinD::from_bin("bitcoind").unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotAbsolute { .. }));
+
+    let root = tempfile::tempdir().unwrap();
+    let error = BitcoinD::from_bin(root.path().join("missing-bitcoind")).unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotFile { .. }));
+
+    let config = BitcoinDConf {
+        max_retries: 0,
+        ..BitcoinDConf::default()
+    };
+    let error = BitcoinD::from_bin_with_conf(get_bitcoind_path().unwrap(), &config).unwrap_err();
+    assert!(matches!(error, Error::StartupAttemptsExhausted(0)));
+}
+
+/// Verify data-directory, spawn, and immediate-exit startup failures.
+#[cfg(unix)]
+#[test]
+fn bitcoind_reports_test_program_startup_failures() {
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = BitcoinDConf {
+        tmpdir: Some(program.clone()),
+        max_retries: 1,
+        ..BitcoinDConf::default()
+    };
+    assert!(matches!(
+        BitcoinD::from_bin_with_conf(&program, &config),
+        Err(Error::Io(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", false);
+    let config = BitcoinDConf {
+        max_retries: 1,
+        ..BitcoinDConf::default()
+    };
+    assert!(matches!(
+        BitcoinD::from_bin_with_conf(&program, &config),
+        Err(Error::FailedToSpawn(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = BitcoinDConf {
+        max_retries: 2,
+        ..BitcoinDConf::default()
+    };
+    assert!(matches!(
+        BitcoinD::from_bin_with_conf(&program, &config),
+        Err(Error::StartupAttemptsExhausted(2))
+    ));
+}
+
+/// Verify RPC client construction retries and readiness timeouts.
+#[test]
+fn bitcoind_reports_rpc_client_setup_failures() {
+    let directory = tempfile::tempdir().unwrap();
+    let auth = Auth::CookieFile(directory.path().join("missing-cookie"));
+    assert!(matches!(
+        BitcoinD::create_base_rpc_client("http://127.0.0.1:1", &auth),
+        Err(Error::Node(NodeError::UnresponsiveNode { .. }))
+    ));
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    drop(listener);
+    let client = Client::new_with_auth(
+        &format!("http://{socket}"),
+        Auth::UserPass("user".to_string(), "password".to_string()),
+    )
+    .unwrap();
+    assert!(matches!(
+        BitcoinD::wait_for_client(&client, Duration::from_millis(250)),
+        Err(Error::ClientSetupTimeout)
+    ));
+}
+
+/// Verify malformed successful RPC results are rejected by typed helpers.
+#[test]
+fn bitcoind_rejects_malformed_rpc_results() {
+    let mut bitcoind = BitcoinD::new().unwrap();
+    let address = bitcoind.client.new_address().unwrap();
+    let (socket, server) = scripted_json_rpc_server(vec![
+        serde_json::json!("not-a-block-hash"),
+        serde_json::json!(["not-a-block-hash"]),
+        serde_json::json!(address.to_string()),
+        serde_json::json!(["not-a-block-hash"]),
+        serde_json::json!("not-a-block-hash"),
+    ]);
+    bitcoind.client = Client::new_with_auth(
+        &format!("http://{socket}"),
+        Auth::UserPass("user".to_string(), "password".to_string()),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        bitcoind.get_block_hash(0),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        bitcoind.generate_to_address(1, &address),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        bitcoind.generate(1),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        bitcoind.invalidate_blocks(1),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    server.join().unwrap();
+}
+
+/// Verify a node without compact-filter indexing reports the missing index.
+#[test]
+fn bitcoind_reports_disabled_filter_index() {
+    let mut config = BitcoinDConf::default();
+    config.args.cbf_index = false;
+    let bitcoind = BitcoinD::new_with_conf(&config).unwrap();
+
+    assert!(matches!(
+        bitcoind.get_filter_tip(),
+        Err(Error::UnexpectedResponse(_))
+    ));
+}
 
 /// Verify [`BitcoinD`] startup, process data, and P2P data.
 #[test]
@@ -33,10 +168,14 @@ fn bitcoind_starts() {
     };
     let bitcoind = BitcoinD::from_bin_with_conf(bin, &conf).unwrap();
 
-    println!("PID: {}", bitcoind.get_pid());
-    println!("Working Directory: {:?}", bitcoind.get_working_directory());
-    println!("P2P Socket: {}", bitcoind.get_p2p_socket());
     assert_eq!(bitcoind.get_config(), &conf);
+    assert_eq!(Node::get_config(&bitcoind), &conf);
+    assert_eq!(conf.as_ref(), &conf.args);
+    let _ = bitcoind.get_rpc_client();
+    assert!(matches!(
+        BitcoinD::wait_for_client(bitcoind.get_rpc_client(), Duration::ZERO),
+        Err(Error::ClientSetupTimeout)
+    ));
 }
 
 /// Verify that `generate` mines the specified number of blocks.
@@ -47,7 +186,7 @@ fn bitcoind_generate() {
     let height = bitcoind.get_chain_tip().unwrap();
     assert_eq!(height, 0);
 
-    bitcoind.generate(10).unwrap();
+    Node::generate(&bitcoind, 10).unwrap();
 
     let height = bitcoind.get_chain_tip().unwrap();
     assert_eq!(height, 10);
@@ -102,7 +241,7 @@ fn bitcoind_get_block_hash() {
 
     let block_hashes = bitcoind.generate(10).unwrap();
 
-    let last_block_hash = bitcoind.get_block_hash(10).unwrap();
+    let last_block_hash = Node::get_block_hash(&bitcoind, 10).unwrap();
 
     assert_eq!(last_block_hash, *block_hashes.last().unwrap());
 }
@@ -122,6 +261,15 @@ fn bitcoind_addnode() {
 
     assert_eq!(bitcoind_alpha.get_peer_count().unwrap(), 1);
     assert_eq!(bitcoind_beta.get_peer_count().unwrap(), 1);
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let unavailable_socket = listener.local_addr().unwrap();
+    drop(listener);
+    assert!(matches!(
+        bitcoind_alpha.add_peer(unavailable_socket),
+        Err(Error::Node(NodeError::PeerConnectionTimeout((local, remote))))
+            if local == bitcoind_alpha.get_p2p_socket() && remote == unavailable_socket
+    ));
 }
 
 /// Verify that [`BitcoinD`] connects to all fixed peers during startup.

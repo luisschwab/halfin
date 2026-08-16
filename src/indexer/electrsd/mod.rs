@@ -43,6 +43,7 @@ use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
 use corepc_client::bitcoin::Script;
 use corepc_client::bitcoin::Txid;
+use corepc_client::bitcoin::block::Header;
 use electrum_client::ElectrumApi;
 use electrum_client::Error as ElectrumError;
 use electrum_client::HeaderNotification;
@@ -846,6 +847,21 @@ fn electrs_header_matches(
     exp_height: u32,
     exp_hash: Option<BlockHash>,
 ) -> Result<bool, Error> {
+    electrs_header_matches_with(notification, exp_height, exp_hash, |height| {
+        client.block_header(height)
+    })
+}
+
+/// Check an Electrum header notification with an injected historical-header lookup.
+fn electrs_header_matches_with<F>(
+    notification: &HeaderNotification,
+    exp_height: u32,
+    exp_hash: Option<BlockHash>,
+    get_header: F,
+) -> Result<bool, Error>
+where
+    F: FnOnce(usize) -> Result<Header, ElectrumError>,
+{
     let notification_height = u32::try_from(notification.height)
         .map_err(|err| Error::UnexpectedResponse(err.to_string()))?;
 
@@ -856,7 +872,7 @@ fn electrs_header_matches(
     let header = if notification_height == exp_height {
         notification.header
     } else {
-        match client.block_header(
+        match get_header(
             usize::try_from(exp_height)
                 .map_err(|err| Error::UnexpectedResponse(err.to_string()))?,
         ) {
