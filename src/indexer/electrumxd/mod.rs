@@ -438,42 +438,7 @@ impl ElectrumxD {
     ///
     /// Return `false` if the server does not accept connections.
     fn send_admin_rpc(&self, method: &str, params: &serde_json::Value) -> Result<bool, Error> {
-        let mut stream = match TcpStream::connect_timeout(&self.rpc_socket, Duration::from_secs(1))
-        {
-            Ok(stream) => stream,
-            Err(err) if err.kind() == ErrorKind::ConnectionRefused => return Ok(false),
-            Err(err) => return Err(Error::Io(err)),
-        };
-        stream
-            .set_read_timeout(Some(Duration::from_secs(1)))
-            .map_err(Error::Io)?;
-        stream
-            .set_write_timeout(Some(Duration::from_secs(1)))
-            .map_err(Error::Io)?;
-
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 0,
-            "method": method,
-            "params": params,
-        });
-        writeln!(stream, "{request}").map_err(Error::Io)?;
-        stream.flush().map_err(Error::Io)?;
-
-        let mut response = String::new();
-        BufReader::new(stream)
-            .read_line(&mut response)
-            .map_err(Error::Io)?;
-        let response: serde_json::Value = serde_json::from_str(&response)
-            .map_err(|err| Error::UnexpectedResponse(err.to_string()))?;
-
-        if let Some(error) = response.get("error").filter(|error| !error.is_null()) {
-            return Err(Error::UnexpectedResponse(format!(
-                "ElectrumX admin method `{method}` failed: {error}"
-            )));
-        }
-
-        Ok(true)
+        send_admin_rpc_to(self.rpc_socket, method, params)
     }
 
     /// Stop the `ElectrumX` process and wait for it to exit.
@@ -904,6 +869,49 @@ impl ElectrumxD {
             unresponsive_indexer(source).into()
         }))
     }
+}
+
+/// Send a command to an `ElectrumX` admin RPC socket.
+fn send_admin_rpc_to(
+    rpc_socket: SocketAddr,
+    method: &str,
+    params: &serde_json::Value,
+) -> Result<bool, Error> {
+    let mut stream = match TcpStream::connect_timeout(&rpc_socket, Duration::from_secs(1)) {
+        Ok(stream) => stream,
+        Err(err) if err.kind() == ErrorKind::ConnectionRefused => return Ok(false),
+        Err(err) => return Err(Error::Io(err)),
+    };
+    stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .map_err(Error::Io)?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(1)))
+        .map_err(Error::Io)?;
+
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": method,
+        "params": params,
+    });
+    writeln!(stream, "{request}").map_err(Error::Io)?;
+    stream.flush().map_err(Error::Io)?;
+
+    let mut response = String::new();
+    BufReader::new(stream)
+        .read_line(&mut response)
+        .map_err(Error::Io)?;
+    let response: serde_json::Value = serde_json::from_str(&response)
+        .map_err(|err| Error::UnexpectedResponse(err.to_string()))?;
+
+    if let Some(error) = response.get("error").filter(|error| !error.is_null()) {
+        return Err(Error::UnexpectedResponse(format!(
+            "ElectrumX admin method `{method}` failed: {error}"
+        )));
+    }
+
+    Ok(true)
 }
 
 impl Drop for ElectrumxD {

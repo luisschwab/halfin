@@ -74,7 +74,7 @@ pub mod indexer;
 pub mod node;
 
 /// Number of blocks used to confirm test transactions.
-#[cfg(all(test, feature = "bitcoind"))]
+#[cfg(all(test, feature = "bitcoind", halfin_indexer))]
 pub(crate) const CONFIRMATION_BLOCK_COUNT: u32 = 3;
 
 /// Number of confirmations required before a coinbase output can be spent.
@@ -93,15 +93,15 @@ pub(crate) const FILTER_BLOCK_COUNT: u32 = 21;
 pub(crate) const MATURE_COINBASE_BLOCK_COUNT: u32 = COINBASE_MATURITY_BLOCK_COUNT + 1;
 
 /// Number of blocks used to test persistent data directories.
-#[cfg(all(test, halfin_node))]
+#[cfg(all(test, any(feature = "bitcoind", feature = "utreexod")))]
 pub(crate) const PERSISTENCE_BLOCK_COUNT: u32 = 3;
 
 /// Block batches used for repeated synchronization tests.
-#[cfg(all(test, feature = "bitcoind"))]
+#[cfg(all(test, feature = "bitcoind", halfin_indexer))]
 pub(crate) const SYNC_BLOCK_BATCHES: &[u32] = &[1, 2, 5];
 
 /// Number of blocks present before repeated synchronization tests start.
-#[cfg(all(test, feature = "bitcoind"))]
+#[cfg(all(test, feature = "bitcoind", halfin_indexer))]
 pub(crate) const SYNC_INITIAL_BLOCK_COUNT: u32 = 5;
 
 /// Public key used for watch-only wallet descriptor tests.
@@ -267,5 +267,16 @@ mod tests {
         let data_dir = init_data_dir(None, Some(&staticdir), "halfin-test-").unwrap();
         assert_eq!(data_dir.path(), staticdir);
         assert!(matches!(data_dir, DataDir::Persistent(_)));
+
+        let data_dir = init_data_dir(Some(root.path()), None, "halfin-test-").unwrap();
+        assert!(data_dir.path().starts_with(root.path()));
+        assert!(matches!(data_dir, DataDir::Temporary(_)));
+
+        let file = root.path().join("file");
+        fs::write(&file, []).unwrap();
+        assert!(matches!(
+            init_data_dir(None, Some(&file), "halfin-test-"),
+            Err(Error::Io(_))
+        ));
     }
 }

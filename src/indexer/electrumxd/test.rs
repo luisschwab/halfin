@@ -2,16 +2,31 @@
 
 //! Configuration and runtime integration tests for [`ElectrumxD`].
 
+#[cfg(any(feature = "bitcoind", unix))]
+use core::time::Duration;
 #[cfg(feature = "bitcoind")]
 use std::env;
-#[cfg(feature = "bitcoind")]
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Error as IoError;
+use std::io::ErrorKind;
+use std::io::Write;
+use std::net::TcpListener;
+#[cfg(any(feature = "bitcoind", unix))]
 use std::process::Command;
+use std::sync::Arc;
+use std::thread::JoinHandle;
 
 #[cfg(feature = "bitcoind")]
 use corepc_client::bitcoin::Amount;
+use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
+use corepc_client::bitcoin::ScriptBuf;
+use corepc_client::bitcoin::Txid;
+use corepc_client::bitcoin::hashes::Hash;
 #[cfg(feature = "bitcoind")]
 use electrum_client::ElectrumApi;
+use electrum_client::Error as ElectrumError;
 #[cfg(feature = "bitcoind")]
 use tracing::Level;
 #[cfg(feature = "bitcoind")]
@@ -22,8 +37,12 @@ use super::ELECTRUMX_INDEXING_TIMEOUT;
 use super::ElectrumxD;
 use super::ElectrumxDArgs;
 use super::ElectrumxDConf;
-#[cfg(any(feature = "florestad", feature = "utreexod"))]
+use super::empty_read_is_no_ping_response;
+use super::empty_read_is_no_script_notification;
 use super::get_electrumx_path;
+use super::is_empty_subscription_read;
+use super::is_header_not_ready;
+use super::send_admin_rpc_to;
 #[cfg(feature = "bitcoind")]
 use crate::CONFIRMATION_BLOCK_COUNT;
 use crate::Error;
@@ -37,8 +56,13 @@ use crate::SYNC_BLOCK_BATCHES;
 #[cfg(feature = "bitcoind")]
 use crate::SYNC_INITIAL_BLOCK_COUNT;
 use crate::indexer::IndexerError;
+use crate::indexer::test::FakeNode;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::electrumx_test_permit;
+use crate::indexer::test::scripted_electrum_client;
+use crate::indexer::test::scripted_electrum_socket;
+#[cfg(unix)]
+use crate::indexer::test::test_program;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::wait_until_electrumx_confirms_transaction;
 #[cfg(feature = "bitcoind")]
@@ -47,6 +71,231 @@ use crate::node::bitcoind::BitcoinD;
 use crate::node::florestad::FlorestaD;
 #[cfg(feature = "utreexod")]
 use crate::node::utreexod::UtreexoD;
+
+/// Start a one-shot local admin RPC server with a fixed response.
+fn admin_rpc_server(response: &'static str) -> (core::net::SocketAddr, JoinHandle<()>) {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = String::new();
+        BufReader::new(stream.try_clone().unwrap())
+            .read_line(&mut request)
+            .unwrap();
+        stream.write_all(response.as_bytes()).unwrap();
+    });
+    (socket, handle)
+}
+
+/// Verify empty Electrum subscription reads and other errors are distinguished.
+#[test]
+fn electrumxd_classifies_subscription_reads() {
+    for kind in [
+        ErrorKind::WouldBlock,
+        ErrorKind::UnexpectedEof,
+        ErrorKind::BrokenPipe,
+    ] {
+        let error = ElectrumError::IOError(IoError::from(kind));
+        assert!(is_empty_subscription_read(&error));
+        assert!(
+            empty_read_is_no_script_notification(error)
+                .unwrap()
+                .is_none()
+        );
+
+        let error = ElectrumError::SharedIOError(Arc::new(IoError::from(kind)));
+        assert!(is_empty_subscription_read(&error));
+        empty_read_is_no_ping_response(error).unwrap();
+    }
+
+    let error = ElectrumError::Protocol(serde_json::Value::Null);
+    assert!(is_header_not_ready(&error));
+
+    let error = ElectrumError::Message("unavailable".to_string());
+    assert!(!is_empty_subscription_read(&error));
+    assert!(!is_header_not_ready(&error));
+    assert!(matches!(
+        empty_read_is_no_script_notification(error),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+
+    let error = ElectrumError::IOError(IoError::from(ErrorKind::TimedOut));
+    assert!(matches!(
+        empty_read_is_no_ping_response(error),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+}
+
+/// Verify `ElectrumX` admin RPC responses are validated.
+#[test]
+fn electrumxd_validates_admin_rpc_responses() {
+    let (socket, server) = admin_rpc_server("{\"jsonrpc\":\"2.0\",\"id\":0,\"result\":null}\n");
+    assert!(send_admin_rpc_to(socket, "getinfo", &serde_json::json!({})).unwrap());
+    server.join().unwrap();
+
+    let (socket, server) = admin_rpc_server("not JSON\n");
+    assert!(matches!(
+        send_admin_rpc_to(socket, "getinfo", &serde_json::json!({})),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    server.join().unwrap();
+
+    let (socket, server) =
+        admin_rpc_server("{\"jsonrpc\":\"2.0\",\"id\":0,\"error\":{\"code\":1}}\n");
+    assert!(matches!(
+        send_admin_rpc_to(socket, "getinfo", &serde_json::json!({})),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    server.join().unwrap();
+
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    drop(listener);
+    let result = send_admin_rpc_to(socket, "getinfo", &serde_json::json!({}));
+    #[cfg(not(target_os = "windows"))]
+    assert!(!result.unwrap());
+    #[cfg(target_os = "windows")]
+    match result {
+        Ok(false) => {}
+        Err(Error::Io(error)) if error.kind() == ErrorKind::TimedOut => {}
+        other => panic!("expected a refused or timed-out connection, got {other:?}"),
+    }
+}
+
+/// Verify binary-path validation and zero start attempts.
+#[test]
+fn electrumxd_validates_binary_path_and_start_attempts() {
+    let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }));
+
+    let error = ElectrumxD::from_bin("electrumx", &node).unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotAbsolute { .. }));
+
+    let root = tempfile::tempdir().unwrap();
+    let error = ElectrumxD::from_bin(root.path().join("missing-electrumx"), &node).unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotFile { .. }));
+
+    node.write_cookie("user:password");
+    let config = ElectrumxDConf {
+        max_retries: 0,
+        ..ElectrumxDConf::default()
+    };
+    let error =
+        ElectrumxD::from_bin_with_conf(get_electrumx_path().unwrap(), &node, &config).unwrap_err();
+    assert!(matches!(error, Error::StartupAttemptsExhausted(0)));
+}
+
+/// Verify directory, spawn, retry, and client-timeout startup failures.
+#[cfg(unix)]
+#[test]
+fn electrumxd_reports_test_program_startup_failures() {
+    let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }));
+    node.write_cookie("user:password");
+
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = ElectrumxDConf {
+        tmpdir: Some(program.clone()),
+        max_retries: 1,
+        ..ElectrumxDConf::default()
+    };
+    assert!(matches!(
+        ElectrumxD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::Io(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", false);
+    let config = ElectrumxDConf {
+        max_retries: 1,
+        ..ElectrumxDConf::default()
+    };
+    assert!(matches!(
+        ElectrumxD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::FailedToSpawn(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = ElectrumxDConf {
+        max_retries: 2,
+        ..ElectrumxDConf::default()
+    };
+    assert!(matches!(
+        ElectrumxD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::StartupAttemptsExhausted(2))
+    ));
+
+    let (_program_directory, program) = test_program("exec sleep 30", true);
+    let config = ElectrumxDConf {
+        max_retries: 1,
+        ..ElectrumxDConf::default()
+    };
+    assert!(matches!(
+        ElectrumxD::from_bin_with_conf(&program, &node, &config),
+        Err(Error::StartupAttemptsExhausted(1))
+    ));
+}
+
+/// Verify a backing node without transaction indexing is rejected.
+#[test]
+fn electrumxd_rejects_backends_without_transaction_indexing() {
+    let node =
+        FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 })).with_txindex(false);
+    node.write_cookie("user:password");
+
+    assert!(matches!(
+        ElectrumxD::from_bin(get_electrumx_path().unwrap(), &node),
+        Err(Error::Indexer(IndexerError::InvalidConfiguration(_)))
+    ));
+}
+
+/// Verify Electrum history protocol failures retain indexer context.
+#[test]
+fn electrumxd_classifies_history_failures() {
+    let script = ScriptBuf::new();
+    let txid = Txid::all_zeros();
+    let (client, server) = scripted_electrum_client(Some(Err(serde_json::json!({
+        "code": 1,
+        "message": "unavailable"
+    }))));
+
+    assert!(matches!(
+        ElectrumxD::script_history_has_mempool_tx(&client, &script, txid),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    server.join().unwrap();
+}
+
+/// Verify client setup distinguishes an exited process from an unavailable socket.
+#[cfg(unix)]
+#[test]
+fn electrumxd_reports_client_setup_failures() {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    drop(listener);
+
+    let mut process = Command::new("sleep").arg("2").spawn().unwrap();
+    assert!(matches!(
+        ElectrumxD::wait_for_client(socket, &mut process, Duration::from_millis(250)),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    process.kill().unwrap();
+    process.wait().unwrap();
+
+    let (socket, server) = scripted_electrum_socket(vec![None]);
+    let mut process = Command::new("sleep").arg("2").spawn().unwrap();
+    assert!(matches!(
+        ElectrumxD::wait_for_client(socket, &mut process, Duration::from_millis(250)),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    process.kill().unwrap();
+    process.wait().unwrap();
+    server.join().unwrap();
+
+    let mut process = Command::new("true").spawn().unwrap();
+    process.wait().unwrap();
+    assert!(matches!(
+        ElectrumxD::wait_for_client(socket, &mut process, Duration::from_secs(1)),
+        Err(Error::ClientSetupTimeout)
+    ));
+}
 
 #[cfg(feature = "bitcoind")]
 const PYTHON_OVERRIDE_CHILD: &str = "HALFIN_ELECTRUMX_PYTHON_OVERRIDE_CHILD";
@@ -103,6 +352,39 @@ fn electrumxd_bundled_constructor_rejects_missing_python_override() {
     ));
 }
 
+/// Verify a Python interpreter with a failing version command is rejected.
+#[cfg(all(feature = "bitcoind", unix))]
+#[test]
+fn electrumxd_rejects_failing_python_version_check() {
+    const TEST_NAME: &str =
+        "indexer::electrumxd::test::electrumxd_rejects_failing_python_version_check";
+
+    if !is_python_override_child(TEST_NAME) {
+        let output = Command::new(env::current_exe().unwrap())
+            .arg(TEST_NAME)
+            .arg("--exact")
+            .arg("--nocapture")
+            .env(PYTHON_OVERRIDE_CHILD, TEST_NAME)
+            .env("PYTHON", "false")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child test failed with status={}; stdout={}; stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    assert!(matches!(
+        ElectrumxD::validate_python_version(),
+        Err(Error::Indexer(IndexerError::InvalidPython(description)))
+            if description.contains("Python version check failed")
+    ));
+}
+
 /// Verify that custom executables do not use the Python requirement of the bundled launcher.
 #[cfg(feature = "bitcoind")]
 #[test]
@@ -135,7 +417,39 @@ fn electrumxd_accepts_bitcoind() {
         .try_init();
 
     let bitcoind = BitcoinD::new().unwrap();
-    let electrumxd = ElectrumxD::new(&bitcoind).unwrap();
+    let mut electrumxd = ElectrumxD::new(&bitcoind).unwrap();
+
+    let height = bitcoind.get_chain_tip().unwrap();
+    let block_hash = bitcoind.get_block_hash(height).unwrap();
+    electrumxd
+        .wait_until_block(height, None, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .unwrap();
+    let error = electrumxd
+        .wait_until_tip(
+            height,
+            BlockHash::all_zeros(),
+            Some(Duration::from_millis(1)),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::IndexingTimeout { .. })
+    ));
+    let error = electrumxd
+        .wait_until_tip(height + 1, block_hash, Some(Duration::ZERO))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::IndexingTimeout { .. })
+    ));
+    assert!(matches!(
+        ElectrumxD::wait_for_client(
+            electrumxd.get_electrum_socket(),
+            &mut electrumxd.process,
+            Duration::ZERO,
+        ),
+        Err(Error::ClientSetupTimeout)
+    ));
 
     electrumxd.client.ping().unwrap();
 
@@ -150,6 +464,25 @@ fn electrumxd_accepts_bitcoind() {
         electrumxd.client.server_features().unwrap().protocol_max
     );
     info!("Admin RPC Socket: {}", electrumxd.get_rpc_socket());
+
+    let (socket, server) = scripted_electrum_socket(vec![Some(Ok(serde_json::json!(0)))]);
+    electrumxd.electrum_socket = socket;
+    electrumxd.client =
+        electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
+            .unwrap();
+    assert!(matches!(
+        electrumxd.wait_until_block(height, None, Some(Duration::from_secs(1))),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    server.join().unwrap();
+
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    electrumxd.electrum_socket = listener.local_addr().unwrap();
+    drop(listener);
+    assert!(matches!(
+        electrumxd.fresh_electrum_client(),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
 }
 
 /// Verify that rejection of [`UtreexoD`] occurs before data directory creation.
@@ -214,12 +547,31 @@ fn electrumxd_sees_mempool_transactions() {
 
     let address = bitcoind.client.new_address().unwrap();
     let script_pubkey = address.script_pubkey();
+    let error = electrumxd
+        .wait_until_mempool_tx(
+            &script_pubkey,
+            Txid::all_zeros(),
+            Some(Duration::from_millis(1)),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::IndexingTimeout { .. })
+    ));
     let txid = bitcoind
         .client
         .send_to_address(&address, Amount::from_int_btc(1))
         .unwrap()
         .txid()
         .unwrap();
+
+    let error = electrumxd
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(Duration::ZERO))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        Error::Indexer(IndexerError::IndexingTimeout { .. })
+    ));
 
     electrumxd
         .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRUMX_INDEXING_TIMEOUT))

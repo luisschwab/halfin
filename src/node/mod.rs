@@ -230,6 +230,17 @@ pub trait Node {
 /// Panics if [`Node`] B is `FlorestaD` because it has no inbound P2P listener.
 #[cfg(halfin_node)]
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
+    connect_with_timeout(a, b, CONNECTION_TIMEOUT, CONNECTION_INTERVAL)
+}
+
+/// Connect node `a` to node `b` with explicit wait timing.
+#[cfg(halfin_node)]
+fn connect_with_timeout<A: Node, B: Node>(
+    a: &A,
+    b: &B,
+    timeout: Duration,
+    interval: Duration,
+) -> Result<(), Error> {
     assert_ne!(
         B::get_name(),
         "FlorestaD",
@@ -252,11 +263,11 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     // The outbound node can always identify its peer by the peer's listening
     // socket, including when the peer does not expose inbound peer metadata.
     let start = Instant::now();
-    while start.elapsed() < CONNECTION_TIMEOUT {
+    while start.elapsed() < timeout {
         if is_connected()? {
             // Allow time for v2 transport negotiation to settle,
             // or for v1 fallback to complete if v2 fails, then re-verify.
-            sleep(CONNECTION_INTERVAL * 4);
+            sleep(interval * 4);
             if is_connected()? {
                 info!(
                     "Connected {} outbound to {} at socket={}",
@@ -268,10 +279,10 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
                 return Ok(());
             }
         }
-        sleep(CONNECTION_INTERVAL);
+        sleep(interval);
     }
 
-    Err(NodeError::ConnectionTimeout(CONNECTION_TIMEOUT).into())
+    Err(NodeError::ConnectionTimeout(timeout).into())
 }
 
 /// Connect [`Node`] A to [`Node`] B and wait for them to synchronize chains.

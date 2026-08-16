@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use corepc_client::bitcoin::Address;
 use corepc_client::bitcoin::Network;
+use corepc_client::client_sync::Auth;
+use corepc_client::client_sync::v17::Client;
 
 use super::DEFAULT_MINING_ADDRESS;
 use super::UtreexoD;
@@ -18,12 +20,125 @@ use crate::CONNECTION_TIMEOUT;
 use crate::Error;
 use crate::FILTER_BLOCK_COUNT;
 use crate::PERSISTENCE_BLOCK_COUNT;
+use crate::node::Node;
 use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::node::connect;
+use crate::node::test::scripted_json_rpc_server;
+#[cfg(unix)]
+use crate::node::test::test_program;
 use crate::node::test::wait_for_fixed_peers;
 use crate::node::wait_for_filter_height;
 use crate::node::wait_for_height;
+
+/// Verify binary-path validation and zero start attempts.
+#[test]
+fn utreexod_validates_binary_path_and_start_attempts() {
+    let error = UtreexoD::from_bin("utreexod").unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotAbsolute { .. }));
+
+    let root = tempfile::tempdir().unwrap();
+    let error = UtreexoD::from_bin(root.path().join("missing-utreexod")).unwrap_err();
+    assert!(matches!(error, Error::BinaryPathNotFile { .. }));
+
+    let config = UtreexoDConf {
+        max_retries: 0,
+        ..UtreexoDConf::default()
+    };
+    let error = UtreexoD::from_bin_with_conf(get_utreexod_path().unwrap(), &config).unwrap_err();
+    assert!(matches!(error, Error::StartupAttemptsExhausted(0)));
+}
+
+/// Verify directory, spawn, retry, and client-timeout startup failures.
+#[cfg(unix)]
+#[test]
+fn utreexod_reports_test_program_startup_failures() {
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = UtreexoDConf {
+        tmpdir: Some(program.clone()),
+        max_retries: 1,
+        ..UtreexoDConf::default()
+    };
+    assert!(matches!(
+        UtreexoD::from_bin_with_conf(&program, &config),
+        Err(Error::Io(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", false);
+    let config = UtreexoDConf {
+        max_retries: 1,
+        ..UtreexoDConf::default()
+    };
+    assert!(matches!(
+        UtreexoD::from_bin_with_conf(&program, &config),
+        Err(Error::FailedToSpawn(_))
+    ));
+
+    let (_program_directory, program) = test_program("exit 1", true);
+    let config = UtreexoDConf {
+        max_retries: 2,
+        ..UtreexoDConf::default()
+    };
+    assert!(matches!(
+        UtreexoD::from_bin_with_conf(&program, &config),
+        Err(Error::StartupAttemptsExhausted(2))
+    ));
+
+    let (_program_directory, program) = test_program("exec sleep 30", true);
+    let config = UtreexoDConf {
+        max_retries: 1,
+        ..UtreexoDConf::default()
+    };
+    assert!(matches!(
+        UtreexoD::from_bin_with_conf(&program, &config),
+        Err(Error::StartupAttemptsExhausted(1))
+    ));
+}
+
+/// Verify malformed successful RPC results are rejected by typed helpers.
+#[test]
+fn utreexod_rejects_malformed_rpc_results() {
+    let mut utreexod = UtreexoD::new().unwrap();
+    let (socket, server) = scripted_json_rpc_server(vec![
+        serde_json::json!(0),
+        serde_json::json!("not-a-block-hash"),
+        serde_json::Value::Null,
+        serde_json::json!([0]),
+        serde_json::json!(["not-a-block-hash"]),
+        serde_json::Value::Null,
+    ]);
+    utreexod.client = Client::new_with_auth(
+        &format!("http://{socket}"),
+        Auth::UserPass("user".to_string(), "password".to_string()),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        utreexod.get_block_hash(0),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        utreexod.get_block_hash(0),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        utreexod.generate(1),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        utreexod.generate(1),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        utreexod.generate(1),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    assert!(matches!(
+        utreexod.get_peer_count(),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    server.join().unwrap();
+}
 
 /// Verify [`UtreexoD`] startup, process data, and P2P data.
 #[test]
@@ -39,6 +154,18 @@ fn utreexod_starts() {
     println!("Working Directory: {:?}", utreexod.get_working_directory());
     println!("P2P Socket: {}", utreexod.get_p2p_socket());
     assert_eq!(utreexod.get_config(), &config);
+    assert_eq!(Node::get_config(&utreexod), &config);
+    assert_eq!(config.as_ref(), &config.args);
+    assert_eq!(UtreexoD::poll_interval(), 2 * crate::POLL_INTERVAL);
+    let _ = utreexod.get_rpc_client();
+    assert!(matches!(
+        UtreexoD::wait_for_client(
+            &format!("http://{}", utreexod.get_rpc_socket()),
+            &Auth::None,
+            Duration::from_millis(250),
+        ),
+        Err(Error::ClientSetupTimeout)
+    ));
 }
 
 /// Verify startup with typed transaction index configuration.
@@ -57,7 +184,11 @@ fn utreexod_generate() {
     let utreexod = UtreexoD::new().unwrap();
 
     assert_eq!(utreexod.get_chain_tip().unwrap(), 0);
-    utreexod.generate(10).unwrap();
+    assert!(matches!(
+        Node::get_chain_tip(&utreexod),
+        Err(Error::UnexpectedResponse(_))
+    ));
+    Node::generate(&utreexod, 10).unwrap();
     assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
 }
 
@@ -79,7 +210,7 @@ fn utreexod_get_block_hash() {
     let block_hashes = utreexod.generate(10).unwrap();
 
     assert_eq!(
-        utreexod.get_block_hash(10).unwrap(),
+        Node::get_block_hash(&utreexod, 10).unwrap(),
         *block_hashes.last().unwrap()
     );
 }
@@ -98,6 +229,15 @@ fn utreexod_addnode() {
 
     assert_eq!(utreexod_alpha.get_peer_count().unwrap(), 1);
     assert_eq!(utreexod_beta.get_peer_count().unwrap(), 1);
+
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let unavailable_socket = listener.local_addr().unwrap();
+    drop(listener);
+    assert!(matches!(
+        utreexod_alpha.add_peer(unavailable_socket),
+        Err(Error::Node(NodeError::PeerConnectionTimeout((local, remote))))
+            if local == utreexod_alpha.get_p2p_socket() && remote == unavailable_socket
+    ));
 }
 
 /// Verify that [`UtreexoD`] connects to all fixed peers during startup.

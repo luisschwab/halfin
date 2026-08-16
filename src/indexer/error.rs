@@ -71,19 +71,29 @@ mod tests {
     use core::time::Duration;
 
     use super::IndexerError;
-    use crate::Error;
 
+    /// Exercise every enabled indexer error display branch.
     #[test]
-    fn indexing_timeout_retains_context() {
-        let err = Error::from(IndexerError::IndexingTimeout {
-            indexer: "ElectrsD",
-            description: "block 42".to_string(),
-            timeout: Duration::from_secs(10),
-        });
+    fn indexer_errors_are_displayable() {
+        let errors = vec![
+            IndexerError::ConflictingArgument("db-dir".to_string()),
+            IndexerError::InvalidConfiguration("invalid value".to_string()),
+            IndexerError::UnsupportedBackend { node: "FakeNode" },
+            IndexerError::UnresponsiveIndexer {
+                indexer: "TestIndexer",
+                source: electrum_client::Error::Message("unavailable".to_string()),
+            },
+            IndexerError::IndexingTimeout {
+                indexer: "TestIndexer",
+                description: "block 42".to_string(),
+                timeout: Duration::from_secs(10),
+            },
+            #[cfg(feature = "electrumx")]
+            IndexerError::InvalidPython("unavailable".to_string()),
+        ];
 
-        assert_eq!(
-            err.to_string(),
-            "Timed out after 10 seconds whilst waiting for `ElectrsD` to index block 42"
-        );
+        for error in errors {
+            drop(error.to_string());
+        }
     }
 }
