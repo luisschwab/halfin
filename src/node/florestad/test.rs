@@ -21,6 +21,8 @@ use crate::node::PruneMode;
 #[cfg(feature = "utreexod")]
 use crate::node::connect_and_sync;
 #[cfg(feature = "utreexod")]
+use crate::node::test::wait_for_fixed_peers;
+#[cfg(feature = "utreexod")]
 use crate::node::utreexod::UtreexoD;
 #[cfg(feature = "utreexod")]
 use crate::node::wait_for_height_with_timeout;
@@ -114,11 +116,27 @@ fn florestad_syncs_from_utreexod() {
     florestad.client.uptime().unwrap();
 }
 
+/// Verify that [`FlorestaD`] connects to its fixed peer during startup.
+#[cfg(feature = "utreexod")]
+#[test]
+fn florestad_connects_to_fixed_peer() {
+    let peer = UtreexoD::new().unwrap();
+    let peers = [peer.get_p2p_socket()];
+
+    let mut config = FlorestaDConf::default();
+    config.args.fixed_peers = peers.to_vec();
+    let florestad = FlorestaD::new_with_conf(&config).unwrap();
+
+    wait_for_fixed_peers(&florestad, &peers, Duration::from_secs(15));
+    assert_eq!(florestad.get_peer_count().unwrap(), peers.len() as u32);
+}
+
 #[test]
 fn florestad_default_configuration_is_isolated_regtest() {
     let config = FlorestaDConf::default();
 
     assert_eq!(config.args.network, Network::Regtest);
+    assert!(config.args.fixed_peers.is_empty());
     assert!(config.args.v2_transport);
     assert!(config.args.cbf_index);
     assert_eq!(config.args.prune, PruneMode::Disabled);
@@ -137,6 +155,29 @@ fn florestad_default_configuration_is_isolated_regtest() {
             "--no-backfill",
         ]
     );
+}
+
+#[test]
+fn florestad_renders_fixed_peer() {
+    let mut config = FlorestaDConf::default();
+    config.args.fixed_peers = vec!["127.0.0.1:18444".parse().unwrap()];
+
+    let args = FlorestaD::configured_args(&config).unwrap();
+
+    assert!(args.contains(&"--connect=127.0.0.1:18444".to_string()));
+}
+
+#[test]
+fn florestad_rejects_multiple_fixed_peers() {
+    let mut config = FlorestaDConf::default();
+    config.args.fixed_peers = ["127.0.0.1:18444", "127.0.0.1:18445"]
+        .map(|peer| peer.parse().unwrap())
+        .to_vec();
+
+    assert!(matches!(
+        FlorestaD::configured_args(&config),
+        Err(Error::Node(NodeError::InvalidConfiguration(_)))
+    ));
 }
 
 #[test]
@@ -221,6 +262,7 @@ fn florestad_rejects_owned_raw_arguments() {
         "--data-dir=/tmp/floresta",
         "--rpc-address=127.0.0.1:8332",
         "--electrum-address=127.0.0.1:50001",
+        "--connect=127.0.0.1:18444",
         "--no-cfilters",
         "--disable-dns-seeds",
         "--no-assume-utreexo",

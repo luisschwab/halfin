@@ -73,10 +73,12 @@ pub(crate) const RPC_PASS: &str = "halfin";
 /// Arguments shared by the supported [`Node`] implementations.
 ///
 /// This type does not implement [`Default`]. Each daemon configuration supplies its default values.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct NodeArgs {
     /// Bitcoin [`Network`] for the [`Node`].
     pub network: Network,
+    /// P2P peers that the [`Node`] connects to exclusively.
+    pub fixed_peers: Vec<SocketAddr>,
     /// Enables the BIP-0324 `P2Pv2` transport.
     pub v2_transport: bool,
     /// Builds the compact block filter index.

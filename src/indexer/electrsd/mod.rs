@@ -293,7 +293,7 @@ impl ElectrsD {
         conf: &ElectrsDConf,
     ) -> Result<Self, Error> {
         validate_backend::<N>()?;
-        let node_args = *node.get_config().as_ref();
+        let node_args = node.get_config().as_ref();
         let configured_args = Self::configured_args(conf, node_args.network)?;
 
         // Validate the `electrs_bin` path.
@@ -776,7 +776,7 @@ impl ElectrsD {
     }
 
     /// Reject [`Node`] configurations that electrs cannot index.
-    fn validate_node_args(args: NodeArgs) -> Result<(), Error> {
+    fn validate_node_args(args: &NodeArgs) -> Result<(), Error> {
         if args.prune != PruneMode::Disabled {
             return Err(IndexerError::InvalidConfiguration(
                 "electrs requires an unpruned backing node".to_string(),

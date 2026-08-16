@@ -7,7 +7,13 @@
 //! [`Node`]: crate::node::Node
 
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+use core::net::SocketAddr;
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 use std::fs;
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+use std::thread::sleep;
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+use std::time::Instant;
 
 use super::Node;
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
@@ -18,12 +24,42 @@ use super::RPC_PASS;
 use super::RPC_USER;
 #[cfg(all(feature = "bitcoind", feature = "utreexod"))]
 use super::connect;
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+use crate::CONNECTION_INTERVAL;
 #[cfg(feature = "bitcoind")]
 use crate::node::bitcoind::BitcoinD;
 #[cfg(feature = "florestad")]
 use crate::node::florestad::FlorestaD;
 #[cfg(feature = "utreexod")]
 use crate::node::utreexod::UtreexoD;
+
+/// Wait until a [`Node`] connects to all specified peers.
+#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+pub(super) fn wait_for_fixed_peers<N: Node>(
+    node: &N,
+    peers: &[SocketAddr],
+    timeout: core::time::Duration,
+) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if peers
+            .iter()
+            .all(|peer| node.has_peer(*peer).unwrap_or(false))
+        {
+            return;
+        }
+        sleep(CONNECTION_INTERVAL);
+    }
+
+    let peer_info = node.call("getpeerinfo", &[]).unwrap();
+    for peer in peers {
+        assert!(
+            node.has_peer(*peer).unwrap(),
+            "{} did not connect to fixed peer {peer}; peer info: {peer_info}",
+            N::get_name(),
+        );
+    }
+}
 
 /// Verify the operations that all [`Node`] implementations support.
 fn assert_node_interface<N: Node>(node: &N, name: &str) {

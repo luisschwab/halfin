@@ -285,7 +285,7 @@ impl ElectrumxD {
         conf: &ElectrumxDConf,
     ) -> Result<Self, Error> {
         validate_backend::<N>()?;
-        let node_args = *node.get_config().as_ref();
+        let node_args = node.get_config().as_ref();
         let configured_args = Self::configured_args(conf, node_args.network)?;
 
         let electrumx_bin = electrumx_bin.as_ref();
@@ -813,7 +813,7 @@ impl ElectrumxD {
     }
 
     /// Reject [`Node`] configurations that `ElectrumX` cannot index.
-    fn validate_node_args(args: NodeArgs) -> Result<(), Error> {
+    fn validate_node_args(args: &NodeArgs) -> Result<(), Error> {
         if !args.txindex {
             return Err(IndexerError::InvalidConfiguration(
                 "ElectrumX requires a backing node with transaction indexing enabled".to_string(),

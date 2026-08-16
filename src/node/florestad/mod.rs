@@ -123,6 +123,7 @@ impl Default for FlorestaDConf {
         Self {
             args: NodeArgs {
                 network: Network::Regtest,
+                fixed_peers: Vec::new(),
                 v2_transport: true,
                 cbf_index: true,
                 prune: PruneMode::Disabled,
@@ -576,6 +577,7 @@ impl FlorestaD {
             "assume-utreexo",
             "backfill",
             "cfilters",
+            "connect",
             "daemon",
             "data-dir",
             "disable-dns-seeds",
@@ -610,6 +612,13 @@ impl FlorestaD {
             )
             .into());
         }
+        // TODO(@luisschwab): remove this check when bumping `florestad`
+        if conf.args.fixed_peers.len() > 1 {
+            return Err(NodeError::InvalidConfiguration(
+                "FlorestaD supports only one fixed peer".to_string(),
+            )
+            .into());
+        }
         if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
             return Err(NodeError::ConflictingArgument(arg).into());
         }
@@ -621,7 +630,14 @@ impl FlorestaD {
     fn configured_args(conf: &FlorestaDConf) -> Result<Vec<String>, Error> {
         Self::validate_configuration(conf)?;
 
-        let mut args = vec![format!("--network={}", conf.args.network)];
+        let mut args = vec![];
+        args.push(format!("--network={}", conf.args.network));
+        args.extend(
+            conf.args
+                .fixed_peers
+                .iter()
+                .map(|peer| format!("--connect={peer}")),
+        );
         if !conf.args.cbf_index {
             args.push("--no-cfilters".to_string());
         }

@@ -160,6 +160,7 @@ impl Default for UtreexoDConf {
         Self {
             args: NodeArgs {
                 network: Network::Regtest,
+                fixed_peers: Vec::new(),
                 cbf_index: true,
                 prune: PruneMode::Disabled,
                 v2_transport: true,
@@ -773,6 +774,7 @@ impl UtreexoD {
         const OPTIONS: &[&str] = &[
             "assumeutreexo",
             "cfilters",
+            "connect",
             "datadir",
             "dnsseed",
             "flatutreexoproofindex",
@@ -865,6 +867,12 @@ impl UtreexoD {
             Network::Regtest => args.push("--regtest".to_string()),
         }
 
+        args.extend(
+            conf.args
+                .fixed_peers
+                .iter()
+                .map(|peer| format!("--connect={peer}")),
+        );
         if conf.args.cbf_index {
             args.push("--cfilters".to_string());
         }

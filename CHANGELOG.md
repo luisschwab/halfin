@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Add `fixed_peers` to `NodeArgs`
 * Relax dependency versions
 * Replace repeated feature gates with `halfin_node` and `halfin_indexer` aliases
 * Don't print Python version on `ElectrumxD` instantiation

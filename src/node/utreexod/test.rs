@@ -14,12 +14,14 @@ use super::DEFAULT_MINING_ADDRESS;
 use super::UtreexoD;
 use super::UtreexoDConf;
 use super::get_utreexod_path;
+use crate::CONNECTION_TIMEOUT;
 use crate::Error;
 use crate::FILTER_BLOCK_COUNT;
 use crate::PERSISTENCE_BLOCK_COUNT;
 use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::node::connect;
+use crate::node::test::wait_for_fixed_peers;
 use crate::node::wait_for_filter_height;
 use crate::node::wait_for_height;
 
@@ -98,6 +100,21 @@ fn utreexod_addnode() {
     assert_eq!(utreexod_beta.get_peer_count().unwrap(), 1);
 }
 
+/// Verify that [`UtreexoD`] connects to all fixed peers during startup.
+#[test]
+fn utreexod_connects_to_fixed_peers() {
+    let peer_alpha = UtreexoD::new().unwrap();
+    let peer_beta = UtreexoD::new().unwrap();
+    let peers = [peer_alpha.get_p2p_socket(), peer_beta.get_p2p_socket()];
+    let mut config = UtreexoDConf::default();
+    config.args.fixed_peers = peers.to_vec();
+
+    let utreexod = UtreexoD::new_with_conf(&config).unwrap();
+
+    wait_for_fixed_peers(&utreexod, &peers, CONNECTION_TIMEOUT);
+    assert_eq!(utreexod.get_peer_count().unwrap(), peers.len() as u32);
+}
+
 /// Verify block propagation from one [`Node`](crate::node::Node) to a peer.
 #[test]
 fn utreexod_blocks_propagate() {
@@ -133,6 +150,7 @@ fn utreexod_default_configuration_preserves_existing_behavior() {
 
     assert!(config.raw_args.is_empty());
     assert_eq!(config.args.network, Network::Regtest);
+    assert!(config.args.fixed_peers.is_empty());
     assert!(config.args.cbf_index);
     assert_eq!(config.args.prune, PruneMode::Disabled);
     assert!(config.args.v2_transport);
@@ -165,6 +183,19 @@ fn utreexod_default_configuration_preserves_existing_behavior() {
             "--utreexoproofindexmaxmemory=256",
         ]
     );
+}
+
+#[test]
+fn utreexod_renders_fixed_peers() {
+    let mut config = UtreexoDConf::default();
+    config.args.fixed_peers = ["127.0.0.1:18444", "[::1]:18445"]
+        .map(|peer| peer.parse().unwrap())
+        .to_vec();
+
+    let args = UtreexoD::configured_args(&config).unwrap();
+
+    assert!(args.contains(&"--connect=127.0.0.1:18444".to_string()));
+    assert!(args.contains(&"--connect=[::1]:18445".to_string()));
 }
 
 #[test]
@@ -281,6 +312,7 @@ fn utreexod_rejects_raw_typed_and_invariant_argument_spellings() {
         "--regtest",
         "--noregtest",
         "--testnet=true",
+        "--connect=127.0.0.1:18444",
         "--cfilters",
         "--nocfilters",
         "--prune=0",

@@ -62,18 +62,21 @@ test features="":
 [doc: "Run Tests with Lockfile and Toolchain Combos"]
 [env("RBMT_LOG_LEVEL", "verbose")]
 test-all features="":
+    @echo "Test: toolchain=stable lockfile=recent"
     {{ if features == "" { \
         "cargo rbmt test --toolchain stable --lockfile recent" \
     } else { \
         "cargo rbmt run --toolchain stable --lockfile recent -- test" + \
             " --no-default-features --features " + quote(features) \
     } }}
+    @echo "Test: toolchain=stable lockfile=minimal"
     {{ if features == "" { \
         "cargo rbmt test --toolchain stable --lockfile minimal" \
     } else { \
         "cargo rbmt run --toolchain stable --lockfile minimal -- test" + \
             " --no-default-features --features " + quote(features) \
     } }}
+    @echo "Test: toolchain=msrv lockfile=minimal"
     {{ if features == "" { \
         "cargo rbmt test --toolchain msrv --lockfile minimal" \
     } else { \

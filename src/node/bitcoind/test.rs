@@ -11,6 +11,7 @@ use corepc_client::bitcoin::Network;
 use super::BitcoinD;
 use super::BitcoinDConf;
 use super::get_bitcoind_path;
+use crate::CONNECTION_TIMEOUT;
 use crate::Error;
 use crate::FILTER_BLOCK_COUNT;
 use crate::MATURE_COINBASE_BLOCK_COUNT;
@@ -18,6 +19,7 @@ use crate::PERSISTENCE_BLOCK_COUNT;
 use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::node::connect;
+use crate::node::test::wait_for_fixed_peers;
 use crate::node::wait_for_filter_height;
 use crate::node::wait_for_height;
 
@@ -122,6 +124,21 @@ fn bitcoind_addnode() {
     assert_eq!(bitcoind_beta.get_peer_count().unwrap(), 1);
 }
 
+/// Verify that [`BitcoinD`] connects to all fixed peers during startup.
+#[test]
+fn bitcoind_connects_to_fixed_peers() {
+    let peer_alpha = BitcoinD::new().unwrap();
+    let peer_beta = BitcoinD::new().unwrap();
+    let peers = [peer_alpha.get_p2p_socket(), peer_beta.get_p2p_socket()];
+    let mut config = BitcoinDConf::default();
+    config.args.fixed_peers = peers.to_vec();
+
+    let bitcoind = BitcoinD::new_with_conf(&config).unwrap();
+
+    wait_for_fixed_peers(&bitcoind, &peers, CONNECTION_TIMEOUT);
+    assert_eq!(bitcoind.get_peer_count().unwrap(), peers.len() as u32);
+}
+
 /// Verify block propagation from one [`Node`](crate::node::Node) to a peer.
 #[test]
 fn bitcoind_blocks_propagate() {
@@ -157,6 +174,7 @@ fn bitcoind_default_configuration_preserves_existing_behavior() {
 
     assert!(conf.raw_args.is_empty());
     assert_eq!(conf.args.network, Network::Regtest);
+    assert!(conf.args.fixed_peers.is_empty());
     assert!(conf.args.cbf_index);
     assert_eq!(conf.args.prune, PruneMode::Disabled);
     assert!(conf.args.v2_transport);
@@ -176,6 +194,19 @@ fn bitcoind_default_configuration_preserves_existing_behavior() {
             "-fallbackfee=0.0001",
         ]
     );
+}
+
+#[test]
+fn bitcoind_renders_fixed_peers() {
+    let mut config = BitcoinDConf::default();
+    config.args.fixed_peers = ["127.0.0.1:18444", "[::1]:18445"]
+        .map(|peer| peer.parse().unwrap())
+        .to_vec();
+
+    let args = BitcoinD::configured_args(&config).unwrap();
+
+    assert!(args.contains(&"-connect=127.0.0.1:18444".to_string()));
+    assert!(args.contains(&"-connect=[::1]:18445".to_string()));
 }
 
 #[test]
@@ -266,6 +297,7 @@ fn bitcoind_rejects_raw_typed_argument_spellings() {
         "--txindex=1",
         "-notxindex",
         "-fallbackfee=0.1",
+        "-connect=127.0.0.1:18444",
         "-bind=127.0.0.1:18444",
         "-listen=0",
         "-port=18444",

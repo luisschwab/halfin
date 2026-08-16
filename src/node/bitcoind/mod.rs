@@ -159,6 +159,7 @@ impl Default for BitcoinDConf {
         Self {
             args: NodeArgs {
                 network: Network::Regtest,
+                fixed_peers: Vec::new(),
                 cbf_index: true,
                 prune: PruneMode::Disabled,
                 v2_transport: true,
@@ -784,6 +785,7 @@ impl BitcoinD {
             "bind",
             "blockfilterindex",
             "chain",
+            "connect",
             "datadir",
             "fallbackfee",
             "listen",
@@ -831,7 +833,7 @@ impl BitcoinD {
             })?;
         let bool_value = |value: bool| if value { '1' } else { '0' };
 
-        Ok(vec![
+        let mut args = vec![
             format!("-chain={}", conf.args.network.to_core_arg()),
             format!("-blockfilterindex={}", bool_value(conf.args.cbf_index)),
             format!("-prune={prune}"),
@@ -841,7 +843,15 @@ impl BitcoinD {
                 "-fallbackfee={}",
                 fallback_fee_per_kvb.display_in(Denomination::Bitcoin)
             ),
-        ])
+        ];
+        args.extend(
+            conf.args
+                .fixed_peers
+                .iter()
+                .map(|peer| format!("-connect={peer}")),
+        );
+
+        Ok(args)
     }
 
     /// Try to create an RPC client without a wallet.
