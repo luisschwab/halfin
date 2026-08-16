@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # `Node` trait
+//! Common interfaces and operations for Bitcoin [`Node`] implementations.
 //!
-//! This module implements the [`Node`] trait, with common methods
-//! and utilities across all Bitcoin [`Node`] implementations.
+//! The [`Node`] trait defines the operations that each implementation supplies.
+//! [`NodeArgs`] contains configuration that is common to all [`Node`] implementations.
+//! The connection and wait functions coordinate two or more enabled [`Node`] implementations.
+//!
+//! Enable the `bitcoind`, `florestad`, or `utreexod` features to use the selected implementation.
+//!
+//! [`Node`]: crate::node::Node
 
 #[cfg(feature = "bitcoind")]
 pub mod bitcoind;
+pub mod error;
 #[cfg(feature = "florestad")]
 pub mod florestad;
 #[cfg(feature = "utreexod")]
@@ -21,25 +27,33 @@ use std::io::Write;
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 use std::path::Path;
 use std::path::PathBuf;
+#[cfg(halfin_node)]
 use std::thread::sleep;
+#[cfg(halfin_node)]
 use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
+#[cfg(halfin_node)]
 use tracing::debug;
+#[cfg(halfin_node)]
 use tracing::info;
 
+pub use self::error::NodeClientError;
+pub use self::error::NodeError;
+#[cfg(halfin_node)]
 use crate::CONNECTION_INTERVAL;
+#[cfg(halfin_node)]
 use crate::CONNECTION_TIMEOUT;
 use crate::POLL_INTERVAL;
 use crate::WAIT_TIMEOUT;
 use crate::error::Error;
 
-/// Minimum automatic-pruning target supported by both daemons, in MiB.
+/// Minimum automatic pruning target for all supported daemons, in MiB.
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
 
-/// Filename used for halfin-owned RPC authentication cookies.
+/// File name for RPC authentication cookies that `halfin` creates.
 #[cfg(any(
     feature = "bitcoind",
     feature = "utreexod",
@@ -48,33 +62,34 @@ pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
 ))]
 pub(crate) const RPC_COOKIE_FILE_NAME: &str = ".cookie";
 
-/// Username stored in halfin-owned RPC authentication cookies.
+/// User name in RPC authentication cookies that `halfin` creates.
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 pub(crate) const RPC_USER: &str = "__cookie__";
 
-/// Password stored in halfin-owned RPC authentication cookies.
+/// Password in RPC authentication cookies that `halfin` creates.
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 pub(crate) const RPC_PASS: &str = "halfin";
 
 /// Arguments shared by the supported [`Node`] implementations.
 ///
-/// This type intentionally does not implement [`Default`]. Each daemon's
-/// configuration chooses defaults appropriate for that implementation.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+/// This type does not implement [`Default`]. Each daemon configuration supplies its default values.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct NodeArgs {
-    /// Bitcoin [`Network`] to run on.
+    /// Bitcoin [`Network`] for the [`Node`].
     pub network: Network,
-    /// Whether to enable BIP-0324 `P2Pv2` transport.
+    /// P2P peers that the [`Node`] connects to exclusively.
+    pub fixed_peers: Vec<SocketAddr>,
+    /// Enables the BIP-0324 `P2Pv2` transport.
     pub v2_transport: bool,
-    /// Whether to build the compact block-filter index.
+    /// Builds the compact block filter index.
     pub cbf_index: bool,
     /// Block-pruning behavior.
     pub prune: PruneMode,
-    /// Whether to build the full transaction index.
+    /// Builds the full transaction index.
     pub txindex: bool,
 }
 
-/// Block-pruning behavior for a node.
+/// Block-pruning behavior for a [`Node`].
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PruneMode {
     /// Retain all block data.
@@ -87,25 +102,25 @@ pub enum PruneMode {
 
 /// Common interface across all [`Node`] implementations.
 pub trait Node {
-    /// Concrete configuration type retained by this node implementation.
+    /// Configuration type of this [`Node`] implementation.
     type Config: AsRef<NodeArgs>;
 
-    /// The [`Node`]'s human-readable name.
+    /// Human-readable name of the [`Node`].
     fn get_name() -> &'static str;
 
-    /// The [`Node`]'s binary name.
+    /// Binary name of the [`Node`].
     fn get_bin_name() -> &'static str;
 
-    /// Return the complete configuration used to start this node.
+    /// Return the complete configuration used to start this [`Node`].
     fn get_config(&self) -> &Self::Config;
 
-    /// Return the node's effective runtime data directory.
+    /// Return the effective runtime data directory of the [`Node`].
     ///
-    /// Implementations intended for use as indexer backends must expose RPC
-    /// credentials at `.cookie` in this directory, encoded as `user:password`.
+    /// [`Indexer`](crate::indexer::Indexer) backends must put RPC credentials in `.cookie` in this
+    /// directory. The credentials must use the `user:password` format.
     fn get_working_directory(&self) -> PathBuf;
 
-    /// Return the node's JSON-RPC listener address.
+    /// Return the JSON-RPC listener address of the [`Node`].
     fn get_rpc_socket(&self) -> SocketAddr;
 
     /// Mine `count` blocks and return their hashes.
@@ -114,90 +129,88 @@ pub trait Node {
     ///
     /// Returns an error if block generation fails.
     ///
-    /// Implementations whose daemon cannot generate blocks return
-    /// [`Error::UnsupportedCommand`].
+    /// An implementation returns [`NodeError::UnsupportedCommand`] if its daemon cannot generate
+    /// blocks.
     fn generate(&self, count: u32) -> Result<Vec<BlockHash>, Error>;
 
-    /// Get the [`Node`]'s current chain height.
+    /// Return the current chain height of the [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the node cannot report its current chain height.
+    /// Returns an error if the [`Node`] cannot report its current chain height.
     fn get_chain_tip(&self) -> Result<u32, Error>;
 
-    /// Get the [`Node`]'s current CBF height.
+    /// Return the current compact block filter height of the [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the node cannot report its current compact-filter height.
+    /// Returns an error if the [`Node`] cannot report its current compact-filter height.
     ///
-    /// Implementations whose daemon cannot report compact-filter progress
-    /// return [`Error::UnsupportedCommand`].
+    /// An implementation returns [`NodeError::UnsupportedCommand`] if its daemon cannot report
+    /// compact filter progress.
     fn get_filter_tip(&self) -> Result<u32, Error>;
 
     /// Get the [`BlockHash`] of the block at `height`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the block hash cannot be fetched or parsed.
+    /// Returns an error if the function cannot get or parse the block hash.
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
 
-    /// Call a JSON-RPC `method` with the given `args` list.
+    /// Call a JSON-RPC `method` with the specified `args` list.
     ///
-    /// Response deserialization is not implemented for this method.
-    ///
-    /// It's up to the caller to parse the returned
-    /// [`Value`](serde_json::Value) into a meaningful type.
+    /// This method does not deserialize the response.
+    /// Parse the returned [`Value`](serde_json::Value) into the required type.
     ///
     /// # Errors
     ///
     /// Returns an error if the JSON-RPC call fails.
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
 
-    /// Get the [`Node`]'s inbound P2P [`SocketAddr`].
+    /// Return the inbound P2P [`SocketAddr`] of the [`Node`].
     ///
     /// # Panics
     ///
     /// An implementation may panic when its daemon has no inbound P2P listener.
     fn get_p2p_socket(&self) -> SocketAddr;
 
-    /// Check whether the [`Node`] is connected to a peer with a specific [`SocketAddr`].
+    /// Check whether the [`Node`] has a peer with the specified [`SocketAddr`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the node cannot query its peer state.
+    /// Returns an error if the [`Node`] cannot query its peer state.
     fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error>;
 
     /// Connect this [`Node`] to a peer at `socket` over P2P.
     ///
     /// # Errors
     ///
-    /// Returns an error if the node cannot add or confirm the peer connection.
+    /// Returns an error if the [`Node`] cannot add or confirm the peer connection.
     fn add_peer(&self, socket: SocketAddr) -> Result<(), Error>;
 
-    /// Get this [`Node`]' s peer count.
+    /// Return the peer count of this [`Node`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the node cannot query its peer count.
+    /// Returns an error if the [`Node`] cannot query its peer count.
     fn get_peer_count(&self) -> Result<u32, Error>;
 
-    /// How long to sleep between `get_chain_tip` RPC calls.
+    /// Interval between `get_chain_tip` RPC calls.
     ///
     /// Defaults to [`POLL_INTERVAL`].
     ///
-    /// Override for nodes that need a longer settling time between RPC calls.
+    /// Override this value if a [`Node`] needs more time between RPC calls.
     fn poll_interval() -> Duration {
         POLL_INTERVAL
     }
 
-    /// How long `wait_for_height` will poll before giving up.
+    /// Maximum time that `wait_for_height` polls the [`Node`].
     ///
     /// Defaults to [`WAIT_TIMEOUT`].
     ///
-    /// Override for nodes that need more time to process blocks
-    /// (e.g. [`UtreexoD`](crate::node::utreexod::UtreexoD) needs more time to build the Merkle
-    /// forest).
+    /// Override this value if a [`Node`] needs more time to process blocks.
+    /// For example, [`UtreexoD`](crate::node::utreexod::UtreexoD) needs more time to build the
+    /// Merkle forest.
     fn wait_timeout() -> Duration {
         WAIT_TIMEOUT
     }
@@ -205,17 +218,17 @@ pub trait Node {
 
 /// Connect [`Node`] A to [`Node`] B.
 ///
-/// The ordering is significant for nodes without an inbound P2P listener. In
-/// particular, `FlorestaD` may be used as `a` but not as `b`.
+/// The order is important if a [`Node`] has no inbound P2P listener.
+/// You can use `FlorestaD` as `a`, but not as `b`.
 ///
 /// # Errors
 ///
-/// Returns an error if node A cannot add or confirm the peer connection before
-/// [`CONNECTION_TIMEOUT`].
+/// Returns an error if [`Node`] A cannot add or confirm the peer before [`CONNECTION_TIMEOUT`].
 ///
 /// # Panics
 ///
-/// Panics if node B is `FlorestaD`, which does not provide an inbound P2P listener.
+/// Panics if [`Node`] B is `FlorestaD` because it has no inbound P2P listener.
+#[cfg(halfin_node)]
 pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     assert_ne!(
         B::get_name(),
@@ -258,19 +271,20 @@ pub fn connect<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
         sleep(CONNECTION_INTERVAL);
     }
 
-    Err(Error::ConnectionTimeout(CONNECTION_TIMEOUT))
+    Err(NodeError::ConnectionTimeout(CONNECTION_TIMEOUT).into())
 }
 
 /// Connect [`Node`] A to [`Node`] B and wait for them to synchronize chains.
 ///
 /// # Errors
 ///
-/// Returns an error if the nodes cannot connect, either chain height cannot be
-/// queried, or either node fails to reach the shared height before its timeout.
+/// Returns an error if the [`Node`] implementations cannot connect or report their chain heights.
+/// Returns an error if a [`Node`] does not reach the shared height before its timeout.
 ///
 /// # Panics
 ///
-/// Panics if node B is `FlorestaD`, which does not provide an inbound P2P listener.
+/// Panics if [`Node`] B is `FlorestaD` because it has no inbound P2P listener.
+#[cfg(halfin_node)]
 pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
     connect(a, b)?;
 
@@ -288,7 +302,8 @@ pub fn connect_and_sync<A: Node, B: Node>(a: &A, b: &B) -> Result<(), Error> {
 ///
 /// # Errors
 ///
-/// Returns an error if the node does not reach `height` within [`Node::wait_timeout`].
+/// Returns an error if the [`Node`] does not reach `height` within [`Node::wait_timeout`].
+#[cfg(halfin_node)]
 pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     debug!("Waiting for {} to reach height={}", N::get_name(), height);
 
@@ -303,18 +318,15 @@ pub fn wait_for_height<N: Node>(node: &N, height: u32) -> Result<(), Error> {
     }
 
     let curr_height = node.get_chain_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((
-        height,
-        curr_height,
-        N::wait_timeout(),
-    )))
+    Err(NodeError::ChainSyncTimeout((height, curr_height, N::wait_timeout())).into())
 }
 
 /// Poll a [`Node`] until its chain reaches `height` with a custom `timeout`.
 ///
 /// # Errors
 ///
-/// Returns an error if the node does not reach `height` within `timeout`.
+/// Returns an error if the [`Node`] does not reach `height` within `timeout`.
+#[cfg(halfin_node)]
 pub fn wait_for_height_with_timeout<N: Node>(
     node: &N,
     height: u32,
@@ -336,18 +348,19 @@ pub fn wait_for_height_with_timeout<N: Node>(
     }
 
     let curr_height = node.get_chain_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((height, curr_height, timeout)))
+    Err(NodeError::ChainSyncTimeout((height, curr_height, timeout)).into())
 }
 
-/// Poll a [`Node`] until its Compact Block Filters reach `height`.
+/// Poll a [`Node`] until its compact block filters reach `height`.
 ///
 /// # Errors
 ///
-/// Returns an error if the node does not reach `filter_height` within [`Node::wait_timeout`].
+/// Returns an error if the [`Node`] does not reach `filter_height` within [`Node::wait_timeout`].
 ///
 /// # Panics
 ///
-/// Panics if the node does not expose compact-filter progress.
+/// Panics if the [`Node`] does not supply compact filter progress.
+#[cfg(halfin_node)]
 pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(), Error> {
     debug!(
         "Waiting for {} to reach filter_height={}",
@@ -369,34 +382,33 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
     }
 
     let curr_filter_height = node.get_filter_tip().unwrap_or(0);
-    Err(Error::ChainSyncTimeOut((
-        filter_height,
-        curr_filter_height,
-        N::wait_timeout(),
-    )))
+    Err(NodeError::ChainSyncTimeout((filter_height, curr_filter_height, N::wait_timeout())).into())
 }
 
-/// Validate constraints common to every node implementation.
+/// Validate constraints common to every [`Node`] implementation.
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
     if let PruneMode::Automatic(target_mib) = args.prune {
         if target_mib < MIN_PRUNE_TARGET_MIB {
-            return Err(Error::InvalidNodeConfiguration(format!(
+            return Err(NodeError::InvalidConfiguration(format!(
                 "automatic pruning target must be at least {MIN_PRUNE_TARGET_MIB} MiB (got {target_mib} MiB)"
-            )));
+            ))
+            .into());
         }
     }
 
     if args.prune != PruneMode::Disabled && args.txindex {
-        return Err(Error::InvalidNodeConfiguration(
+        return Err(NodeError::InvalidConfiguration(
             "pruning and transaction indexing are mutually exclusive".to_string(),
-        ));
+        )
+        .into());
     }
 
     Ok(())
 }
 
-/// Write the RPC cookie shared by a node and its indexers.
+/// Write the RPC cookie shared by a [`Node`] and its [`Indexer`](crate::indexer::Indexer)
+/// implementations.
 #[cfg(any(feature = "bitcoind", feature = "utreexod"))]
 pub(crate) fn write_rpc_cookie(data_dir: &Path) -> Result<PathBuf, Error> {
     let cookie_file = data_dir.join(RPC_COOKIE_FILE_NAME);
@@ -417,3 +429,6 @@ pub(crate) fn write_rpc_cookie(data_dir: &Path) -> Result<PathBuf, Error> {
     write!(file, "{RPC_USER}:{RPC_PASS}").map_err(Error::Io)?;
     Ok(cookie_file)
 }
+
+#[cfg(all(test, halfin_node))]
+mod test;

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-/// [`UtreexoD`](crate::node::utreexod::UtreexoD)'s human-readable name.
+/// Human-readable name of [`UtreexoD`](crate::node::utreexod::UtreexoD).
 #[allow(unused)]
 pub(crate) const UTREEXOD_NAME: &str = "UtreexoD";
 
-/// [`UtreexoD`](crate::node::utreexod::UtreexoD)'s binary name.
+/// Binary name of [`UtreexoD`](crate::node::utreexod::UtreexoD).
 #[allow(unused)]
 pub(crate) const UTREEXOD_BIN_NAME: &str = "utreexod_v_0_6_0";
 

@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="static/halfin.webp" width="40%" alt="A Bitcoin Node Runner (Hal Finney)">
+    <img src="asset/image/halfin.webp" width="40%" alt="A Bitcoin Node Runner (Hal Finney)">
 </p>
 
 # halfin
@@ -22,14 +22,14 @@ instances from Rust code, useful in integration test contexts.
 
 ## Supported Implementations
 
-| Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
-|---------|----------------|-----------|--------------|-----------------|-------------------|
-| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
-| Node    | `florestad`    | `v0.9.1`  | `florestad`  | No              |                   |
-| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
-|         |                |           |              |                 |                   |
-| Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
-| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              | Needs Python 3.10 |
+| Kind    | Implementation | Version   | Feature Flag | Notes             |
+|---------|----------------|-----------|--------------|-------------------|
+| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   |                   |
+| Node    | `florestad`    | `v0.9.1`  | `florestad`  |                   |
+| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   |                   |
+|         |                |           |              |                   |
+| Indexer | `electrs`      | `v0.11.1` | `electrs`    |                   |
+| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | Needs Python 3.10 |
 
 Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
@@ -92,7 +92,22 @@ let res = utreexod.call("uptime", &[]).unwrap();
 ### FlorestaD
 
 ```rust
-TODO
+use halfin::node::florestad::FlorestaD;
+use halfin::node::utreexod::UtreexoD;
+use halfin::node::{connect_and_sync, wait_for_height};
+
+// Mine blocks with a Utreexo peer
+let utreexod = UtreexoD::new().unwrap();
+utreexod.generate(10).unwrap();
+
+// Wait until the Utreexo forest is ready
+wait_for_height(&utreexod, 10).unwrap();
+
+// Connect Floresta outbound and wait for synchronization
+let florestad = FlorestaD::new().unwrap();
+connect_and_sync(&florestad, &utreexod).unwrap();
+
+assert_eq!(florestad.get_chain_tip().unwrap(), 10);
 ```
 
 ## Developing
@@ -111,23 +126,23 @@ A `justfile` is provided for convenience. Run `just` to see available commands:
 
 ```shell
 > halfin
-> A regtest runner for `bitcoind` and `utreexod`
+> A runner for bitcoin nodes and indexers
 
 Available recipes:
-    audit      # Run cargo-audit across all lockfiles and prune stale advisories [alias: a]
-    build      # Build `halfin` [alias: b]
-    check      # Check Formatting, Linting and Documentation [alias: c]
-    doc        # Generate Documentation [alias: d]
-    doc-open   # Generate and Open Documentation [alias: do]
-    fmt        # Format Code [alias: f]
-    lock       # Regenerate Lockfiles [alias: l]
-    pre-push   # Run pre-push checks [alias: p]
-    shellcheck # Run ShellCheck [alias: sc]
-    test       # Run Tests [alias: t]
-    test-all   # Run Tests with Lockfile and Toolchain Combos
-    toolchains # Update Stable and Nightly Toolchains
-    tools      # Install cargo-rbmt Tools
-    zizmor     # Run Zizmor Static Analysis [alias: z]
+    audit                # Run cargo-audit across all lockfiles and prune stale advisories [alias: a]
+    build                # Build `halfin` [alias: b]
+    check                # Check Formatting, Linting and Documentation [alias: c]
+    doc                  # Generate Documentation [alias: d]
+    doc-open             # Generate and Open Documentation [alias: do]
+    fmt                  # Format Code [alias: f]
+    lock                 # Regenerate Lockfiles [alias: l]
+    pre-push             # Run pre-push checks [alias: p]
+    shellcheck           # Run ShellCheck [alias: sc]
+    test features=""     # Run Tests [alias: t]
+    test-all features="" # Run Tests with Lockfile and Toolchain Combos
+    toolchains           # Update Stable and Nightly Toolchains
+    tools                # Install cargo-rbmt Tools
+    zizmor               # Run Zizmor Static Analysis [alias: z]
 ```
 
 ## Minimum Supported Rust Version

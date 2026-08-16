@@ -1,25 +1,23 @@
 //! # halfin
 //!
-//! A bitcoin node and indexer running utility for integration testing.
+//! Start local Bitcoin [`Node`] and Electrum [`Indexer`] implementations for integration tests.
 //!
-//! > A runner for bitcoin nodes and indexers 🏃‍♂️
+//! The crate finds each enabled program and starts it in an isolated data directory.
+//! It assigns local ports and supplies typed clients for test operations.
+//! It also stops each child process when Rust drops its handle.
 //!
-//! This crate makes it simple to run [`bitcoind`], [`florestad`], [`utreexod`],
-//! [`electrs`] and [`electrumx`] instances from Rust code, useful in integration
-//! test contexts.
+//! ## Supported implementations
 //!
-//! ## Supported Implementations
+//! | Kind    | Implementation | Version   | Feature Flag | Notes             |
+//! |---------|----------------|-----------|--------------|-------------------|
+//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   |                   |
+//! | Node    | `florestad`    | `v0.9.1`  | `florestad`  |                   |
+//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   |                   |
+//! |         |                |           |              |                   |
+//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    |                   |
+//! | Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | Needs Python 3.10 |
 //!
-//! | Kind    | Implementation | Version   | Feature Flag | Default Feature | Notes             |
-//! |---------|----------------|-----------|--------------|-----------------|-------------------|
-//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   | Yes             |                   |
-//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   | Yes             |                   |
-//! | Node    | `florestad`    | `v0.9.1`  | `florestad`  | No              |                   |
-//! |         |                |           |              |                 |                   |
-//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    | No              |                   |
-//! | Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | No              | Needs Python 3.10 |
-//!
-//! ## Example
+//! ## Start and connect two [`Node`] implementations
 //!
 //! ```rust,ignore
 //! use halfin::node::bitcoind::BitcoinD;
@@ -42,56 +40,22 @@
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
 //! [`electrs`]: <https://github.com/romanz/electrs>
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
+//! [`Indexer`]: crate::indexer::Indexer
+//! [`Node`]: crate::node::Node
 
 use core::net::Ipv4Addr;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::env;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::fs;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::io::BufRead;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::io::BufReader;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::io::Read;
 use std::net::TcpListener;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -99,29 +63,59 @@ use std::time::Duration;
 pub use corepc_client::bitcoin;
 pub use serde_json;
 use tempfile::TempDir;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 use tracing::info;
 
 pub use crate::error::Error;
 
 pub mod error;
-#[cfg(any(feature = "electrs", feature = "electrumx"))]
+#[cfg(halfin_indexer)]
 pub mod indexer;
 pub mod node;
+
+/// Number of blocks used to confirm test transactions.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const CONFIRMATION_BLOCK_COUNT: u32 = 3;
+
+/// Number of confirmations required before a coinbase output can be spent.
+#[cfg(all(
+    test,
+    any(feature = "bitcoind", all(feature = "florestad", feature = "utreexod"))
+))]
+pub(crate) const COINBASE_MATURITY_BLOCK_COUNT: u32 = 100;
+
+/// Number of blocks used to test compact block filter progress.
+#[cfg(all(test, any(feature = "bitcoind", feature = "utreexod")))]
+pub(crate) const FILTER_BLOCK_COUNT: u32 = 21;
+
+/// Number of generated blocks that makes the first coinbase output mature.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const MATURE_COINBASE_BLOCK_COUNT: u32 = COINBASE_MATURITY_BLOCK_COUNT + 1;
+
+/// Number of blocks used to test persistent data directories.
+#[cfg(all(test, halfin_node))]
+pub(crate) const PERSISTENCE_BLOCK_COUNT: u32 = 3;
+
+/// Block batches used for repeated synchronization tests.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const SYNC_BLOCK_BATCHES: &[u32] = &[1, 2, 5];
+
+/// Number of blocks present before repeated synchronization tests start.
+#[cfg(all(test, feature = "bitcoind"))]
+pub(crate) const SYNC_INITIAL_BLOCK_COUNT: u32 = 5;
+
+/// Public key used for watch-only wallet descriptor tests.
+#[cfg(all(test, feature = "florestad"))]
+pub(crate) const WALLET_PUBKEY: &str =
+    "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 
 /// IPv4 localhost address.
 const IPV4_LOCALHOST: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 
-/// Maximum number of attempts at spawning a process.
+/// Maximum number of process start attempts.
 pub const SPAWN_ATTEMPTS: u8 = 5;
 
-/// Period between attempts at spawning a process.
+/// Interval between process start attempts.
 pub const SPAWN_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Period between polls for [`connect`](crate::node::connect) and
@@ -132,17 +126,18 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// [`wait_for_height`](crate::node::wait_for_height).
 pub const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Period between successive attempts of [`Node`](crate::node::Node) connection.
+/// Interval between [`Node`](crate::node::Node) connection attempts.
 pub const CONNECTION_INTERVAL: Duration = Duration::from_millis(150);
 
 /// Timeout for [`Node`](crate::node::Node) connection.
 pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Ask the OS for an available port, immediately unbind and return it.
+/// Ask the operating system for an available port, release the port, and return it.
 ///
 /// # Panics
 ///
-/// Panics if the OS cannot bind a localhost ephemeral port or report the local socket address.
+/// Panics if the operating system cannot bind a temporary localhost port or report its socket
+/// address.
 #[inline]
 pub fn get_available_port() -> u16 {
     TcpListener::bind((IPV4_LOCALHOST, 0))
@@ -153,13 +148,7 @@ pub fn get_available_port() -> u16 {
 }
 
 /// Find the first raw argument owned by typed or dynamic configuration.
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+#[cfg(any(halfin_node, halfin_indexer))]
 pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
     args: &[S],
     option_names: &[&str],
@@ -186,24 +175,17 @@ pub(crate) fn find_conflicting_argument<S: AsRef<str>>(
     })
 }
 
-/// Spawn a background thread that reads `reader` line by line and re-emits
-/// each line as an [`info!`] event, prefixed with `source`.
+/// Start a background thread that reads each line from `reader`.
+/// The thread emits each line as an [`info!`] event with the `source` prefix.
 ///
-/// Used to pipe a child process' `stdout`/`stderr`
-/// into [`tracing`]. The thread exits on EOF, which happens when the process
-/// dies and its pipe is closed.
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+/// Use this function to send child process output to [`tracing`].
+/// The thread stops at the end of the input stream.
+#[cfg(any(halfin_node, halfin_indexer))]
 pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'static str) {
     std::thread::spawn(move || {
         let mut lines = BufReader::new(reader).lines();
         while let Some(Ok(line)) = lines.next() {
-            // Skip blank lines so the log stream mirrors the node's output.
+            // Skip blank lines so the log stream mirrors the output.
             if !line.trim().is_empty() {
                 info!("{source}: {line}");
             }
@@ -211,22 +193,21 @@ pub(crate) fn pipe_to_tracing<R: Read + Send + 'static>(reader: R, source: &'sta
     });
 }
 
-/// Owns a node's working directory, either as a temporary or a persistent path.
+/// Stores a temporary or persistent process data directory.
 ///
-/// * [`DataDir::Temporary`]: backed by a [`TempDir`]; the directory is deleted automatically when
-///   this value is dropped.
-/// * [`DataDir::Persistent`]: backed by a plain [`PathBuf`]; the directory survives the process and
-///   is never cleaned up automatically.
+/// * [`DataDir::Temporary`] contains a [`TempDir`]. Rust deletes the directory when it drops this
+///   value.
+/// * [`DataDir::Persistent`] contains a [`PathBuf`]. Rust keeps this directory after `Drop`.
 #[derive(Debug)]
 pub enum DataDir {
-    /// A persistent directory that is **not** cleaned up on drop.
+    /// A persistent directory that remains after `Drop`.
     Persistent(PathBuf),
-    /// A temporary directory that is deleted when this value is dropped.
+    /// A temporary directory that Rust deletes at `Drop`.
     Temporary(TempDir),
 }
 
 impl DataDir {
-    /// Return the underlying filesystem path regardless of variant.
+    /// Return the file system path for either variant.
     pub fn path(&self) -> PathBuf {
         match self {
             Self::Persistent(path) => path.to_owned(),
@@ -235,14 +216,9 @@ impl DataDir {
     }
 }
 
-/// Resolve and create a daemon or indexer data directory.
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "florestad",
-    feature = "utreexod",
-    feature = "electrs",
-    feature = "electrumx"
-))]
+/// Resolve and create a [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) data
+/// directory.
+#[cfg(any(halfin_node, halfin_indexer))]
 pub(crate) fn init_data_dir(
     tmpdir: Option<&Path>,
     staticdir: Option<&Path>,
@@ -274,16 +250,7 @@ pub(crate) fn init_data_dir(
     }
 }
 
-#[cfg(all(
-    test,
-    any(
-        feature = "bitcoind",
-        feature = "florestad",
-        feature = "utreexod",
-        feature = "electrs",
-        feature = "electrumx"
-    )
-))]
+#[cfg(all(test, any(halfin_node, halfin_indexer)))]
 mod tests {
     use super::*;
 

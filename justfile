@@ -1,6 +1,7 @@
 alias a := audit
 alias b := build
 alias c := check
+alias cov := coverage
 alias d := doc
 alias do := doc-open
 alias f := fmt
@@ -10,6 +11,7 @@ alias sc := shellcheck
 alias z := zizmor
 alias p := pre-push
 
+stable := `cargo rbmt toolchains --stable`
 export RBMT_LOG_LEVEL := env("RBMT_LOG_LEVEL", "progress")
 
 _default:
@@ -49,14 +51,51 @@ lock:
     cargo rbmt lock
 
 [doc: "Run Tests"]
-test:
-    RBMT_LOG_LEVEL=verbose cargo rbmt test
+[env("RBMT_LOG_LEVEL", "verbose")]
+test features="":
+    {{ if features == "" { \
+        "cargo rbmt test" \
+    } else { \
+        "cargo +" + stable + \
+            " test --no-default-features --features " + quote(features) \
+    } }}
 
 [doc: "Run Tests with Lockfile and Toolchain Combos"]
-test-all:
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile recent
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
+[env("RBMT_LOG_LEVEL", "verbose")]
+test-all features="":
+    @echo "Test: toolchain=stable lockfile=recent"
+    {{ if features == "" { \
+        "cargo rbmt test --toolchain stable --lockfile recent" \
+    } else { \
+        "cargo rbmt run --toolchain stable --lockfile recent -- test" + \
+            " --no-default-features --features " + quote(features) \
+    } }}
+    @echo "Test: toolchain=stable lockfile=minimal"
+    {{ if features == "" { \
+        "cargo rbmt test --toolchain stable --lockfile minimal" \
+    } else { \
+        "cargo rbmt run --toolchain stable --lockfile minimal -- test" + \
+            " --no-default-features --features " + quote(features) \
+    } }}
+    @echo "Test: toolchain=msrv lockfile=minimal"
+    {{ if features == "" { \
+        "cargo rbmt test --toolchain msrv --lockfile minimal" \
+    } else { \
+        "cargo rbmt run --toolchain msrv --lockfile minimal -- test" + \
+            " --no-default-features --features " + quote(features) \
+    } }}
+
+[doc: "Generate Code Coverage"]
+[env("CARGO_LLVM_COV_SETUP", "yes")]
+coverage:
+    cargo +{{ stable }} llvm-cov \
+        --all-features \
+        --html \
+        --ignore-filename-regex '(^|/)test[.]rs$'
+    cargo +{{ stable }} llvm-cov report \
+        --lcov \
+        --output-path target/llvm-cov/lcov.info \
+        --ignore-filename-regex '(^|/)test[.]rs$'
 
 [doc: "Update Stable and Nightly Toolchains"]
 toolchains:

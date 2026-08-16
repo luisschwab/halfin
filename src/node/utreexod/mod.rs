@@ -1,19 +1,24 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! # `UtreexoD`: spawn and interact with a `utreexod` process
+//! Start and control a `utreexod` process.
 //!
-//! A utility for spinning up `utreexod` processes in **regtest**,
-//! useful for integration testing Bitcoin applications that rely on
-//! utreexo-based compact state.
+//! [`UtreexoD`] starts `utreexod` on the regtest network.
+//! It gives access to the JSON-RPC client, Utreexo data, and test operations.
 //!
-//! ## Quick Start
+//! ## Start a [`Node`]
 //!
 //! ```rust,no_run
 //! use halfin::node::utreexod::UtreexoD;
 //!
-//! // Start a node with default configuration
+//! // Start a node with the default configuration.
 //! let node = UtreexoD::new().unwrap();
 //! ```
+//!
+//! By default, each [`UtreexoD`] instance uses a temporary directory.
+//! [`Drop`] removes this directory.
+//! Set [`UtreexoDConf::staticdir`] to keep the data after the process stops.
+//!
+//! [`Node`]: crate::node::Node
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
@@ -53,6 +58,7 @@ use crate::get_available_port;
 use crate::init_data_dir;
 use crate::node::Node;
 use crate::node::NodeArgs;
+use crate::node::NodeError;
 use crate::node::PruneMode;
 use crate::node::RPC_PASS;
 use crate::node::RPC_USER;
@@ -68,9 +74,8 @@ const DEFAULT_MINING_ADDRESS: &str = "bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4y
 
 /// Return the path to the downloaded `utreexod` binary.
 ///
-/// The path is resolved at compile time from the `HALFIN_UTREEXOD_PATH`
-/// environment variable, which is set by `build.rs` after downloading
-/// and extracting the binary.
+/// At compile time, `build.rs` downloads and extracts the binary.
+/// It stores the binary path in `HALFIN_UTREEXOD_PATH`.
 ///
 /// # Errors
 ///
@@ -95,9 +100,9 @@ pub fn get_utreexod_path() -> Result<PathBuf, Error> {
 /// Arguments specific to `utreexod`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UtreexoDArgs {
-    /// Whether to discover peers using DNS seeds.
+    /// Enables peer discovery through DNS seeds.
     pub dns_seed: bool,
-    /// Whether to assume peers support the Utreexo protocol extensions.
+    /// Assumes that peers support the Utreexo protocol extensions.
     pub assume_utreexo: bool,
     /// Address used as the coinbase output when generating blocks.
     pub mining_address: Option<Address<NetworkUnchecked>>,
@@ -109,14 +114,14 @@ pub struct UtreexoDArgs {
 ///
 /// # Directory precedence
 ///
-/// Exactly one of `tmpdir` / `staticdir` may be set at a time; setting both
-/// returns [`Error::BothDirsSpecified`].
+/// Set only `tmpdir` or `staticdir`.
+/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
-/// | `None`   | `None`      | System temp dir (auto-cleaned on drop) |
-/// | `Some`   | `None`      | Custom temp root (auto-cleaned on drop) |
-/// | `None`   | `Some`      | Persistent directory (not cleaned on drop) |
+/// | `None`   | `None`      | System temporary directory (deleted at `Drop`) |
+/// | `Some`   | `None`      | Custom temporary root (deleted at `Drop`) |
+/// | `None`   | `Some`      | Persistent directory (kept at `Drop`) |
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct UtreexoDConf {
@@ -126,28 +131,27 @@ pub struct UtreexoDConf {
     /// Arguments specific to `utreexod`.
     pub utreexod_args: UtreexoDArgs,
 
-    /// Extra CLI arguments forwarded verbatim to the `utreexod` process.
+    /// Extra CLI arguments sent unchanged to the `utreexod` process.
     ///
-    /// Raw arguments must not configure an option represented by
-    /// [`args`](Self::args), [`utreexod_args`](Self::utreexod_args),
-    /// or an invariant owned by halfin. Such duplicates return
-    /// [`Error::ConflictingNodeArgument`].
+    /// Do not use raw arguments for options in [`args`](Self::args) or
+    /// [`utreexod_args`](Self::utreexod_args). Do not duplicate an option that `halfin` controls.
+    /// A duplicate option returns [`NodeError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root directory under which a fresh temporary working directory is
-    /// created for each instance. Falls back to the `TEMPDIR_ROOT`
-    /// environment variable, then the system temp dir.
+    /// Root for the new temporary directory of each instance.
+    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory. The directory is created if it does not
-    /// exist. Data survives [`Drop`]; the process is stopped but files are
-    /// kept so you can inspect or reuse them.
+    /// Persistent data directory.
+    /// The function creates the directory if necessary.
+    /// [`Drop`] stops the process and keeps the files.
     pub staticdir: Option<PathBuf>,
 
-    /// How many times to retry spawning `utreexod` before giving up.
+    /// Maximum number of attempts to start `utreexod`.
     ///
-    /// Each attempt picks fresh random ports, so transient port-collision
-    /// errors are automatically recovered from. Defaults to [`SPAWN_ATTEMPTS`].
+    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
+    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -156,6 +160,7 @@ impl Default for UtreexoDConf {
         Self {
             args: NodeArgs {
                 network: Network::Regtest,
+                fixed_peers: Vec::new(),
                 cbf_index: true,
                 prune: PruneMode::Disabled,
                 v2_transport: true,
@@ -184,39 +189,38 @@ impl AsRef<NodeArgs> for UtreexoDConf {
     }
 }
 
-/// A running `utreexod` node.
+/// A running `utreexod` [`Node`].
 ///
-/// The node is started in [`UtreexoD::from_bin`] (or one of its siblings) and
-/// stopped — and its temporary files removed — when this value is dropped.
+/// [`UtreexoD::from_bin`] and related functions start the [`Node`].
+/// [`Drop`] stops the [`Node`] and deletes its temporary files.
 ///
 /// # Authentication
 ///
-/// RPC authentication uses a halfin-owned `.cookie` file in the runtime data
-/// directory. The same file authenticates halfin's client and any indexer.
+/// RPC authentication uses a `.cookie` file that `halfin` creates in the runtime data directory.
+/// The same file authenticates the `halfin` client and each [`Indexer`](crate::indexer::Indexer).
 ///
 /// # Networking
 ///
-/// Both the RPC and P2P ports are chosen from the OS's ephemeral range at
-/// startup. Use [`UtreexoD::get_rpc_socket`] and [`UtreexoD::get_p2p_socket`]
-/// to discover them after construction.
+/// At startup, the operating system selects temporary RPC and P2P ports.
+/// Use [`UtreexoD::get_rpc_socket`] and [`UtreexoD::get_p2p_socket`] to get these ports.
 #[derive(Debug)]
 pub struct UtreexoD {
-    /// Handle to the spawned `utreexod` child process.
+    /// Handle for the `utreexod` child process.
     process: Child,
 
-    /// Authenticated JSON-RPC client connected to the node.
+    /// Authenticated JSON-RPC client connected to the [`Node`].
     pub client: Client,
 
-    /// Owns (and optionally cleans up) the node's data directory.
+    /// Data directory of the [`Node`] and its cleanup state.
     working_directory: DataDir,
 
-    /// Complete configuration used to start the node.
+    /// Complete configuration used to start the [`Node`].
     config: UtreexoDConf,
 
-    /// Address the JSON-RPC server is bound to.
+    /// Address of the JSON-RPC server.
     rpc_socket: SocketAddr,
 
-    /// Address the P2P listener is bound to.
+    /// Address of the P2P listener.
     p2p_socket: SocketAddr,
 }
 
@@ -260,7 +264,7 @@ impl Node for UtreexoD {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
     fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
-        self.client.call(method, args).map_err(Error::JsonRpc)
+        Ok(self.client.call(method, args).map_err(NodeError::JsonRpc)?)
     }
 
     fn poll_interval() -> Duration { 2 * POLL_INTERVAL }
@@ -269,59 +273,52 @@ impl Node for UtreexoD {
 }
 
 impl UtreexoD {
-    // ----> NODE
-
-    /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with the
-    /// default [`UtreexoDConf`].
+    /// Start [`UtreexoD`] with the binary from [`get_utreexod_path`].
+    /// Use the default [`UtreexoDConf`].
     ///
-    /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per
-    /// `build.rs`.
+    /// If the binary is not in `target/bin/`, `build.rs` downloads it from `github.com`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located or the node cannot be started.
+    /// Returns an error if the function cannot find the binary or start the [`Node`].
     pub fn new() -> Result<Self, Error> {
         Self::from_bin(get_utreexod_path()?)
     }
 
-    /// Start a [`UtreexoD`] node using the binary located by [`get_utreexod_path`], with a custom
-    /// [`UtreexoDConf`].
+    /// Start [`UtreexoD`] with the binary from [`get_utreexod_path`].
+    /// Use the specified [`UtreexoDConf`].
     ///
-    /// If the binary is not cached under `target/bin/`, it will fetch one from `github.com` per
-    /// `build.rs`.
+    /// If the binary is not in `target/bin/`, `build.rs` downloads it from `github.com`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary cannot be located, the configuration is invalid, or the node
-    /// cannot be started.
+    /// Returns an error if the function cannot find the binary or start the [`Node`].
+    /// Returns an error if the configuration is not valid.
     pub fn new_with_conf(conf: &UtreexoDConf) -> Result<Self, Error> {
         Self::from_bin_with_conf(get_utreexod_path()?, conf)
     }
 
-    /// Create a [`UtreexoD`] instance running the binary at [`Path`] with the default
-    /// [`UtreexoDConf`].
+    /// Start the binary at [`Path`] with the default [`UtreexoDConf`].
     ///
     /// # Errors
     ///
-    /// Returns an error if `utreexod_bin` is invalid or the node cannot be started.
+    /// Returns an error if `utreexod_bin` is not valid or the function cannot start the [`Node`].
     pub fn from_bin<P: AsRef<Path>>(utreexod_bin: P) -> Result<Self, Error> {
         Self::from_bin_with_conf(utreexod_bin, &UtreexoDConf::default())
     }
 
-    /// Create a [`UtreexoD`] instance running the binary at [`Path`] with a custom
-    /// [`UtreexoDConf`].
+    /// Start the binary at [`Path`] with the specified [`UtreexoDConf`].
     ///
-    /// The method retries up to [`UtreexoDConf::max_retries`] times. On each
-    /// attempt it:
+    /// The method uses at most [`UtreexoDConf::max_retries`] attempts.
     ///
-    /// 1. Picks fresh ephemeral RPC and P2P ports.
-    /// 2. Spawns `utreexod` with those ports and a fresh data directory.
-    /// 3. Waits for the RPC server to become responsive (up to 10 s).
+    /// 1. Select new temporary RPC and P2P ports.
+    /// 2. Start `utreexod` with these ports and a new data directory.
+    /// 3. Wait a maximum of 10 seconds for the RPC server to respond.
     ///
     /// # Errors
     ///
-    /// Returns an error if the binary path is invalid, the working directory
-    /// cannot be created, RPC setup fails, or all attempts are exhausted.
+    /// Returns an error if the binary path is not valid or the function cannot create the working
+    /// directory. Returns an error if RPC setup fails or all start attempts fail.
     #[allow(clippy::too_many_lines)]
     pub fn from_bin_with_conf<P: AsRef<Path>>(
         utreexod_bin: P,
@@ -455,31 +452,30 @@ impl UtreexoD {
             let _ = process.wait();
         }
 
-        Err(Error::ExhaustedNodeBuildingAttempts(conf.max_retries))
+        Err(Error::StartupAttemptsExhausted(conf.max_retries))
     }
 
     /// Send `stop` via RPC and wait for the process to exit.
     ///
-    /// Calling this method is **not required** in normal usage because [`Drop`]
-    /// kills the process automatically. It is provided for cases where you
-    /// need the exit status or want to ensure the node has fully shut down
-    /// before proceeding.
+    /// [`Drop`] stops the process without a call to this method.
+    /// Call this method to get the exit status or confirm that the process has stopped.
     ///
     /// # Errors
     ///
-    /// Returns an error if the RPC stop call fails or the child process cannot be waited on.
+    /// Returns an error if the RPC stop call fails.
+    /// Returns an error if the function cannot wait for the child process.
     pub fn stop(&mut self) -> Result<ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
 
         // Send a `stop` over RPC.
-        let _ = self.client.stop().map_err(Error::FailedToStop)?;
+        let _ = self.client.stop().map_err(NodeError::FailedToStop)?;
         // Wait for the process to terminate and get its exit status.
         let exit_status = self.process.wait().map_err(Error::Io)?;
 
         Ok(exit_status)
     }
 
-    /// Return the OS process ID of the running `utreexod` process.
+    /// Return the operating system process ID of `utreexod`.
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
@@ -488,7 +484,7 @@ impl UtreexoD {
         pid
     }
 
-    /// Get [`UtreexoD`]'s data directory.
+    /// Return the data directory of [`UtreexoD`].
     pub fn get_working_directory(&self) -> PathBuf {
         let working_directory = self.working_directory.path();
 
@@ -501,12 +497,12 @@ impl UtreexoD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this node.
+    /// Return the complete configuration used to start this [`Node`].
     pub fn get_config(&self) -> &UtreexoDConf {
         &self.config
     }
 
-    /// Get a reference to [`UtreexoD`]'s RPC [`Client`].
+    /// Return a reference to the RPC [`Client`] of [`UtreexoD`].
     pub fn get_rpc_client(&self) -> &Client {
         debug!(
             "{}: got rpc client for socket={}",
@@ -517,7 +513,7 @@ impl UtreexoD {
         &self.client
     }
 
-    /// Return the JSON-RPC [`SocketAddr`] the node is listening on.
+    /// Return the JSON-RPC [`SocketAddr`] of the [`Node`].
     pub fn get_rpc_socket(&self) -> SocketAddr {
         debug!(
             "{}: got rpc socket at socket={}",
@@ -528,9 +524,9 @@ impl UtreexoD {
         self.rpc_socket
     }
 
-    /// Return the P2P [`SocketAddr`] the node is listening on.
+    /// Return the P2P [`SocketAddr`] of the [`Node`].
     ///
-    /// Pass this to [`UtreexoD::add_peer`] on another node to connect the two.
+    /// Pass this to [`UtreexoD::add_peer`] on another [`Node`] to connect the two.
     pub fn get_p2p_socket(&self) -> SocketAddr {
         debug!(
             "{}: got p2p socket at socket={}",
@@ -541,9 +537,7 @@ impl UtreexoD {
         self.p2p_socket
     }
 
-    // ----> RPC CALL WRAPPERS
-
-    /// Get the current chain height.
+    /// Return the current chain height.
     ///
     /// # Errors
     ///
@@ -552,7 +546,7 @@ impl UtreexoD {
         let height = self
             .client
             .call::<serde_json::Value>("getblockchaininfo", &[])
-            .map_err(Error::JsonRpc)?["blocks"]
+            .map_err(NodeError::JsonRpc)?["blocks"]
             .as_u64()
             .ok_or(Error::UnexpectedResponse(
                 "getblockchaininfo returned no `blocks` field".to_string(),
@@ -563,7 +557,7 @@ impl UtreexoD {
         Ok(height)
     }
 
-    /// Get the current filter height.
+    /// Return the current filter height.
     ///
     /// # Errors
     ///
@@ -580,14 +574,14 @@ impl UtreexoD {
                     serde_json::Value::Number(0.into()),
                 ],
             )
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         debug!("{}: got filter tip at height={}", Self::get_name(), height);
 
         Ok(height)
     }
 
-    /// Get the [`BlockHash`] of the block at height `height`.
+    /// Return the [`BlockHash`] of the block at `height`.
     ///
     /// # Errors
     ///
@@ -596,7 +590,7 @@ impl UtreexoD {
         let hash = self
             .client
             .call::<serde_json::Value>("getblockhash", &[height.into()])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_str()
             .ok_or(Error::UnexpectedResponse(
                 "getblockhash returned a non-string value".to_string(),
@@ -615,7 +609,7 @@ impl UtreexoD {
     }
 
     // TODO(@luisschwab): return a `rustreexo::proof::Proof`
-    /// Get the Utreexo proof for the block at height `height`.
+    /// Return the Utreexo proof for the block at `height`.
     ///
     /// # Errors
     ///
@@ -632,7 +626,7 @@ impl UtreexoD {
         let proof_hex = self
             .client
             .call::<serde_json::Value>("getutreexoproof", &[block_hash.to_string().into()])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_str()
             .ok_or(Error::UnexpectedResponse(
                 "getutreexoproof returned a non-string value".to_string(),
@@ -641,7 +635,7 @@ impl UtreexoD {
         Ok(proof_hex)
     }
 
-    /// Check whether this [`UtreexoD`] has a peer with a specific [`SocketAddr`].
+    /// Check whether this [`UtreexoD`] has a peer with the specified [`SocketAddr`].
     ///
     /// # Errors
     ///
@@ -650,7 +644,7 @@ impl UtreexoD {
         let peers = self
             .client
             .call::<serde_json::Value>("getpeerinfo", &[])
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         let has_peer = peers.as_array().is_some_and(|v| {
             v.iter().any(|p| {
@@ -683,8 +677,8 @@ impl UtreexoD {
         Ok(has_peer)
     }
 
-    /// Connect this [`UtreexoD`] to a peer at [`socket`](SocketAddr) and
-    /// wait until the connection is established (up to 5 seconds with exponential back-off).
+    /// Connect this [`UtreexoD`] to a peer at [`socket`](SocketAddr).
+    /// Use exponential backoff for a maximum of 5 seconds while you wait for the connection.
     ///
     /// # Errors
     ///
@@ -695,7 +689,7 @@ impl UtreexoD {
 
         self.client
             .add_node(&socket.to_string(), AddNodeCommand::Add)
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
 
         let mut delay = CONNECTION_INTERVAL;
 
@@ -704,7 +698,7 @@ impl UtreexoD {
             let peers = self
                 .client
                 .call::<serde_json::Value>("getpeerinfo", &[])
-                .map_err(Error::JsonRpc)?;
+                .map_err(NodeError::JsonRpc)?;
             if peers.as_array().is_some_and(|v| {
                 v.iter().any(|p| {
                     p["addr"]
@@ -719,13 +713,10 @@ impl UtreexoD {
             delay = (delay * 2).min(Duration::from_secs(1));
         }
 
-        Err(Error::PeerConnectionTimeout((
-            self.get_p2p_socket(),
-            socket,
-        )))
+        Err(NodeError::PeerConnectionTimeout((self.get_p2p_socket(), socket)).into())
     }
 
-    /// Get [`UtreexoD`]'s peer count.
+    /// Return the peer count of [`UtreexoD`].
     ///
     /// # Errors
     ///
@@ -734,7 +725,7 @@ impl UtreexoD {
         let peers = self
             .client
             .call::<serde_json::Value>("getpeerinfo", &[])
-            .map_err(Error::JsonRpc)?;
+            .map_err(NodeError::JsonRpc)?;
         let peer_count = peers
             .as_array()
             .ok_or(Error::UnexpectedResponse(
@@ -760,7 +751,7 @@ impl UtreexoD {
         let hashes = self
             .client
             .call::<serde_json::Value>("generate", &[serde_json::Value::Number(count.into())])
-            .map_err(Error::JsonRpc)?
+            .map_err(NodeError::JsonRpc)?
             .as_array()
             .ok_or(Error::UnexpectedResponse(
                 "generate returned a non-array value".to_string(),
@@ -778,13 +769,12 @@ impl UtreexoD {
         Ok(hashes)
     }
 
-    // ----> INTERNAL
-
     /// Validate typed and raw configuration.
     fn validate_configuration(conf: &UtreexoDConf) -> Result<(), Error> {
         const OPTIONS: &[&str] = &[
             "assumeutreexo",
             "cfilters",
+            "connect",
             "datadir",
             "dnsseed",
             "flatutreexoproofindex",
@@ -829,38 +819,42 @@ impl UtreexoD {
         validate_node_arguments(&conf.args)?;
 
         if conf.args.network == Network::Testnet4 {
-            return Err(Error::InvalidNodeConfiguration(
+            return Err(NodeError::InvalidConfiguration(
                 "utreexod does not support testnet4".to_string(),
-            ));
+            )
+            .into());
         }
         if conf.args.prune == PruneMode::Manual {
-            return Err(Error::InvalidNodeConfiguration(
+            return Err(NodeError::InvalidConfiguration(
                 "utreexod does not support manual pruning".to_string(),
-            ));
+            )
+            .into());
         }
         if conf.utreexod_args.proof_index_max_memory_mib < 250 {
-            return Err(Error::InvalidNodeConfiguration(format!(
+            return Err(NodeError::InvalidConfiguration(format!(
                 "Utreexo proof-index memory must be at least 250 MiB (got {} MiB)",
                 conf.utreexod_args.proof_index_max_memory_mib
-            )));
+            ))
+            .into());
         }
         if let Some(address) = &conf.utreexod_args.mining_address {
             if !address.is_valid_for_network(conf.args.network) {
-                return Err(Error::InvalidNodeConfiguration(format!(
+                return Err(NodeError::InvalidConfiguration(format!(
                     "mining address {} is incompatible with network {}",
                     address.assume_checked_ref(),
                     conf.args.network
-                )));
+                ))
+                .into());
             }
         }
         if let Some(arg) = find_conflicting_argument(&conf.raw_args, OPTIONS, BOOLEAN_OPTIONS) {
-            return Err(Error::ConflictingNodeArgument(arg));
+            return Err(NodeError::ConflictingArgument(arg).into());
         }
 
         Ok(())
     }
 
-    /// Render daemon-owned arguments after validating the configuration.
+    /// Validate the configuration and create daemon arguments.
     fn configured_args(conf: &UtreexoDConf) -> Result<Vec<String>, Error> {
         Self::validate_configuration(conf)?;
 
@@ -873,6 +867,12 @@ impl UtreexoD {
             Network::Regtest => args.push("--regtest".to_string()),
         }
 
+        args.extend(
+            conf.args
+                .fixed_peers
+                .iter()
+                .map(|peer| format!("--connect={peer}")),
+        );
         if conf.args.cbf_index {
             args.push("--cfilters".to_string());
         }
@@ -909,7 +909,7 @@ impl UtreexoD {
         Ok(args)
     }
 
-    /// Return the `utreexod` data-directory name for a supported network.
+    /// Return the `utreexod` data directory name for a supported network.
     #[cfg(any(target_os = "windows", test))]
     fn network_data_dir_name(network: Network) -> &'static str {
         match network {
@@ -923,9 +923,9 @@ impl UtreexoD {
 
     /// Mark the Utreexo forest data file as sparse before `utreexod` opens it.
     ///
-    /// The `utreexo::OpenForest` call truncates `forest_data.dat` to a large apparent size.
-    /// Unix filesystems usually handle that as sparse automatically, but Windows requires
-    /// the sparse flag to be set first.
+    /// `utreexo::OpenForest` sets a large apparent size for `forest_data.dat`.
+    /// Unix file systems usually make this a sparse file.
+    /// Windows requires the sparse flag before this operation.
     #[cfg(target_os = "windows")]
     fn prepare_sparse_forest_file(
         working_directory: &DataDir,
@@ -962,10 +962,10 @@ impl UtreexoD {
         }
     }
 
-    /// Poll `getblockchaininfo` until it succeeds, building and returning the
-    /// authenticated client on success.
+    /// Poll `getblockchaininfo` until it succeeds.
+    /// Then, create and return the authenticated client.
     ///
-    /// Returns `Err` if the node is not responsive within `timeout`.
+    /// Returns `Err` if the [`Node`] is not responsive within `timeout`.
     fn wait_for_client(rpc_url: &str, auth: &Auth, timeout: Duration) -> Result<Client, Error> {
         let start = Instant::now();
         while start.elapsed() < timeout {
@@ -980,15 +980,14 @@ impl UtreexoD {
             sleep(Duration::from_millis(200));
         }
 
-        Err(Error::RpcClientSetupTimeout)
+        Err(Error::ClientSetupTimeout)
     }
 }
 
 impl Drop for UtreexoD {
-    /// Kills the `utreexod` process and waits for it to exit.
+    /// Terminate the `utreexod` process and wait for it to exit.
     ///
-    /// Errors from `kill` and `wait` are silently discarded so that `Drop`
-    /// never panics.
+    /// Ignore errors from `kill` and `wait` to prevent a panic in `Drop`.
     fn drop(&mut self) {
         debug!(
             "{}: killing process with pid={}",
@@ -1000,209 +999,5 @@ impl Drop for UtreexoD {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn assert_invalid(conf: &UtreexoDConf) {
-        assert!(matches!(
-            UtreexoD::configured_args(conf),
-            Err(Error::InvalidNodeConfiguration(_))
-        ));
-    }
-
-    #[test]
-    fn default_configuration_preserves_existing_behavior() {
-        let conf = UtreexoDConf::default();
-
-        assert!(conf.raw_args.is_empty());
-        assert_eq!(conf.args.network, Network::Regtest);
-        assert!(conf.args.cbf_index);
-        assert_eq!(conf.args.prune, PruneMode::Disabled);
-        assert!(conf.args.v2_transport);
-        assert!(!conf.args.txindex);
-        assert!(!conf.utreexod_args.dns_seed);
-        assert!(!conf.utreexod_args.assume_utreexo);
-        assert_eq!(conf.utreexod_args.proof_index_max_memory_mib, 256);
-        assert_eq!(
-            conf.utreexod_args
-                .mining_address
-                .as_ref()
-                .unwrap()
-                .assume_checked_ref()
-                .to_string(),
-            DEFAULT_MINING_ADDRESS
-        );
-        assert_eq!(
-            UtreexoD::configured_args(&conf).unwrap(),
-            [
-                "--regtest",
-                "--cfilters",
-                "--prune=0",
-                "--v2transport",
-                "--notls",
-                "--nodnsseed",
-                "--noassumeutreexo",
-                "--miningaddr=bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4yak",
-                "--flatutreexoproofindex",
-                "--utreexoproofindexmaxmemory=256",
-            ]
-        );
-    }
-
-    #[test]
-    fn renders_supported_networks_and_data_paths() {
-        let cases = [
-            (Network::Bitcoin, None, "mainnet"),
-            (Network::Testnet, Some("--testnet"), "testnet3"),
-            (Network::Signet, Some("--signet"), "signet"),
-            (Network::Regtest, Some("--regtest"), "regtest"),
-        ];
-
-        for (network, switch, data_dir) in cases {
-            let mut conf = UtreexoDConf::default();
-            conf.args.network = network;
-            conf.utreexod_args.mining_address = None;
-            let args = UtreexoD::configured_args(&conf).unwrap();
-            match switch {
-                Some(switch) => assert!(args.contains(&switch.to_string())),
-                None => {
-                    assert!(!args.iter().any(|arg| {
-                        ["--testnet", "--signet", "--regtest"].contains(&arg.as_str())
-                    }));
-                }
-            }
-            assert_eq!(UtreexoD::network_data_dir_name(network), data_dir);
-        }
-
-        assert_eq!(
-            UtreexoD::network_data_dir_name(Network::Testnet4),
-            "testnet4"
-        );
-    }
-
-    #[test]
-    fn rejects_testnet4() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.network = Network::Testnet4;
-        conf.utreexod_args.mining_address = None;
-        assert_invalid(&conf);
-    }
-
-    #[test]
-    fn renders_boolean_and_daemon_specific_flags() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.cbf_index = false;
-        conf.args.v2_transport = false;
-        conf.args.txindex = true;
-        conf.utreexod_args.dns_seed = true;
-        conf.utreexod_args.assume_utreexo = true;
-        conf.utreexod_args.mining_address = None;
-        conf.utreexod_args.proof_index_max_memory_mib = 512;
-
-        let args = UtreexoD::configured_args(&conf).unwrap();
-        assert!(!args.contains(&"--cfilters".to_string()));
-        assert!(!args.contains(&"--v2transport".to_string()));
-        assert!(args.contains(&"--txindex".to_string()));
-        assert!(!args.contains(&"--nodnsseed".to_string()));
-        assert!(!args.contains(&"--noassumeutreexo".to_string()));
-        assert!(!args.iter().any(|arg| arg.starts_with("--miningaddr=")));
-        assert!(args.contains(&"--notls".to_string()));
-        assert!(args.contains(&"--flatutreexoproofindex".to_string()));
-        assert!(args.contains(&"--utreexoproofindexmaxmemory=512".to_string()));
-    }
-
-    #[test]
-    fn validates_pruning_modes() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.prune = PruneMode::Automatic(550);
-        assert!(
-            UtreexoD::configured_args(&conf)
-                .unwrap()
-                .contains(&"--prune=550".to_string())
-        );
-
-        conf.args.prune = PruneMode::Automatic(549);
-        assert_invalid(&conf);
-
-        conf.args.prune = PruneMode::Manual;
-        assert_invalid(&conf);
-
-        conf.args.prune = PruneMode::Automatic(550);
-        conf.args.txindex = true;
-        assert_invalid(&conf);
-    }
-
-    #[test]
-    fn validates_proof_index_memory() {
-        let mut conf = UtreexoDConf::default();
-        conf.utreexod_args.proof_index_max_memory_mib = 249;
-        assert_invalid(&conf);
-
-        conf.utreexod_args.proof_index_max_memory_mib = 250;
-        assert!(UtreexoD::configured_args(&conf).is_ok());
-    }
-
-    #[test]
-    fn validates_mining_address_network() {
-        let mut conf = UtreexoDConf::default();
-        conf.args.network = Network::Bitcoin;
-        assert_invalid(&conf);
-
-        conf.utreexod_args.mining_address = Some(
-            Address::from_str("1BitcoinEaterAddressDontSendf59kuE").expect("valid mainnet address"),
-        );
-        let args = UtreexoD::configured_args(&conf).unwrap();
-        assert!(args.contains(&"--miningaddr=1BitcoinEaterAddressDontSendf59kuE".to_string()));
-    }
-
-    #[test]
-    fn rejects_raw_typed_and_invariant_argument_spellings() {
-        let conflicts = [
-            "--regtest",
-            "--noregtest",
-            "--testnet=true",
-            "--cfilters",
-            "--nocfilters",
-            "--prune=0",
-            "--noprune",
-            "--v2transport",
-            "--nov2transport",
-            "--txindex=true",
-            "--notxindex",
-            "--dnsseed",
-            "--nodnsseed",
-            "--assumeutreexo",
-            "--noassumeutreexo",
-            "--miningaddr=bcrt1qusgerygumpd0ztn735s5pypq6wsv2zzhuc4yak",
-            "--notls",
-            "--tls",
-            "--flatutreexoproofindex",
-            "--noflatutreexoproofindex",
-            "--utreexoproofindex",
-            "--utreexoproofindexmaxmemory=500",
-            "--datadir=/tmp/utreexo",
-            "--listen=127.0.0.1:18333",
-            "--rpcpass=secret",
-            "--rpclisten=127.0.0.1:18334",
-            "--rpcuser=user",
-        ];
-
-        for arg in conflicts {
-            let conf = UtreexoDConf {
-                raw_args: vec![arg.to_string()],
-                ..UtreexoDConf::default()
-            };
-            assert!(matches!(
-                UtreexoD::configured_args(&conf),
-                Err(Error::ConflictingNodeArgument(conflict)) if conflict == arg
-            ));
-        }
-
-        let conf = UtreexoDConf {
-            raw_args: vec!["--debuglevel=trace".to_string(), "--maxpeers=8".to_string()],
-            ..UtreexoDConf::default()
-        };
-        assert!(UtreexoD::configured_args(&conf).is_ok());
-    }
-}
+#[cfg(all(test, halfin_node))]
+mod test;

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-/// [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD)'s human-readable name.
+/// Human-readable name of [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD).
 #[allow(unused)]
 pub(crate) const ELECTRUMX_NAME: &str = "ElectrumxD";
 
-/// [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD)'s binary name.
+/// Binary name of [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD).
 #[allow(unused)]
 pub(crate) const ELECTRUMX_BIN_NAME: &str = "electrumx_v_1_20_0";
 

@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Local release builder for the `ElectrumX` Python application bundles.
+//! Build local release archives for the `ElectrumX` Python application.
 //!
-//! This is wired as a Cargo example. Run it from the repository root with:
+//! Run this Cargo example from the repository root:
 //!
 //! ```text
 //! cargo run --example cross-compile-electrumx
 //! ```
 //!
-//! The script checks out the pinned upstream release, builds a wheel for the
-//! `ElectrumX` source tree, downloads platform-specific dependency wheels, creates
-//! a small launcher bundle for every supported target, and writes a
-//! `SHA256SUMS` file suitable for publishing.
+//! The program gets the specified upstream release and builds its Python wheel.
+//! It gets the dependency wheels for each platform and builds each launcher archive.
+//! It also writes the `SHA256SUMS` file for publication.
 
 use std::env;
 use std::ffi::OsStr;
@@ -30,7 +29,7 @@ const ELECTRUMX_REPO: &str = "https://github.com/spesmilo/electrumx";
 /// Upstream `ElectrumX` version packaged by this builder.
 const ELECTRUMX_VERSION: &str = "1.20.0";
 
-/// Magic prefix for the std-only embedded wheelhouse archive.
+/// Magic prefix for the embedded wheelhouse archive that uses only the standard library.
 const WHEELHOUSE_MAGIC: &[u8] = b"HALFIN_ELECTRUMX_WHEELHOUSE_V1\0";
 
 /// Build backend used for the compiled `ElectrumX` launcher.
@@ -55,13 +54,13 @@ struct Target {
     python_version: &'static str,
     /// Python ABI tag passed to pip when downloading target wheels.
     abi: &'static str,
-    /// Published archive filename expected by future download code.
+    /// Published archive file name that the download code expects.
     artifact_name: &'static str,
     /// Compiled launcher name inside the final bundle.
     exe_name: &'static str,
     /// Build backend for the compiled launcher.
     builder: Builder,
-    /// Whether this artifact targets Windows.
+    /// Identifies an artifact for Windows.
     windows: bool,
     /// Directory under `local_wheels/` containing locally built native wheels.
     local_wheel_dir: Option<&'static str>,
@@ -228,7 +227,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Clone or reuse the upstream checkout and reset it to the pinned tag.
+/// Clone or reuse the upstream repository and reset it to the specified tag.
 fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let source_dir_s = path_string(source_dir);
 
@@ -258,7 +257,7 @@ fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-/// Return whether existing artifacts should be rebuilt.
+/// Return whether the build must replace existing artifacts.
 fn parse_args() -> Result<bool, Box<dyn std::error::Error>> {
     let mut force = false;
 
@@ -356,7 +355,7 @@ fn build_electrumx_wheel(
     Ok(())
 }
 
-/// Ensure all Rust target triples needed for published launchers are installed.
+/// Install all Rust target triples that the published launchers require.
 fn install_targets(sh: &Shell) -> Result<(), Box<dyn std::error::Error>> {
     for target in TARGETS {
         let triple = target.triple;
@@ -704,7 +703,7 @@ fn build_local_plyvel_wheel(
     }
 }
 
-/// Create a directory with ordinary filesystem APIs.
+/// Create a directory with standard file system APIs.
 fn sh_create_dir_all(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(path)?;
     Ok(())
@@ -812,7 +811,7 @@ fn archive_entries(artifact: &Path) -> Result<Vec<String>, Box<dyn std::error::E
         .collect())
 }
 
-/// Hash a packaged archive using whatever SHA256 tool is available locally.
+/// Hash an archive with an available local SHA256 tool.
 fn sha256_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     if has_tool("shasum") {
         let out = output(Command::new("shasum").arg("-a").arg("256").arg(path))?;
@@ -890,7 +889,7 @@ fn require_cargo_subcommand(subcommand: &str) -> Result<(), Box<dyn std::error::
     }
 }
 
-/// Return whether `tool` resolves on `PATH`.
+/// Return whether `PATH` contains `tool`.
 fn has_tool(tool: &str) -> bool {
     Command::new("sh")
         .arg("-c")
@@ -901,7 +900,7 @@ fn has_tool(tool: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Run `command` quietly and return whether it exits successfully.
+/// Run `command` without output and return whether it succeeds.
 fn command_succeeds(command: &mut Command) -> bool {
     command
         .stdout(std::process::Stdio::null())
@@ -919,7 +918,8 @@ fn venv_python(venv_dir: &Path) -> PathBuf {
     }
 }
 
-/// Run the build venv's Python quietly with the given arguments.
+/// Run Python from the build virtual environment without output.
+/// Use the specified arguments.
 fn run_python(python: &Path, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     let status = Command::new(python).args(args).status()?;
     if status.success() {

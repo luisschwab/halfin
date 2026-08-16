@@ -1,135 +1,72 @@
-//! # Error
+//! Error types for process management and backend operations.
 //!
-//! Error types returned by [`Node`](crate::node::Node)
-//! and indexer process management helpers.
+//! [`Error`] contains errors that are common to [`Node`] and [`Indexer`] implementations.
+//! It also contains feature-gated [`Node`] and [`Indexer`] errors.
+//!
+//! [`Indexer`]: crate::indexer::Indexer
+//! [`Node`]: crate::node::Node
 
 use core::error;
 use core::fmt;
-use core::net::SocketAddr;
-use core::time::Duration;
 use std::io;
 use std::path::PathBuf;
 
-/// Errors returned by node and indexer process management helpers.
+#[cfg(halfin_indexer)]
+use crate::indexer::IndexerError;
+#[cfg(halfin_node)]
+use crate::node::NodeError;
+
+/// Errors returned by [`Node`](crate::node::Node) and [`Indexer`](crate::indexer::Indexer) process
+/// management helpers.
 #[derive(Debug)]
 pub enum Error {
     /// The binary path is not absolute.
     BinaryPathNotAbsolute {
-        /// Name of the binary whose path was rejected.
+        /// Name of the binary for the rejected path.
         bin_name: String,
-        /// Rejected filesystem path.
+        /// Rejected file system path.
         path: String,
     },
 
     /// The binary path is not a file.
     BinaryPathNotFile {
-        /// Name of the binary whose path was rejected.
+        /// Name of the binary for the rejected path.
         bin_name: String,
-        /// Rejected filesystem path.
+        /// Rejected file system path.
         path: String,
     },
 
     /// The binary was not found at the expected location.
     BinaryNotFound((String, PathBuf)),
 
-    /// Failed to spawn a [process](std::process::Child) for a [`Node`](crate::node::Node) or
-    /// Electrum Server.
+    /// The system could not start a [`Node`](crate::node::Node) or
+    /// [`Indexer`](crate::indexer::Indexer) process.
     FailedToSpawn(io::Error),
 
-    /// Failed to instantiate a node or indexer after
-    /// [`SPAWN_ATTEMPTS`](crate::SPAWN_ATTEMPTS) attempts.
-    ExhaustedNodeBuildingAttempts(u8),
+    /// The process did not start after the configured number of attempts.
+    StartupAttemptsExhausted(u8),
 
-    /// Failed to stop a [`Node`](crate::node::Node) over JSON-RPC.
-    FailedToStop(corepc_client::client_sync::Error),
-
-    /// I/O errors.
+    /// An input or output operation failed.
     Io(io::Error),
 
-    /// JSON-RPC Errors.
-    JsonRpc(corepc_client::client_sync::Error),
-
-    /// Timed out whilst waiting for peer connection to succeed.
-    PeerConnectionTimeout((SocketAddr, SocketAddr)),
-
-    /// Both `tmpdir` and `staticdir` were specified.
+    /// The configuration contains both `tmpdir` and `staticdir`.
     BothDirsSpecified,
 
-    /// A raw CLI argument conflicts with a typed node configuration field.
-    ConflictingNodeArgument(String),
+    /// A [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) client did not become
+    /// ready before the timeout.
+    ClientSetupTimeout,
 
-    /// A raw CLI argument conflicts with typed or dynamic indexer configuration.
-    ConflictingIndexerArgument(String),
-
-    /// Typed node configuration contains an unsupported combination or value.
-    InvalidNodeConfiguration(String),
-
-    /// A node does not support a requested command.
-    UnsupportedCommand {
-        /// Human-readable node name.
-        node: &'static str,
-        /// Unsupported command name.
-        command: &'static str,
-    },
-
-    /// The Python interpreter required by the bundled `ElectrumX` launcher is unavailable or
-    /// cannot run.
-    #[cfg(feature = "electrumx")]
-    InvalidPython(String),
-
-    /// Indexer configuration is incompatible with its backing node.
-    InvalidIndexerConfiguration(String),
-
-    /// The node implementation cannot be used as an external indexer's backend.
-    UnsupportedIndexerBackend {
-        /// Human-readable node name.
-        node: &'static str,
-    },
-
-    /// [`BitcoinD`](crate::node::bitcoind::BitcoinD) is unresponsive (it's probably not running).
-    #[cfg(feature = "bitcoind")]
-    UnresponsiveBitcoinD(corepc_client::client_sync::Error),
-
-    /// [`UtreexoD`](crate::node::utreexod::UtreexoD) is unresponsive (it's probably not running).
-    #[cfg(feature = "utreexod")]
-    UnresponsiveUtreexoD(corepc_client::client_sync::Error),
-
-    /// [`FlorestaD`](crate::node::florestad::FlorestaD) is unresponsive to Electrum requests.
-    #[cfg(feature = "florestad")]
-    UnresponsiveFlorestaD(electrum_client::Error),
-
-    /// [`ElectrsD`](crate::indexer::electrsd::ElectrsD) is unresponsive (it's probably not
-    /// running).
-    #[cfg(feature = "electrs")]
-    UnresponsiveElectrsD(electrum_client::Error),
-
-    /// [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD) is unresponsive (it's probably not
-    /// running).
-    #[cfg(feature = "electrumx")]
-    UnresponsiveElectrumxD(electrum_client::Error),
-
-    /// Timed out whilst waiting for [`ElectrsD`](crate::indexer::electrsd::ElectrsD) to index
-    /// expected data.
-    #[cfg(feature = "electrs")]
-    ElectrsDIndexTimeout((String, Duration)),
-
-    /// Timed out whilst waiting for [`ElectrumxD`](crate::indexer::electrumxd::ElectrumxD) to index
-    /// expected data.
-    #[cfg(feature = "electrumx")]
-    ElectrumxDIndexTimeout((String, Duration)),
-
-    /// Timed out whilst waiting for the JSON-RPC client to be ready.
-    RpcClientSetupTimeout,
-
-    /// Received an unexpected response from the JSON-RPC server
+    /// A [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) returned an unexpected
+    /// response.
     UnexpectedResponse(String),
 
-    /// Timed out whilst waiting for the [`Node`](crate::node::Node)'s chain to synchronize up to
-    /// `height`
-    ChainSyncTimeOut((u32, u32, Duration)), // (target_height, current_height, timeout)
+    /// A [`Node`](crate::node::Node) operation failed.
+    #[cfg(halfin_node)]
+    Node(NodeError),
 
-    /// Timed out whilst waiting for a [`Node`](crate::node::Node) connection to succeed.
-    ConnectionTimeout(Duration),
+    /// An [`Indexer`](crate::indexer::Indexer) operation failed.
+    #[cfg(halfin_indexer)]
+    Indexer(IndexerError),
 }
 
 #[rustfmt::skip]
@@ -139,48 +76,32 @@ impl fmt::Display for Error {
             Self::BinaryPathNotAbsolute { bin_name, path } => write!(f, "The `{}` binary path is not absolute (path={})", bin_name, path),
             Self::BinaryPathNotFile { bin_name, path } => write!(f, "The `{}` binary path is not a file (path={})", bin_name, path),
             Self::BinaryNotFound((bin_name, path)) => write!(f, "The `{}` binary was not found at the expected location={}", bin_name, path.display()),
-            Self::FailedToSpawn(err) => write!(f, "Failed to spawn a process: {err:?}"),
-            Self::ExhaustedNodeBuildingAttempts(retries) => write!(f, "Failed to instantiate the process after {} attempts", retries),
-            Self::FailedToStop(err) => write!(f, "Failed to stop the node over JSON-RPC: {err:?}"),
-            Self::Io(err) => write!(f, "I/O Error: {err:?}"),
-            Self::JsonRpc(err) => write!(f, "JSON-RPC Error: {err:?}"),
-            Self::PeerConnectionTimeout((local_socket, remote_socket)) => write!(f, "Timed out whilst waiting for connection between local={local_socket} and remote={remote_socket}"),
+            Self::FailedToSpawn(err) => write!(f, "Failed to spawn a process: {err}"),
+            Self::StartupAttemptsExhausted(attempts) => write!(f, "Failed to start the process after {attempts} attempts"),
+            Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::BothDirsSpecified => write!(f, "Both `tmpdir` and `staticdir` were specified. You must choose one or neither"),
-            Self::ConflictingNodeArgument(arg) => write!(f, "Raw node argument conflicts with typed configuration: {arg}"),
-            Self::ConflictingIndexerArgument(arg) => write!(f, "Raw indexer argument conflicts with typed or dynamic configuration: {arg}"),
-            Self::InvalidNodeConfiguration(description) => write!(f, "Invalid node configuration: {description}"),
-            Self::UnsupportedCommand { node, command } => write!(f, "`{node}` does not support the `{command}` command"),
-            #[cfg(feature = "electrumx")]
-            Self::InvalidPython(description) => write!(f, "Invalid Python runtime for `ElectrumX`: {description}"),
-            Self::InvalidIndexerConfiguration(description) => write!(f, "Invalid indexer configuration: {description}"),
-            Self::UnsupportedIndexerBackend { node } => write!(f, "`{node}` cannot be used as a backing node for an indexer"),
-            #[cfg(feature = "bitcoind")]
-            Self::UnresponsiveBitcoinD(err) => write!(f, "`BitcoinD` is unresponsive to JSON-RPC calls: {err:?}"),
-            #[cfg(feature = "utreexod")]
-            Self::UnresponsiveUtreexoD(err) => write!(f, "`UtreexoD` is unresponsive to JSON-RPC calls: {err:?}"),
-            #[cfg(feature = "florestad")]
-            Self::UnresponsiveFlorestaD(err) => write!(f, "`FlorestaD` is unresponsive to Electrum requests: {err:?}"),
-            #[cfg(feature = "electrs")]
-            Self::UnresponsiveElectrsD(err) => write!(f, "`ElectrsD` is unresponsive to Electrum requests: {err:?}"),
-            #[cfg(feature = "electrumx")]
-            Self::UnresponsiveElectrumxD(err) => write!(f, "`ElectrumxD` is unresponsive to Electrum requests: {err:?}"),
-            #[cfg(feature = "electrs")]
-            Self::ElectrsDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrsD` to index {description}", timeout.as_secs()),
-            #[cfg(feature = "electrumx")]
-            Self::ElectrumxDIndexTimeout((description, timeout)) => write!(f, "Timed out after {} seconds whilst waiting for `ElectrumxD` to index {description}", timeout.as_secs()),
-            Self::RpcClientSetupTimeout => write!(f, "Timed out whilst waiting for the JSON-RPC client to be ready"),
-            Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from the JSON-RPC server: {err:?}"),
-            Self::ChainSyncTimeOut((target_height, current_height, timeout)) => write!(
-                f,
-                "Timed out after {} seconds whilst waiting for the node's chain to synchronize to height={} (current height={})",
-                timeout.as_secs(), target_height, current_height
-            ),
-            Self::ConnectionTimeout(timeout) => write!(
-                f,
-                "Timed out after {} seconds whilst waiting for a node connection to succeed",
-                timeout.as_secs()
-            ),
+            Self::ClientSetupTimeout => write!(f, "Timed out whilst waiting for the client to be ready"),
+            Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from a node or indexer: {err}"),
+            #[cfg(halfin_node)]
+            Self::Node(err) => fmt::Display::fmt(err, f),
+            #[cfg(halfin_indexer)]
+            Self::Indexer(err) => fmt::Display::fmt(err, f),
         }
     }
 }
+
 impl error::Error for Error {}
+
+#[cfg(halfin_node)]
+impl From<NodeError> for Error {
+    fn from(err: NodeError) -> Self {
+        Self::Node(err)
+    }
+}
+
+#[cfg(halfin_indexer)]
+impl From<IndexerError> for Error {
+    fn from(err: IndexerError) -> Self {
+        Self::Indexer(err)
+    }
+}
