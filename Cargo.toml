@@ -58,20 +58,36 @@ zip = { version = "7", default-features = false, features = ["bzip2", "deflate"]
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
 xshell = { version = "=0.3.0-pre.2" }
 # Transitive dependency pins:
-lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber
+lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber@0.3.23
 
 [package.metadata.rbmt]
-version = "0.5.2"
-toolchains = { stable = "1.97.1", nightly = "nightly-2026-08-12" }
-lint = { allowed_duplicates = ["base64", "hex-conservative"] }
+version = "0.5.3"
+toolchains = { stable = "1.97.1", nightly = "nightly-2026-08-17" }
+lint = { allowed_duplicates = [
+    "base64",
+    "bitcoin_hashes",
+    "bitflags",
+    "hex-conservative",
+    "windows-sys",
+    "windows-targets",
+    "windows_aarch64_gnullvm",
+    "windows_aarch64_msvc",
+    "windows_i686_gnu",
+    "windows_i686_msvc",
+    "windows_x86_64_gnu",
+    "windows_x86_64_gnullvm",
+    "windows_x86_64_msvc"
+] }
 
 [package.metadata.rbmt.tools]
 cargo-audit = "0.22.2"
-cargo-llvm-cov = "0.8.7"
+cargo-llvm-cov = "0.9.0"
 zizmor = "1.29.0"
 
 [package.metadata.rbmt.test]
-# `cargo-rbmt` already runs tests with `--all-features` unconditionally
+# `cargo-rbmt` already runs tests with `--all-features`
+# unconditionally and there are no mutually exclusive
+# features, so skip redundant test runs
 exclude_features = [
     "bitcoind",
     "florestad",
