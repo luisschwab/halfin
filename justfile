@@ -48,7 +48,7 @@ fmt:
 
 [doc: "Regenerate Lockfiles"]
 lock:
-    cargo rbmt lock
+    cargo rbmt lock --lockfiles minimal,recent,maximum
 
 [doc: "Run Tests"]
 [env("RBMT_LOG_LEVEL", "verbose")]

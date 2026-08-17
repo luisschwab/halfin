@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Introduce `Cargo-maximum.lock`
 * Add code coverage testing by way of `cargo-llvm-cov`
 * Add `fixed_peers` to `NodeArgs`
 * Relax dependency versions
