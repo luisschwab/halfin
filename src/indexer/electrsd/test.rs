@@ -3,10 +3,6 @@
 //! Configuration and runtime integration tests for [`ElectrsD`].
 
 use core::time::Duration;
-#[cfg(feature = "bitcoind")]
-use std::io::BufRead;
-#[cfg(feature = "bitcoind")]
-use std::io::BufReader;
 use std::io::Error as IoError;
 use std::io::ErrorKind;
 #[cfg(feature = "bitcoind")]
@@ -61,7 +57,11 @@ use crate::SYNC_BLOCK_BATCHES;
 use crate::SYNC_INITIAL_BLOCK_COUNT;
 use crate::indexer::IndexerError;
 use crate::indexer::test::FakeNode;
+#[cfg(feature = "bitcoind")]
+use crate::indexer::test::read_scripted_electrum_request;
 use crate::indexer::test::scripted_electrum_client;
+#[cfg(feature = "bitcoind")]
+use crate::indexer::test::scripted_electrum_reader;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::scripted_electrum_socket;
 #[cfg(unix)]
@@ -84,11 +84,10 @@ fn electrum_server_with_invalid_queued_header(
     let socket = listener.local_addr().unwrap();
     let handle = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request_line = String::new();
-        BufReader::new(stream.try_clone().unwrap())
-            .read_line(&mut request_line)
-            .unwrap();
-        let version_request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+        let mut reader = scripted_electrum_reader(&stream);
+        let Some(version_request) = read_scripted_electrum_request(&mut reader) else {
+            return;
+        };
         writeln!(
             stream,
             "{}",
@@ -99,11 +98,9 @@ fn electrum_server_with_invalid_queued_header(
         )
         .unwrap();
 
-        request_line.clear();
-        BufReader::new(stream.try_clone().unwrap())
-            .read_line(&mut request_line)
-            .unwrap();
-        let subscribe_request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+        let Some(subscribe_request) = read_scripted_electrum_request(&mut reader) else {
+            return;
+        };
         writeln!(
             stream,
             "{}",
@@ -115,11 +112,9 @@ fn electrum_server_with_invalid_queued_header(
         .unwrap();
 
         for ping_index in 0..2 {
-            request_line.clear();
-            BufReader::new(stream.try_clone().unwrap())
-                .read_line(&mut request_line)
-                .unwrap();
-            let ping_request: serde_json::Value = serde_json::from_str(&request_line).unwrap();
+            let Some(ping_request) = read_scripted_electrum_request(&mut reader) else {
+                return;
+            };
             if ping_index == 0 {
                 writeln!(
                     stream,
