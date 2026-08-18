@@ -13,8 +13,10 @@ use std::cell::Cell;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::io::ErrorKind;
 use std::io::Write;
 use std::net::TcpListener;
+use std::net::TcpStream;
 use std::path::PathBuf;
 #[cfg(all(feature = "bitcoind", feature = "electrumx"))]
 use std::sync::Condvar;
@@ -62,6 +64,31 @@ use crate::node::PruneMode;
 use crate::node::RPC_COOKIE_FILE_NAME;
 #[cfg(feature = "bitcoind")]
 use crate::node::bitcoind::BitcoinD;
+
+/// Maximum time a scripted Electrum server waits for the next request.
+const SCRIPTED_ELECTRUM_READ_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Create a buffered reader that cannot wait forever for a scripted request.
+pub(super) fn scripted_electrum_reader(stream: &TcpStream) -> BufReader<TcpStream> {
+    let reader = stream.try_clone().unwrap();
+    reader
+        .set_read_timeout(Some(SCRIPTED_ELECTRUM_READ_TIMEOUT))
+        .unwrap();
+    BufReader::new(reader)
+}
+
+/// Read and parse one request, or stop when the client closes or becomes idle.
+pub(super) fn read_scripted_electrum_request(
+    reader: &mut impl BufRead,
+) -> Option<serde_json::Value> {
+    let mut request = String::new();
+    match reader.read_line(&mut request) {
+        Ok(0) => None,
+        Ok(_) => Some(serde_json::from_str(&request).unwrap()),
+        Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => None,
+        Err(error) => panic!("failed to read scripted Electrum request: {error}"),
+    }
+}
 
 /// Configuration for [`FakeNode`].
 #[derive(Debug)]
@@ -237,11 +264,10 @@ pub(super) fn scripted_electrum_socket(
     let socket = listener.local_addr().unwrap();
     let handle = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request = String::new();
-        BufReader::new(stream.try_clone().unwrap())
-            .read_line(&mut request)
-            .unwrap();
-        let version_request: serde_json::Value = serde_json::from_str(&request).unwrap();
+        let mut reader = scripted_electrum_reader(&stream);
+        let Some(version_request) = read_scripted_electrum_request(&mut reader) else {
+            return;
+        };
         let version_response = serde_json::json!({
             "id": version_request["id"].clone(),
             "result": ["halfin-test", "1.4"]
@@ -249,14 +275,12 @@ pub(super) fn scripted_electrum_socket(
         writeln!(stream, "{version_response}").unwrap();
 
         for response in responses {
-            let mut request = String::new();
-            BufReader::new(stream.try_clone().unwrap())
-                .read_line(&mut request)
-                .unwrap();
+            let Some(request) = read_scripted_electrum_request(&mut reader) else {
+                return;
+            };
             let Some(response) = response else {
                 return;
             };
-            let request: serde_json::Value = serde_json::from_str(&request).unwrap();
             let id = request["id"].clone();
             let response = match response {
                 Ok(result) => serde_json::json!({ "id": id, "result": result }),
@@ -275,6 +299,15 @@ pub(super) fn scripted_electrum_client(
     let (socket, handle) = scripted_electrum_socket(vec![response]);
     let client = RawClient::new(socket, Some(Duration::from_secs(1)), None).unwrap();
     (client, handle)
+}
+
+/// Verify unused scripted responses do not leave the server blocked on a read.
+#[test]
+fn scripted_electrum_server_stops_after_read_timeout() {
+    let (socket, server) = scripted_electrum_socket(vec![Some(Ok(serde_json::Value::Null))]);
+    let _client = RawClient::new(socket, Some(Duration::from_secs(1)), None).unwrap();
+
+    server.join().unwrap();
 }
 
 /// Return the indexer error inside a common error.
