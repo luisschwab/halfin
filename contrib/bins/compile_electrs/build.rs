@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let force = parse_args()?;
     let sh = Shell::new()?;
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let compile_electrs_dir = manifest_dir.join("contrib/compile_electrs");
+    let compile_electrs_dir = manifest_dir.join("contrib/bins/compile_electrs");
     let cross_config = compile_electrs_dir.join("Cross.toml");
     let dist_dir = compile_electrs_dir
         .join("dist")

@@ -75,9 +75,9 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     }
 }
 
-/// Return the path to the locally extracted `ElectrumX` launcher.
+/// Return the path to the downloaded `ElectrumX` launcher.
 ///
-/// At compile time, `build.rs` extracts the local archive from `contrib/compile_electrumx`.
+/// At compile time, `build.rs` downloads and extracts the launcher.
 /// It stores the launcher path in `HALFIN_ELECTRUMX_PATH`.
 ///
 /// # Errors

@@ -23,13 +23,19 @@ electrumx = ["dep:electrum-client"]
 
 [[example]]
 name = "cross-compile-electrs"
-path = "contrib/compile_electrs/build.rs"
+path = "contrib/bins/compile_electrs/build.rs"
 test = false
 bench = false
 
 [[example]]
 name = "cross-compile-electrumx"
-path = "contrib/compile_electrumx/build.rs"
+path = "contrib/bins/compile_electrumx/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "cross-compile-mempool-electrs"
+path = "contrib/bins/compile_mempool_electrs/build.rs"
 test = false
 bench = false
 

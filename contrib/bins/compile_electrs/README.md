@@ -59,13 +59,13 @@ The script hardcodes upstream `romanz/electrs` release `v0.11.1`.
 It clones or updates the source tree under:
 
 ```text
-contrib/compile_electrs/tmp/electrs
+contrib/bins/compile_electrs/tmp/electrs
 ```
 
 It writes archives and checksums under:
 
 ```text
-contrib/compile_electrs/dist/electrs-0.11.1/
+contrib/bins/compile_electrs/dist/electrs-0.11.1/
 ```
 
 Generated files:

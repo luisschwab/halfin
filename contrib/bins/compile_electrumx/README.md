@@ -56,13 +56,13 @@ The script hardcodes upstream `spesmilo/electrumx` release tag `1.20.0`. It
 clones or updates the source tree under:
 
 ```text
-contrib/compile_electrumx/tmp/electrumx
+contrib/bins/compile_electrumx/tmp/electrumx
 ```
 
 It writes archives and checksums under:
 
 ```text
-contrib/compile_electrumx/dist/electrumx-1.20.0/
+contrib/bins/compile_electrumx/dist/electrumx-1.20.0/
 ```
 
 Generated files:

@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let force = parse_args()?;
     let sh = Shell::new()?;
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let compile_electrumx_dir = manifest_dir.join("contrib/compile_electrumx");
+    let compile_electrumx_dir = manifest_dir.join("contrib/bins/compile_electrumx");
     let launcher_dir = compile_electrumx_dir.join("launcher");
     let plyvel_cross_builder = compile_electrumx_dir.join("build_plyvel_windows.py");
     let local_wheels_dir = compile_electrumx_dir.join("local_wheels");
