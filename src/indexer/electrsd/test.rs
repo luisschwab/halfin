@@ -294,7 +294,7 @@ fn electrsd_treats_socket_timeouts_as_incomplete_reads() {
     ));
 }
 
-/// Verify Electrs header matching without a running server.
+/// Verify `romanz/electrs` header matching without a running server.
 #[test]
 fn electrsd_matches_header_notifications() {
     let header = genesis_block(Network::Regtest).header;

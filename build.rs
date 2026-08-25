@@ -671,7 +671,7 @@ mod utreexod {
     }
 }
 
-/// Read and verify the `electrs` binary for the enabled version feature.
+/// Read and verify the `romanz/electrs` binary for the enabled version feature.
 #[cfg(feature = "electrs")]
 mod electrs {
     use super::binary::Binary;
@@ -679,10 +679,10 @@ mod electrs {
 
     include!("src/indexer/electrsd/versions.rs");
 
-    /// Compile-time environment variable containing the extracted `electrs` path.
+    /// Compile-time environment variable containing the extracted `romanz/electrs` path.
     const HALFIN_ELECTRS_PATH: &str = "HALFIN_ELECTRS_PATH";
 
-    /// Return the platform-specific archive file name for this `electrs` version.
+    /// Return the platform-specific archive file name for this `romanz/electrs` version.
     ///
     /// Panics if the current operating system and architecture are not supported.
     fn get_download_filename() -> String {
@@ -707,7 +707,7 @@ mod electrs {
         panic!("No download file for this OS+Architecture combination");
     }
 
-    /// Read, verify, and extract the `electrs` binary.
+    /// Read, verify, and extract the `romanz/electrs` binary.
     /// Use `<OUT_DIR>/bin/electrs-<VERSION>/electrs` as the default destination.
     /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
     ///

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Build local release archives for `electrs`.
+//! Build local release archives for `romanz/electrs`.
 //!
 //! Run this Cargo example from the repository root:
 //!
@@ -13,7 +13,7 @@
 //! It also writes the `SHA256SUMS` file for publication.
 
 // Keep the builder pinned to the same
-// `electrs` release that the crate downloads.
+// `romanz/electrs` release that the crate downloads.
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/src/indexer/electrsd/versions.rs"
@@ -29,7 +29,7 @@ use std::process::Command;
 use xshell::Shell;
 use xshell::cmd;
 
-/// Upstream `electrs` repository used as the release source.
+/// `romanz/electrs` repository used as the release source.
 const ELECTRS_REPO: &str = "https://github.com/romanz/electrs";
 
 /// Build backend used for a target triple.
@@ -61,7 +61,7 @@ struct Target {
     bindgen_args: Option<&'static str>,
 }
 
-/// All binaries published for a single electrs release.
+/// All binaries published for a single `romanz/electrs` release.
 const TARGETS: &[Target] = &[
     Target {
         triple: "aarch64-apple-darwin",
@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let source_dir = workdir.join("electrs");
 
     // Fail up front with actionable messages before spending time cloning or
-    // compiling the upstream electrs checkout.
+    // compiling the `romanz/electrs` checkout.
     log_step("checking required tools");
     require_tools(&["git", "cargo", "rustup", "tar", "zip"])?;
     require_any_tool(&["shasum", "sha256sum"])?;
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     log_step("writing SHA256SUMS");
     write_sha256sums(&dist_dir)?;
 
-    println!("electrs {} artifacts:", ELECTRS_VERSION);
+    println!("romanz/electrs {} artifacts:", ELECTRS_VERSION);
     for target in TARGETS {
         println!("  {}", dist_dir.join(target.artifact_name).display());
     }
@@ -185,12 +185,12 @@ fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::erro
 
     if source_dir.exists() {
         log_step(format!(
-            "using existing electrs checkout {}",
+            "using existing romanz/electrs checkout {}",
             source_dir.display()
         ));
     } else {
         log_step(format!(
-            "cloning electrs {} into {}",
+            "cloning romanz/electrs {} into {}",
             ELECTRS_VERSION,
             source_dir.display()
         ));
@@ -199,11 +199,11 @@ fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::erro
     }
 
     let sh = sh.with_current_dir(source_dir);
-    log_step("fetching electrs tags");
+    log_step("fetching romanz/electrs tags");
     cmd!(sh, "git fetch --tags --force").run_echo()?;
 
     let tag = format!("v{ELECTRS_VERSION}");
-    log_step(format!("checking out electrs {}", tag));
+    log_step(format!("checking out romanz/electrs {}", tag));
     cmd!(sh, "git checkout --force {tag}").run_echo()?;
 
     Ok(())
@@ -269,7 +269,7 @@ fn build_target(
             command = command.env("CROSS_CONFIG", cross_config_s);
             command = command.env("CROSS_CONTAINER_ENGINE", container_engine);
             command = command.env("DOCKER_DEFAULT_PLATFORM", "linux/amd64");
-            // electrs' RocksDB bindings need a newer libclang than what some
+            // `romanz/electrs`' RocksDB bindings need a newer libclang than what some
             // cross base images expose by default.
             command = command.env("LIBCLANG_PATH", "/usr/lib/llvm-10/lib");
             command = command.env("CLANG_PATH", "/usr/bin/clang-10");
@@ -412,7 +412,7 @@ fn write_sha256sums(dist_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Make sure that each published archive contains only the `electrs` binary.
+/// Make sure that each published archive contains only the `romanz/electrs` binary.
 fn verify_archive(artifact: &Path, exe_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let entries = if artifact.extension() == Some(OsStr::new("zip")) {
         output(Command::new("zip").arg("-sf").arg(artifact))?

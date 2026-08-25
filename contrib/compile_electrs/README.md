@@ -1,6 +1,6 @@
-# electrs binary builder
+# romanz/electrs binary builder
 
-This directory contains the local builder for the `electrs` binaries that
+This directory contains the local builder for the `romanz/electrs` binaries that
 `halfin` can later download at build time.
 
 The builder is a Cargo example so its scripting dependency, `xshell`, stays in
@@ -81,17 +81,17 @@ electrs-0.11.1-SHA256SUMS
 ```
 
 Upload those files to the web server location that `build.rs`
-will later use for `electrs` downloads.
+will later use for `romanz/electrs` downloads.
 
 ## Notes
 
 The Linux builds use `Cross.toml` from this directory. The macOS builds use
 `cargo build`, and the Windows MSVC builds use `cargo xwin build`.
 The script pins `LIBCLANG_PATH=/usr/lib/llvm-10/lib` and
-`CLANG_PATH=/usr/bin/clang-10` for `cross` because electrs' RocksDB bindings
+`CLANG_PATH=/usr/bin/clang-10` for `cross` because `romanz/electrs`' RocksDB bindings
 need a newer libclang than the older one present in some cross base images.
 
-The electrs checkout and Cargo build cache are kept under `tmp/` so reruns can
+The `romanz/electrs` checkout and Cargo build cache are kept under `tmp/` so reruns can
 reuse previously compiled dependencies. The script checks out the pinned tag on
 each run, but it does not clean `target/`.
 

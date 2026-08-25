@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Start and control an `electrs` [`Indexer`] process.
+//! Start and control a `romanz/electrs` [`Indexer`] process.
 //!
-//! [`ElectrsD`] starts `electrs` and connects it to a local [`Node`].
+//! [`ElectrsD`] starts `romanz/electrs` and connects it to a local [`Node`].
 //! It gives an Electrum client and wait operations for integration tests.
 //!
 //! ## Start an [`Indexer`]
@@ -70,7 +70,7 @@ use crate::node::NodeArgs;
 use crate::node::PruneMode;
 use crate::pipe_to_tracing;
 
-/// Bundled `electrs` version metadata.
+/// Bundled `romanz/electrs` version metadata.
 mod versions;
 
 /// The default timeout for [`ElectrsD`] indexing helpers.
@@ -84,7 +84,7 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     }
 }
 
-/// Return the path to the downloaded `electrs` binary.
+/// Return the path to the downloaded `romanz/electrs` binary.
 ///
 /// At compile time, `build.rs` reads and extracts the local archive.
 /// It stores the binary path in `HALFIN_ELECTRS_PATH`.
@@ -126,7 +126,7 @@ pub fn get_electrs_path() -> Result<PathBuf, Error> {
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ElectrsDConf {
-    /// Extra CLI arguments sent unchanged to the `electrs` process.
+    /// Extra CLI arguments sent unchanged to the `romanz/electrs` process.
     ///
     /// Do not use a raw argument for an option that `halfin` controls.
     /// A duplicate option returns [`IndexerError::ConflictingArgument`].
@@ -142,7 +142,7 @@ pub struct ElectrsDConf {
     /// [`Drop`] stops the process but keeps the files.
     pub staticdir: Option<PathBuf>,
 
-    /// Maximum number of attempts to start `electrs`.
+    /// Maximum number of attempts to start `romanz/electrs`.
     ///
     /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
     /// conflict. The default value is [`SPAWN_ATTEMPTS`].
@@ -160,7 +160,7 @@ impl Default for ElectrsDConf {
     }
 }
 
-/// A running `electrs` [`Indexer`].
+/// A running `romanz/electrs` [`Indexer`].
 ///
 /// [`ElectrsD::from_bin`] and related functions start the [`Indexer`].
 /// The [`Indexer`] connects to the specified [`Node`].
@@ -173,10 +173,10 @@ impl Default for ElectrsDConf {
 /// Use [`get_monitoring_socket`](ElectrsD::get_monitoring_socket) to get the monitoring port.
 #[derive(Debug)]
 pub struct ElectrsD {
-    /// Handle for the `electrs` child process.
+    /// Handle for the `romanz/electrs` child process.
     process: Child,
 
-    /// Plaintext Electrum client connected to `electrs`.
+    /// Plaintext Electrum client connected to `romanz/electrs`.
     pub client: RawClient<ElectrumPlaintextStream>,
 
     /// Data directory of the [`Indexer`] and its cleanup state.
@@ -280,7 +280,7 @@ impl ElectrsD {
     /// The method uses at most [`ElectrsDConf::max_retries`] attempts.
     ///
     /// 1. Select new temporary Electrum and monitoring ports.
-    /// 2. Start `electrs` with the RPC and P2P sockets of the specified [`Node`].
+    /// 2. Start `romanz/electrs` with the RPC and P2P sockets of the specified [`Node`].
     /// 3. Wait a maximum of 10 seconds for the Electrum RPC server to respond.
     ///
     /// # Errors
@@ -375,7 +375,7 @@ impl ElectrsD {
                 pipe_to_tracing(stderr, "electrs");
             }
 
-            // Add a small timeout to let `electrs` fail
+            // Add a small timeout to let `romanz/electrs` fail
             // and retry in the case of a port collision.
             sleep(SPAWN_INTERVAL);
 
@@ -449,7 +449,7 @@ impl ElectrsD {
             Ok(())
         } else {
             Err(Error::UnexpectedResponse(format!(
-                "failed to trigger electrs rescan with exit status={status}"
+                "failed to trigger romanz/electrs rescan with exit status={status}"
             )))
         }
     }
@@ -466,7 +466,7 @@ impl ElectrsD {
         Ok(())
     }
 
-    /// Terminate the `electrs` process and wait for it to exit.
+    /// Terminate the `romanz/electrs` process and wait for it to exit.
     ///
     /// [`Drop`] stops the process without a call to this method.
     /// Call this method to get the exit status or confirm that the process has stopped.
@@ -480,7 +480,7 @@ impl ElectrsD {
         self.process.wait().map_err(Error::Io)
     }
 
-    /// Return the operating system process ID of `electrs`.
+    /// Return the operating system process ID of `romanz/electrs`.
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
@@ -706,8 +706,9 @@ impl ElectrsD {
 
     /// Wait for an Electrum block header notification for `exp_height` and `exp_hash`.
     ///
-    /// Electrs sends a header notification after it updates confirmed script histories for that
-    /// tip. Thus, this function uses notifications and does not poll block headers directly.
+    /// `romanz/electrs` sends a header notification after it updates confirmed script histories for
+    /// that tip. Thus, this function uses notifications and does not poll block headers
+    /// directly.
     fn wait_until_block(
         &self,
         exp_height: u32,
@@ -776,11 +777,11 @@ impl ElectrsD {
         .into())
     }
 
-    /// Reject [`Node`] configurations that electrs cannot index.
+    /// Reject [`Node`] configurations that `romanz/electrs` cannot index.
     fn validate_node_args(args: &NodeArgs) -> Result<(), Error> {
         if args.prune != PruneMode::Disabled {
             return Err(IndexerError::InvalidConfiguration(
-                "electrs requires an unpruned backing node".to_string(),
+                "romanz/electrs requires an unpruned backing node".to_string(),
             )
             .into());
         }
@@ -823,7 +824,7 @@ impl ElectrsD {
 }
 
 impl Drop for ElectrsD {
-    /// Terminate the `electrs` process and wait for it to exit.
+    /// Terminate the `romanz/electrs` process and wait for it to exit.
     ///
     /// Ignore errors from `kill` and `wait` to prevent a panic in [`Drop`].
     fn drop(&mut self) {
