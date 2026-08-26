@@ -110,7 +110,7 @@ pub struct ElectrumxDArgs {
 /// # Directory precedence
 ///
 /// Set only `tmpdir` or `staticdir`.
-/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
+/// If you set both fields, the function returns [`Error::BothDirectoriesSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|

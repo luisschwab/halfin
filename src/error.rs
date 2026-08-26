@@ -51,7 +51,7 @@ pub enum Error {
     Io(io::Error),
 
     /// The configuration contains both `tmpdir` and `staticdir`.
-    BothDirsSpecified,
+    BothDirectoriesSpecified,
 
     /// A [`Node`](crate::node::Node) or [`Indexer`](crate::indexer::Indexer) client did not become
     /// ready before the timeout.
@@ -80,7 +80,7 @@ impl fmt::Display for Error {
             Self::FailedToSpawn(err) => write!(f, "Failed to spawn a process: {err}"),
             Self::StartupAttemptsExhausted(attempts) => write!(f, "Failed to start the process after {attempts} attempts"),
             Self::Io(err) => write!(f, "I/O error: {err}"),
-            Self::BothDirsSpecified => write!(f, "Both `tmpdir` and `staticdir` were specified. You must choose one or neither"),
+            Self::BothDirectoriesSpecified => write!(f, "Both `tmpdir` and `staticdir` were specified. You must choose one or neither"),
             Self::ClientSetupTimeout => write!(f, "Timed out whilst waiting for the client to be ready"),
             Self::UnexpectedResponse(err) => write!(f, "Received an unexpected response from a node or indexer: {err}"),
             #[cfg(halfin_node)]
@@ -130,7 +130,7 @@ mod tests {
             Error::FailedToSpawn(io::Error::other("spawn failed")),
             Error::StartupAttemptsExhausted(3),
             Error::Io(io::Error::other("I/O failed")),
-            Error::BothDirsSpecified,
+            Error::BothDirectoriesSpecified,
             Error::ClientSetupTimeout,
             Error::UnexpectedResponse("invalid response".to_string()),
         ];

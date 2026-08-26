@@ -224,7 +224,7 @@ pub(crate) fn init_data_dir(
     prefix: &str,
 ) -> Result<DataDir, Error> {
     if tmpdir.is_some() && staticdir.is_some() {
-        return Err(Error::BothDirsSpecified);
+        return Err(Error::BothDirectoriesSpecified);
     }
 
     if let Some(staticdir) = staticdir {
@@ -260,7 +260,7 @@ mod tests {
 
         assert!(matches!(
             init_data_dir(Some(root.path()), Some(&staticdir), "halfin-test-"),
-            Err(Error::BothDirsSpecified)
+            Err(Error::BothDirectoriesSpecified)
         ));
 
         let data_dir = init_data_dir(None, Some(&staticdir), "halfin-test-").unwrap();
