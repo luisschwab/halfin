@@ -102,12 +102,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitcoin-private"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73290177011694f38ec25e165d0387ab7ea749a4b81cd4c80dae5988229f7a57"
-
-[[package]]
 name = "bitcoin-units"
 version = "0.1.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -115,15 +109,6 @@ checksum = "9cb95693f371d089a4b5b6fc41c6f3ea6e01ee8c15388335dfac8ea685173b51"
 dependencies = [
  "bitcoin-consensus-encoding",
  "serde",
-]
-
-[[package]]
-name = "bitcoin_hashes"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d7066118b13d4b20b23645932dfb3a81ce7e29f95726c2036fa33cd7b092501"
-dependencies = [
- "bitcoin-private",
 ]
 
 [[package]]
@@ -166,6 +151,7 @@ version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b65c2e1ab98050c93cc9ada070d5070e014329c65196d03f6f8f1f75c2666f37"
 dependencies = [
+ "base64 0.22.1",
  "rustls",
  "rustls-webpki",
  "serde",
@@ -274,6 +260,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "esplora-client"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "647f9c89c653d69cce478202b7377c03737e33fc6bc5ec044187bf83e5597ea2"
+dependencies = [
+ "bitcoin",
+ "bitreq",
+ "hex-conservative 0.2.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -322,6 +321,7 @@ dependencies = [
  "bitreq",
  "corepc-client",
  "electrum-client",
+ "esplora-client",
  "flate2",
  "lazy_static",
  "miniscript",
@@ -593,7 +593,7 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e0cc0f1cf93f4969faf3ea1c7d8a9faed25918d96affa959720823dfe86d4f3"
 dependencies = [
- "bitcoin_hashes 0.12.0",
+ "bitcoin_hashes 0.14.101",
  "secp256k1-sys",
  "serde",
 ]

@@ -11,7 +11,8 @@
     feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
-    feature = "electrumx"
+    feature = "electrumx",
+    feature = "mempool_electrs"
 ))]
 /// Shared binary download and extraction helpers.
 mod binary {
@@ -479,7 +480,11 @@ fn main() {
     emit_cfg_alias("halfin_node", node_enabled);
 
     // Emit `halfin_indexer` if any `Indexer` feature is enabled
-    let indexer_enabled = cfg!(any(feature = "electrs", feature = "electrumx"));
+    let indexer_enabled = cfg!(any(
+        feature = "electrs",
+        feature = "electrumx",
+        feature = "mempool_electrs"
+    ));
     emit_cfg_alias("halfin_indexer", indexer_enabled);
 
     if env::var("DOCS_RS").is_err() {
@@ -497,6 +502,79 @@ fn main() {
 
         #[cfg(feature = "electrumx")]
         electrumx::download();
+
+        #[cfg(feature = "mempool_electrs")]
+        mempool_electrs::download();
+    }
+}
+
+/// Select the `mempool/electrs` binary for the enabled version feature.
+#[cfg(feature = "mempool_electrs")]
+mod mempool_electrs {
+    use std::env;
+
+    use super::binary::Binary;
+    use super::binary::PathBuf;
+
+    include!("src/indexer/mempool_electrsd/versions.rs");
+
+    /// Compile-time environment variable containing the extracted `mempool/electrs` path.
+    const HALFIN_MEMPOOL_ELECTRS_PATH: &str = "HALFIN_MEMPOOL_ELECTRS_PATH";
+
+    /// Return the platform-specific archive file name for this `mempool/electrs` version.
+    ///
+    /// Panics if the current operating system and architecture are not supported.
+    fn get_download_filename() -> String {
+        if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            return "mempool-electrs-darwin-arm64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+            return "mempool-electrs-darwin-amd64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            return "mempool-electrs-linux-amd64.tar.gz".to_string();
+        }
+        if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+            return "mempool-electrs-linux-arm64.tar.gz".to_string();
+        }
+        panic!("No download file for this OS+Architecture combination");
+    }
+
+    /// Download, verify, and extract the `mempool/electrs` binary.
+    /// Use `<OUT_DIR>/bin/mempool-electrs-<VERSION>/electrs` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
+    ///
+    /// Do not download the binary if it is already in the build cache.
+    pub(crate) fn download() {
+        if target_is_windows() {
+            return;
+        }
+
+        Binary {
+            name: "electrs",
+            version: MEMPOOL_ELECTRS_VERSION,
+            env_var: HALFIN_MEMPOOL_ELECTRS_PATH,
+            destination_dir_prefix: "mempool-electrs",
+            checksum_file: PathBuf::from(format!(
+                "sha256/mempool_electrs/mempool-electrs-{}-SHA256SUMS",
+                MEMPOOL_ELECTRS_VERSION
+            )),
+            remote_dir: "mempool_electrs",
+            remote_version_dir: PathBuf::from(format!(
+                "mempool-electrs-{}",
+                MEMPOOL_ELECTRS_VERSION
+            )),
+            archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            codesign_on_macos_aarch64: false,
+        }
+        .download_and_install();
+    }
+
+    /// Return whether Cargo is compiling `halfin` for an unsupported Windows target.
+    fn target_is_windows() -> bool {
+        env::var("CARGO_CFG_TARGET_OS").expect("Cargo did not set CARGO_CFG_TARGET_OS for build.rs")
+            == "windows"
     }
 }
 

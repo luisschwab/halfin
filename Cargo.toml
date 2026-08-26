@@ -20,6 +20,7 @@ utreexod = []
 # Indexers
 electrs = ["dep:electrum-client"]
 electrumx = ["dep:electrum-client"]
+mempool_electrs = ["dep:electrum-client", "dep:esplora-client"]
 
 [[example]]
 name = "cross-compile-electrs"
@@ -46,6 +47,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 corepc-client = { version = "0.16", features = ["client-sync"] }
 electrum-client = { version = "0.25", default-features = false, optional = true }
+esplora-client = { version = "0.13", default-features = false, features = ["blocking"], optional = true }
 miniscript = { version = "13", default-features = false, features = ["std"], optional = true }
 tempfile = { version = "3.7", default-features = false }
 serde_json = { version = "1.0.117", default-features = false }
@@ -71,7 +73,6 @@ version = "0.5.3"
 toolchains = { stable = "1.97.1", nightly = "nightly-2026-08-19" }
 lint = { allowed_duplicates = [
     "base64",
-    "bitcoin_hashes",
     "bitflags",
     "hex-conservative",
     "windows-sys",
@@ -99,7 +100,8 @@ exclude_features = [
     "florestad",
     "utreexod",
     "electrs",
-    "electrumx"
+    "electrumx",
+    "mempool_electrs"
 ]
 
 [lints.rust]

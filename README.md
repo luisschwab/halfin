@@ -4,34 +4,53 @@
 
 # halfin
 
-<p>
-    <a href="https://crates.io/crates/halfin"><img src="https://img.shields.io/crates/v/halfin.svg"/></a>
-    <a href="https://docs.rs/halfin"><img src="https://img.shields.io/badge/docs.rs-halfin-green"/></a>
-    <a href="https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/"><img src="https://img.shields.io/badge/rustc-1.85.0%2B-orange.svg?label=MSRV"/></a>
-    <a href="https://github.com/luisschwab/halfin/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-MIT%2FApache--2.0-red.svg"/></a>
-    <a href="https://github.com/luisschwab/halfin/actions/workflows/rust.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg"></a>
-    <a href="https://github.com/luisschwab/halfin/actions/workflows/cross.yml"><img src="https://github.com/luisschwab/halfin/actions/workflows/cross.yml/badge.svg"></a>
-</p>
+[![crates.io][crates-badge]](https://crates.io/crates/halfin)
+[![docs.rs][docs-badge]](https://docs.rs/halfin)
+[![rustc][rustc-badge]](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/)
+[![license-mit-apache][license-badge]](https://github.com/luisschwab/halfin/blob/master/LICENSE-MIT)
+[![test suite][rust-badge]](https://github.com/luisschwab/halfin/actions/workflows/rust.yml)
+[![cross builds][cross-badge]](https://github.com/luisschwab/halfin/actions/workflows/cross.yml)
+
+[crates-badge]: https://img.shields.io/crates/v/halfin.svg
+[docs-badge]: https://img.shields.io/badge/docs.rs-halfin-green
+[rustc-badge]: https://img.shields.io/badge/rustc-1.85.0%2B-orange.svg?label=MSRV
+[license-badge]: https://img.shields.io/badge/License-MIT%2FApache--2.0-red.svg
+[rust-badge]: https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg
+[cross-badge]: https://github.com/luisschwab/halfin/actions/workflows/cross.yml/badge.svg
 
 > A runner for bitcoin nodes and indexers 🏃‍♂️
 
-This crate makes it simple to run [`bitcoind`](https://github.com/bitcoin/bitcoin),
-[`utreexod`](https://github.com/utreexo/utreexod), [`electrs`](https://github.com/romanz/electrs),
-[`electrumx`](https://github.com/spesmilo/electrumx), and [`florestad`](https://github.com/getfloresta/Floresta)
-instances from Rust code, useful in integration test contexts.
+This crate makes it simple to run [`bitcoind`], [`florestad`], [`utreexod`], [`romanz/electrs`],
+[`mempool/electrs`], and [`electrumx`] instances from Rust code, useful in integration test contexts.
+
+[`bitcoind`]: <https://github.com/bitcoin/bitcoin>
+[`florestad`]: <https://github.com/getfloresta/Floresta>
+[`utreexod`]: <https://github.com/utreexo/utreexod>
+[`romanz/electrs`]: <https://github.com/romanz/electrs>
+[`mempool/electrs`]: <https://github.com/mempool/electrs>
+[`electrumx`]: <https://github.com/spesmilo/electrumx>
 
 ## Supported Implementations
 
-| Kind    | Implementation | Version   | Feature Flag | Notes             |
-|---------|----------------|-----------|--------------|-------------------|
-| Node    | `bitcoind`     | `v31.0`   | `bitcoind`   |                   |
-| Node    | `florestad`    | `v0.9.1`  | `florestad`  |                   |
-| Node    | `utreexod`     | `v0.6.0`  | `utreexod`   |                   |
-|         |                |           |              |                   |
-| Indexer | `electrs`      | `v0.11.1` | `electrs`    |                   |
-| Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | Needs Python 3.10 |
+| Kind    | Implementation      | Version   | Feature Flag       | Notes                  |
+|---------|---------------------|-----------|--------------------|------------------------|
+| Node    | [`Bitcoin Core`]    | `v31.0`   | `bitcoind`         |                        |
+| Node    | [`Floresta`]        | `v0.9.1`  | `florestad`        |                        |
+| Node    | [`utreexod`]        | `v0.6.0`  | `utreexod`         |                        |
+|         |                     |           |                    |                        |
+| Indexer | [`romanz/electrs`]  | `v0.11.1` | `electrs`          |                        |
+| Indexer | [`mempool/electrs`] | `v3.3.0`  | `mempool_electrs`  | Unsupported on Windows |
+| Indexer | [`Electrumx`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
 
-Binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
+[`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
+[`Floresta`]: <https://github.com/getfloresta/Floresta>
+[`ElectrumX`]: <https://github.com/spesmilo/electrumx>
+
+Published binaries are downloaded automatically at build time: see [`build.rs`].
+The `mempool_electrs` feature and `mempool_electrsd` module are available on macOS and Linux,
+but not on Windows.
+
+[`build.rs`]: <./build.rs>
 
 ### BitcoinD
 
@@ -112,9 +131,11 @@ assert_eq!(florestad.get_chain_tip().unwrap(), 10);
 
 ## Developing
 
-This project uses [`just`](https://github.com/casey/just) for command running, and
-[`cargo-rbmt`](https://github.com/rust-bitcoin/rust-bitcoin-maintainer-tools/tree/master/cargo-rbmt)
-to manage everything related to `cargo`, such as formatting, linting, testing and CI. To install them, run:
+This project uses [`just`] for command running, and [`cargo-rbmt`] to manage everything related to
+`cargo`, such as formatting, linting, testing and CI. To install them, run:
+
+[`just`]: <https://github.com/casey/just>
+[`cargo-rbmt`]: <https://github.com/rust-bitcoin/rust-bitcoin-maintainer-tools/tree/master/cargo-rbmt>
 
 ```shell
 ~$ cargo install just
