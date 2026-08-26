@@ -69,6 +69,8 @@ use crate::indexer::test::test_program;
 use crate::node::PruneMode;
 #[cfg(feature = "bitcoind")]
 use crate::node::bitcoind::BitcoinD;
+#[cfg(feature = "btcd")]
+use crate::node::btcd::BtcD;
 #[cfg(feature = "florestad")]
 use crate::node::florestad::FlorestaD;
 #[cfg(feature = "utreexod")]
@@ -489,6 +491,27 @@ fn electrsd_accepts_bitcoind() {
         Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
     ));
     server.join().unwrap();
+}
+
+/// Verify that rejection of [`BtcD`] occurs before data directory creation.
+#[cfg(feature = "btcd")]
+#[test]
+fn electrsd_rejects_btcd() {
+    let btcd = BtcD::new().unwrap();
+    let temporary_directory = tempfile::tempdir().unwrap();
+    let directory = temporary_directory.path().join("electrs");
+    let config = ElectrsDConf {
+        staticdir: Some(directory.clone()),
+        ..ElectrsDConf::default()
+    };
+
+    assert!(matches!(
+        ElectrsD::new_with_conf(&btcd, &config),
+        Err(Error::Indexer(IndexerError::UnsupportedBackend {
+            node: "BtcD"
+        }))
+    ));
+    assert!(!directory.exists());
 }
 
 /// Verify that rejection of [`UtreexoD`] occurs before data directory creation.
