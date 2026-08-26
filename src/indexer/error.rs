@@ -10,6 +10,7 @@ use core::time::Duration;
 
 /// Errors produced by [`Indexer`](crate::indexer::Indexer) configuration, startup, and operations.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum IndexerError {
     /// A raw CLI argument conflicts with typed or dynamic [`Indexer`](crate::indexer::Indexer)
     /// configuration.
