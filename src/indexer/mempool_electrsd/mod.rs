@@ -458,18 +458,21 @@ impl MempoolElectrsD {
             self.process.id()
         );
 
-        let status = Command::new("kill")
+        let output = Command::new("kill")
             .arg("-USR1")
             .arg(self.process.id().to_string())
-            .status()
+            .output()
             .map_err(Error::Io)?;
-        if status.success() {
+        if output.status.success() {
             debug!("{}: triggered rescan", Self::get_name());
 
             Ok(())
         } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
             Err(Error::UnexpectedResponse(format!(
-                "failed to trigger mempool/electrs rescan with exit status={status}"
+                "failed to trigger `mempool/electrs` rescan with exit status={}: {}",
+                output.status,
+                stderr.trim()
             )))
         }
     }
