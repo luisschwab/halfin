@@ -10,6 +10,7 @@
 [![license-mit-apache][license-badge]](https://github.com/luisschwab/halfin/blob/master/LICENSE-MIT)
 [![test suite][rust-badge]](https://github.com/luisschwab/halfin/actions/workflows/rust.yml)
 [![cross builds][cross-badge]](https://github.com/luisschwab/halfin/actions/workflows/cross.yml)
+[![codecov][codecov-badge]](https://codecov.io/gh/luisschwab/halfin)
 
 [crates-badge]: https://img.shields.io/crates/v/halfin.svg
 [docs-badge]: https://img.shields.io/badge/docs.rs-halfin-green
@@ -17,6 +18,7 @@
 [license-badge]: https://img.shields.io/badge/License-MIT%2FApache--2.0-red.svg
 [rust-badge]: https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg
 [cross-badge]: https://github.com/luisschwab/halfin/actions/workflows/cross.yml/badge.svg
+[codecov-badge]: https://codecov.io/gh/luisschwab/halfin/branch/master/graph/badge.svg
 
 > A runner for bitcoin nodes and indexers 🏃‍♂️
 
