@@ -34,27 +34,27 @@ jobs:
               with:
                   python-version: '3.10'
 
-            - name: Generate HTML Coverage Report
+            - name: Collect Coverage Data
               shell: bash
               run: |
                   cargo rbmt run --toolchain stable -- llvm-cov \
                       --all-features \
-                      --html \
+                      --no-report \
                       --ignore-filename-regex '(^|/)test[.]rs$'
 
             - name: Generate LCOV Coverage Report
               shell: bash
               run: |
+                  mkdir -p target/llvm-cov
                   cargo rbmt run --toolchain stable -- llvm-cov report \
                       --lcov \
                       --output-path target/llvm-cov/lcov.info \
                       --ignore-filename-regex '(^|/)test[.]rs$'
 
-            - name: Upload Coverage Report
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            - name: Upload Coverage to Codecov
+              uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
               with:
-                  name: coverage-report
-                  path: |
-                      target/llvm-cov/html
-                      target/llvm-cov/lcov.info
-                  if-no-files-found: error
+                  token: ${{ secrets.CODECOV_TOKEN }}
+                  files: target/llvm-cov/lcov.info
+                  disable_search: true
+                  fail_ci_if_error: true
