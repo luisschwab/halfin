@@ -19,6 +19,7 @@ use crate::node::NodeError;
 /// Errors returned by [`Node`](crate::node::Node) and [`Indexer`](crate::indexer::Indexer) process
 /// management helpers.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     /// The binary path is not absolute.
     BinaryPathNotAbsolute {

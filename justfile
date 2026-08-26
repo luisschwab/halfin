@@ -24,6 +24,10 @@ audit:
     bash contrib/run-cargo-audit.sh
     bash contrib/prune-audit-ignores.sh
 
+[doc: "Assert Commit Bisectability"]
+bisectability baseline="master":
+    cargo rbmt run --baseline "{{ baseline }}" -- build --quiet
+
 [doc: "Build `halfin`"]
 build:
     RBMT_LOG_LEVEL=verbose cargo rbmt run build

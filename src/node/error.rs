@@ -12,6 +12,7 @@ use core::time::Duration;
 
 /// Client errors that can make a [`Node`](crate::node::Node) unresponsive.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum NodeClientError {
     /// A JSON-RPC client error.
     JsonRpc(corepc_client::client_sync::Error),
@@ -48,6 +49,7 @@ impl From<electrum_client::Error> for NodeClientError {
 
 /// Errors produced by [`Node`](crate::node::Node) configuration, startup, and operations.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum NodeError {
     /// A JSON-RPC request did not stop a [`Node`](crate::node::Node).
     FailedToStop(corepc_client::client_sync::Error),
