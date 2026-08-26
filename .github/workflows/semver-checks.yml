@@ -1,0 +1,57 @@
+name: Semver
+
+on:
+    pull_request:
+
+permissions: {}
+env:
+    CARGO_TERM_COLOR: always
+
+jobs:
+    semver:
+        name: Check API Breakage
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+
+            - name: Setup Rust Cache
+              uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+            - name: Setup cargo-rbmt
+              uses: ./.github/actions/setup-rbmt
+
+            - name: Check Semver
+              id: semver
+              shell: bash
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+              run: |
+                  set +e
+                  bash contrib/check-semver.sh "$BASE_SHA"
+                  exit_code=$?
+                  echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+            - name: Save Semver State
+              shell: bash
+              env:
+                  EXIT_CODE: ${{ steps.semver.outputs.exit_code }}
+                  PR_NUMBER: ${{ github.event.pull_request.number }}
+              run: printf '%s\n%s\n' "$PR_NUMBER" "$EXIT_CODE" > semver-break
+
+            - name: Upload Semver State
+              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              with:
+                  name: semver-break
+                  path: semver-break
+
+            - name: Fail on Stable API Breaks
+              if: steps.semver.outputs.exit_code == '1'
+              shell: bash
+              run: exit 1

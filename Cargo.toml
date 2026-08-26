@@ -90,6 +90,7 @@ lint = { allowed_duplicates = [
 [package.metadata.rbmt.tools]
 cargo-audit = "0.22.2"
 cargo-llvm-cov = "0.9.0"
+cargo-semver-checks = "0.50.0"
 zizmor = "1.29.0"
 
 [package.metadata.rbmt.test]
