@@ -3,9 +3,12 @@ Cargo.lock.backup
 
 /target
 
-contrib/compile_electrs/dist/
-contrib/compile_electrs/tmp/
+contrib/bins/compile_electrs/dist/
+contrib/bins/compile_electrs/tmp/
 
-contrib/compile_electrumx/dist/
-contrib/compile_electrumx/tmp/
-contrib/compile_electrumx/local_wheels/
+contrib/bins/compile_electrumx/dist/
+contrib/bins/compile_electrumx/tmp/
+contrib/bins/compile_electrumx/local_wheels/
+
+contrib/bins/compile_mempool_electrs/dist/
+contrib/bins/compile_mempool_electrs/tmp/

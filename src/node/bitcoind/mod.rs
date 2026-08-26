@@ -7,7 +7,7 @@
 //!
 //! ## Start a [`Node`]
 //!
-//! ```rust,no_run
+//! ```rust
 //! use halfin::node::bitcoind::BitcoinD;
 //!
 //! // Start a node with the default configuration.

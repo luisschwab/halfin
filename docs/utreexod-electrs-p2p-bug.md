@@ -8,17 +8,17 @@ version below `70012`. The peer is initially accepted, but after receiving its
 wire encoder correctly rejects that message at negotiated protocol versions
 below `70012`, and the resulting write error disconnects the peer.
 
-This affects Electrs v0.11.1, which advertises protocol version `70001`.
-Electrs otherwise supports the messages it needs to synchronize through the
+This affects `romanz/electrs` v0.11.1, which advertises protocol version `70001`.
+`romanz/electrs` otherwise supports the messages it needs to synchronize through the
 legacy `inv`, `getheaders`, `headers`, `getdata`, and `block` flow.
 
 Affected versions:
 
 - Utreexod v0.6.0
-- Electrs v0.11.1
+- `romanz/electrs` v0.11.1
 
 `halfin` currently rejects this pairing before creating an indexer data
-directory or spawning Electrs. ElectrumX also currently rejects UtreexoD, for
+directory or spawning `romanz/electrs`. ElectrumX also currently rejects UtreexoD, for
 separate Bitcoin Core RPC-compatibility reasons.
 
 ## Relevant implementation
@@ -26,7 +26,7 @@ separate Bitcoin Core RPC-compatibility reasons.
 - [`serverPeer.OnVerAck` queues `sendheaders` unconditionally](https://github.com/utreexo/utreexod/blob/fe71f3d9282ef0812f7f6087f0c0df9ce0fda508/server.go#L578-L586).
 - [`MsgSendHeaders.BtcEncode` rejects negotiated versions below `70012`](https://github.com/utreexo/utreexod/blob/fe71f3d9282ef0812f7f6087f0c0df9ce0fda508/wire/msgsendheaders.go#L32-L41).
 - [The peer output handler disconnects after a write error](https://github.com/utreexo/utreexod/blob/fe71f3d9282ef0812f7f6087f0c0df9ce0fda508/peer/peer.go#L1948-L1981).
-- [Electrs builds its version message using rust-bitcoin's protocol version](https://github.com/romanz/electrs/blob/35216c6d30148be8e6763d913d437330f431fc03/src/p2p.rs#L318-L338), which is [`70001` in rust-bitcoin 0.32.8](https://github.com/rust-bitcoin/rust-bitcoin/blob/bitcoin-0.32.8/bitcoin/src/p2p/mod.rs#L57).
+- [`romanz/electrs` builds its version message using rust-bitcoin's protocol version](https://github.com/romanz/electrs/blob/35216c6d30148be8e6763d913d437330f431fc03/src/p2p.rs#L318-L338), which is [`70001` in rust-bitcoin 0.32.8](https://github.com/rust-bitcoin/rust-bitcoin/blob/bitcoin-0.32.8/bitcoin/src/p2p/mod.rs#L57).
 
 ## Current direct flow
 
@@ -36,7 +36,7 @@ negotiated version.
 
 ```mermaid
 sequenceDiagram
-    participant E as Electrs v0.11.1
+    participant E as romanz/electrs v0.11.1
     participant U as Utreexod v0.6.0
 
     E->>U: version(70001)
@@ -62,7 +62,7 @@ sequenceDiagram
     E->>U: get_name()
     U-->>E: UtreexoD
     E--xC: InvalidIndexerConfiguration
-    Note over E: No bridge, directory, or Electrs process is created
+    Note over E: No bridge, directory, or romanz/electrs process is created
 ```
 
 ## Expected flow
@@ -73,7 +73,7 @@ continue using inventory announcements.
 
 ```mermaid
 sequenceDiagram
-    participant E as Electrs v0.11.1
+    participant E as romanz/electrs v0.11.1
     participant U as Utreexod
 
     E->>U: version(70001)
@@ -113,4 +113,4 @@ The existing behavior should remain unchanged for peers negotiating version
 - Tests cover both sides of the protocol-version boundary.
 
 Once the fix is available in the Utreexod binary used by `halfin`, the
-temporary Electrs backend rejection can be removed.
+temporary `romanz/electrs` backend rejection can be removed.

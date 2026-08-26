@@ -8,6 +8,6 @@ pub(crate) const ELECTRS_NAME: &str = "ElectrsD";
 #[allow(unused)]
 pub(crate) const ELECTRS_BIN_NAME: &str = "electrs_v_0_11_1";
 
-/// `electrs` v0.11.1
+/// `romanz/electrs` v0.11.1.
 #[allow(unused)]
 pub(crate) const ELECTRS_VERSION: &str = "0.11.1";

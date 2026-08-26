@@ -14,7 +14,7 @@ Run this builder from a machine with `uv`, `cross`, `cargo-xwin`, `zig`, and
 uses that venv's `pip download --platform` to resolve wheels for each target
 platform's CPython ABI. It then embeds that wheelhouse into a small Rust
 launcher executable for each target, using the same Cargo/Cross/cargo-xwin split
-as the `electrs` builder.
+as the `romanz/electrs` builder.
 
 Install `uv` if it is missing:
 
@@ -56,13 +56,13 @@ The script hardcodes upstream `spesmilo/electrumx` release tag `1.20.0`. It
 clones or updates the source tree under:
 
 ```text
-contrib/compile_electrumx/tmp/electrumx
+contrib/bins/compile_electrumx/tmp/electrumx
 ```
 
 It writes archives and checksums under:
 
 ```text
-contrib/compile_electrumx/dist/electrumx-1.20.0/
+contrib/bins/compile_electrumx/dist/electrumx-1.20.0/
 ```
 
 Generated files:
@@ -96,7 +96,7 @@ use for `ElectrumX` downloads.
 
 ElectrumX is a Python project, so the published binary is a compiled launcher
 with an embedded wheelhouse rather than the upstream Python application itself.
-This builder mirrors the `electrs` cross-building flow: pinned upstream
+This builder mirrors the `romanz/electrs` cross-building flow: pinned upstream
 checkout, single-file target artifacts, local `tmp/` build cache, Cargo for
 macOS, Cross for Linux, cargo-xwin for Windows, `dist/` output, `--force`,
 archive verification, and `SHA256SUMS`.

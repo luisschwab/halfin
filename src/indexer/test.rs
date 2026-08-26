@@ -58,6 +58,18 @@ use crate::indexer::electrsd::ElectrsDConf;
 use crate::indexer::electrumxd::ElectrumxD;
 #[cfg(all(feature = "bitcoind", feature = "electrumx"))]
 use crate::indexer::electrumxd::ElectrumxDConf;
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "mempool_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::mempool_electrsd::MempoolElectrsD;
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "mempool_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::mempool_electrsd::MempoolElectrsDConf;
 use crate::node::Node;
 use crate::node::NodeArgs;
 use crate::node::PruneMode;
@@ -578,6 +590,39 @@ fn electrsd_implements_indexer() {
     let mut electrsd = ElectrsD::new_with_conf(&bitcoind, &config).unwrap();
 
     assert_indexer_interface(&mut electrsd, &config, &bitcoind, &script_pubkey, txid);
+}
+
+/// Verify the [`Indexer`] interface and Esplora endpoint for [`MempoolElectrsD`].
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "mempool_electrs",
+    not(target_os = "windows")
+))]
+#[test]
+fn mempool_electrsd_implements_indexer() {
+    let bitcoind = BitcoinD::new().unwrap();
+    let (script_pubkey, txid) = build_transaction(&bitcoind);
+    let config = MempoolElectrsDConf::default();
+    let mut mempool_electrs = MempoolElectrsD::new_with_conf(&bitcoind, &config).unwrap();
+
+    mempool_electrs
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let height = bitcoind.get_chain_tip().unwrap();
+    let block_hash = bitcoind.get_block_hash(height).unwrap();
+    let esplora = mempool_electrs.get_esplora_client();
+    assert_eq!(esplora.url(), mempool_electrs.get_esplora_url());
+    assert_eq!(esplora.get_height().unwrap(), height);
+    assert_eq!(esplora.get_tip_hash().unwrap(), block_hash);
+    assert_eq!(esplora.get_block_hash(height).unwrap(), block_hash);
+
+    assert_indexer_interface(
+        &mut mempool_electrs,
+        &config,
+        &bitcoind,
+        &script_pubkey,
+        txid,
+    );
 }
 
 /// Verify the [`Indexer`] interface for [`ElectrumxD`].

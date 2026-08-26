@@ -58,7 +58,8 @@ pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
     feature = "bitcoind",
     feature = "utreexod",
     feature = "electrs",
-    feature = "electrumx"
+    feature = "electrumx",
+    feature = "mempool_electrs"
 ))]
 pub(crate) const RPC_COOKIE_FILE_NAME: &str = ".cookie";
 

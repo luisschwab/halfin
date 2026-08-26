@@ -8,18 +8,23 @@
 //!
 //! ## Supported implementations
 //!
-//! | Kind    | Implementation | Version   | Feature Flag | Notes             |
-//! |---------|----------------|-----------|--------------|-------------------|
-//! | Node    | `bitcoind`     | `v31.0`   | `bitcoind`   |                   |
-//! | Node    | `florestad`    | `v0.9.1`  | `florestad`  |                   |
-//! | Node    | `utreexod`     | `v0.6.0`  | `utreexod`   |                   |
-//! |         |                |           |              |                   |
-//! | Indexer | `electrs`      | `v0.11.1` | `electrs`    |                   |
-//! | Indexer | `electrumx`    | `v1.20.0` | `electrumx`  | Needs Python 3.10 |
+//! | Kind    | Implementation      | Version   | Feature Flag       | Notes                  |
+//! |---------|---------------------|-----------|--------------------|------------------------|
+//! | Node    | [`Bitcoin Core`]    | `v31.0`   | `bitcoind`         |                        |
+//! | Node    | [`Floresta`]        | `v0.9.1`  | `florestad`        |                        |
+//! | Node    | [`utreexod`]        | `v0.6.0`  | `utreexod`         |                        |
+//! |         |                     |           |                    |                        |
+//! | Indexer | [`romanz/electrs`]  | `v0.11.1` | `electrs`          |                        |
+//! | Indexer | [`mempool/electrs`] | `v3.3.0`  | `mempool_electrs`  | Unsupported on Windows |
+//! | Indexer | [`Electrumx`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
+//!
+//! The `mempool_electrs` feature and `mempool_electrsd` module are not available on Windows.
 //!
 //! ## Start and connect two [`Node`] implementations
 //!
-//! ```rust,ignore
+//! ```rust
+//! # #[cfg(all(feature = "bitcoind", feature = "utreexod"))]
+//! # {
 //! use halfin::node::bitcoind::BitcoinD;
 //! use halfin::node::connect;
 //! use halfin::node::utreexod::UtreexoD;
@@ -33,12 +38,15 @@
 //! assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
 //!
 //! connect(&bitcoind, &utreexod).unwrap();
+//! # }
 //! ```
 //!
-//! [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
-//! [`florestad`]: <https://github.com/getfloresta/Floresta>
+//! [`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
+//! [`Floresta`]: <https://github.com/getfloresta/Floresta>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
-//! [`electrs`]: <https://github.com/romanz/electrs>
+//! [`romanz/electrs`]: <https://github.com/romanz/electrs>
+//! [`mempool/electrs`]: <https://github.com/mempool/electrs>
+//! [`Electrumx`]: <https://github.com/spesmilo/electrumx>
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
