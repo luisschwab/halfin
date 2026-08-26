@@ -556,7 +556,7 @@ mod mempool_electrs {
             env_var: HALFIN_MEMPOOL_ELECTRS_PATH,
             destination_dir_prefix: "mempool-electrs",
             checksum_file: PathBuf::from(format!(
-                "sha256/mempool_electrs/mempool-electrs-{}-SHA256SUMS",
+                "sha256/indexer/mempool_electrs/mempool-electrs-{}-SHA256SUMS",
                 MEMPOOL_ELECTRS_VERSION
             )),
             remote_dir: "mempool_electrs",
@@ -623,7 +623,7 @@ mod bitcoind {
             env_var: HALFIN_BITCOIND_PATH,
             destination_dir_prefix: "bitcoin",
             checksum_file: PathBuf::from(format!(
-                "sha256/bitcoind/bitcoin-core-{}-SHA256SUMS",
+                "sha256/node/bitcoind/bitcoin-core-{}-SHA256SUMS",
                 BITCOIND_VERSION
             )),
             remote_dir: "bitcoind",
@@ -678,7 +678,7 @@ mod florestad {
             env_var: HALFIN_FLORESTAD_PATH,
             destination_dir_prefix: "florestad",
             checksum_file: PathBuf::from(format!(
-                "sha256/florestad/florestad-{}-SHA256SUMS",
+                "sha256/node/florestad/florestad-{}-SHA256SUMS",
                 FLORESTAD_VERSION
             )),
             remote_dir: "florestad",
@@ -736,7 +736,7 @@ mod utreexod {
             env_var: HALFIN_UTREEXOD_PATH,
             destination_dir_prefix: "utreexod",
             checksum_file: PathBuf::from(format!(
-                "sha256/utreexod/utreexod-{}-SHA256SUMS",
+                "sha256/node/utreexod/utreexod-{}-SHA256SUMS",
                 UTREEXOD_VERSION
             )),
             remote_dir: "utreexod",
@@ -797,7 +797,7 @@ mod electrs {
             env_var: HALFIN_ELECTRS_PATH,
             destination_dir_prefix: "electrs",
             checksum_file: PathBuf::from(format!(
-                "sha256/electrs/electrs-{}-SHA256SUMS",
+                "sha256/indexer/electrs/electrs-{}-SHA256SUMS",
                 ELECTRS_VERSION
             )),
             remote_dir: "electrs",
@@ -858,7 +858,7 @@ mod electrumx {
             env_var: HALFIN_ELECTRUMX_PATH,
             destination_dir_prefix: "electrumx",
             checksum_file: PathBuf::from(format!(
-                "sha256/electrumx/electrumx-{}-SHA256SUMS",
+                "sha256/indexer/electrumx/electrumx-{}-SHA256SUMS",
                 ELECTRUMX_VERSION
             )),
             remote_dir: "electrumx",

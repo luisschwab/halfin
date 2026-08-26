@@ -68,7 +68,7 @@ mempool-electrs-3.3.0-SHA256SUMS
 
 Upload those files to the `mempool_electrs/mempool-electrs-3.3.0/`
 directory on each binary mirror. Copy the generated checksum file to
-`sha256/mempool_electrs/` in this repository.
+`sha256/indexer/mempool_electrs/` in this repository.
 
 ## Notes
 
