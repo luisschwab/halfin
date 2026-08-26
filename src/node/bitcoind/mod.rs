@@ -60,6 +60,7 @@ use crate::Error;
 use crate::IPV4_LOCALHOST;
 use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
+use crate::STARTUP_TIMEOUT;
 use crate::find_conflicting_argument;
 use crate::get_available_port;
 use crate::init_data_dir;
@@ -401,9 +402,8 @@ impl BitcoinD {
             let auth = Auth::CookieFile(cookie_file.clone());
             let client_base = Self::create_base_rpc_client(&rpc_url, &auth)?;
 
-            // Create a new wallet or load an existing wallet
-            // named `BITCOIND_WALLET` with a 5 second timeout.
-            let deadline = Instant::now() + Duration::from_secs(5);
+            // Create a new wallet or load an existing wallet.
+            let deadline = Instant::now() + STARTUP_TIMEOUT;
             let client = loop {
                 if Instant::now() > deadline {
                     let _ = process.kill();
@@ -420,7 +420,7 @@ impl BitcoinD {
                 sleep(Duration::from_millis(200));
             };
 
-            if Self::wait_for_client(&client, Duration::from_secs(5)).is_err() {
+            if Self::wait_for_client(&client, STARTUP_TIMEOUT).is_err() {
                 let _ = process.kill();
                 let _ = process.wait();
                 continue;

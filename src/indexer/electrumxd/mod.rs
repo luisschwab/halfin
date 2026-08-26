@@ -45,10 +45,12 @@ use tracing::debug;
 
 use crate::DataDir;
 use crate::Error;
+use crate::INDEXING_TIMEOUT;
 use crate::IPV4_LOCALHOST;
 use crate::POLL_INTERVAL;
 use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
+use crate::STARTUP_TIMEOUT;
 use crate::find_conflicting_argument;
 use crate::get_available_port;
 use crate::indexer::Indexer;
@@ -63,9 +65,6 @@ use crate::pipe_to_tracing;
 
 /// Bundled `ElectrumX` version metadata.
 mod versions;
-
-/// The default timeout for [`ElectrumxD`] indexing helpers.
-pub const ELECTRUMX_INDEXING_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Wrap an Electrum client failure with [`Indexer`] context.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
@@ -376,7 +375,7 @@ impl ElectrumxD {
             }
 
             if let Ok(client) =
-                Self::wait_for_client(electrum_socket, &mut process, Duration::from_secs(15))
+                Self::wait_for_client(electrum_socket, &mut process, STARTUP_TIMEOUT)
             {
                 sleep(Duration::from_millis(200));
 
@@ -589,7 +588,7 @@ impl ElectrumxD {
 
     /// Poll until the history of `spk` contains `txid` as an unconfirmed transaction.
     ///
-    /// If `timeout` is `None`, the function uses [`ELECTRUMX_INDEXING_TIMEOUT`].
+    /// If `timeout` is `None`, the function uses [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -614,7 +613,7 @@ impl ElectrumxD {
             Err(err) => return Err(unresponsive_indexer(err).into()),
         };
 
-        let timeout = timeout.unwrap_or(ELECTRUMX_INDEXING_TIMEOUT);
+        let timeout = timeout.unwrap_or(INDEXING_TIMEOUT);
         let result = (|| {
             if initial_status.is_some() && Self::script_history_has_mempool_tx(&client, spk, txid)?
             {
@@ -736,7 +735,7 @@ impl ElectrumxD {
             None => format!("block {exp_height}"),
         };
 
-        let timeout = timeout.unwrap_or(ELECTRUMX_INDEXING_TIMEOUT);
+        let timeout = timeout.unwrap_or(INDEXING_TIMEOUT);
         debug!(
             "{}: waiting until indexed {} timeout={:?}",
             Self::get_name(),

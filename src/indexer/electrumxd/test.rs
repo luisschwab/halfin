@@ -33,7 +33,6 @@ use tracing::Level;
 use tracing::info;
 
 #[cfg(feature = "bitcoind")]
-use super::ELECTRUMX_INDEXING_TIMEOUT;
 use super::ElectrumxD;
 use super::ElectrumxDArgs;
 use super::ElectrumxDConf;
@@ -46,6 +45,8 @@ use super::send_admin_rpc_to;
 #[cfg(feature = "bitcoind")]
 use crate::CONFIRMATION_BLOCK_COUNT;
 use crate::Error;
+#[cfg(feature = "bitcoind")]
+use crate::INDEXING_TIMEOUT;
 #[cfg(feature = "bitcoind")]
 use crate::MATURE_COINBASE_BLOCK_COUNT;
 #[cfg(feature = "bitcoind")]
@@ -424,7 +425,7 @@ fn electrumxd_accepts_bitcoind() {
     let height = bitcoind.get_chain_tip().unwrap();
     let block_hash = bitcoind.get_block_hash(height).unwrap();
     electrumxd
-        .wait_until_block(height, None, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_block(height, None, Some(INDEXING_TIMEOUT))
         .unwrap();
     let error = electrumxd
         .wait_until_tip(
@@ -597,7 +598,7 @@ fn electrumxd_sees_mempool_transactions() {
     ));
 
     electrumxd
-        .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
 }
 
@@ -621,7 +622,7 @@ fn electrumxd_syncs_blocks() {
         height += count;
         let block_hash = bitcoind.get_block_hash(height).unwrap();
         electrumxd
-            .wait_until_tip(height, block_hash, Some(ELECTRUMX_INDEXING_TIMEOUT))
+            .wait_until_tip(height, block_hash, Some(INDEXING_TIMEOUT))
             .unwrap();
         electrumxd.wait_until_caught_up(&bitcoind, None).unwrap();
     }
@@ -643,7 +644,7 @@ fn electrumxd_reindexes_reorgs() {
     let block_hash = bitcoind.get_block_hash(height).unwrap();
 
     electrumxd
-        .wait_until_tip(height, block_hash, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_tip(height, block_hash, Some(INDEXING_TIMEOUT))
         .unwrap();
 
     bitcoind.invalidate_blocks(REORG_DEPTH).unwrap();
@@ -659,11 +660,11 @@ fn electrumxd_reindexes_reorgs() {
         .wait_until_tip(
             replacement_height,
             bitcoind.get_block_hash(replacement_height).unwrap(),
-            Some(ELECTRUMX_INDEXING_TIMEOUT),
+            Some(INDEXING_TIMEOUT),
         )
         .unwrap();
     electrumxd
-        .wait_until_tip(height, replacement_hash, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_tip(height, replacement_hash, Some(INDEXING_TIMEOUT))
         .unwrap();
 }
 
@@ -807,7 +808,7 @@ fn electrumxd_updates_balance_when_payment_confirms() {
         .unwrap();
 
     electrumxd
-        .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
     let balance = electrumxd
         .client

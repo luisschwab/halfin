@@ -111,19 +111,25 @@ pub const SPAWN_ATTEMPTS: u8 = 5;
 /// Interval between process start attempts.
 pub const SPAWN_INTERVAL: Duration = Duration::from_millis(500);
 
+/// Maximum time to wait for a spawned process to become ready.
+pub const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Default timeout for indexer synchronization.
+pub const INDEXING_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Period between polls for [`connect`](crate::node::connect) and
 /// [`wait_for_height`](crate::node::wait_for_height).
 pub const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Timeout for [`connect`](crate::node::connect) and
 /// [`wait_for_height`](crate::node::wait_for_height).
-pub const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+pub const WAIT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Interval between [`Node`](crate::node::Node) connection attempts.
 pub const CONNECTION_INTERVAL: Duration = Duration::from_millis(150);
 
 /// Timeout for [`Node`](crate::node::Node) connection.
-pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+pub const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Ask the operating system for an available port, release the port, and return it.
 ///

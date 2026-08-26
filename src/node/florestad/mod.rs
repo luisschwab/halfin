@@ -37,6 +37,7 @@ use crate::Error;
 use crate::IPV4_LOCALHOST;
 use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
+use crate::STARTUP_TIMEOUT;
 use crate::find_conflicting_argument;
 use crate::get_available_port;
 use crate::init_data_dir;
@@ -357,12 +358,10 @@ impl FlorestaD {
                 pipe_to_tracing(stderr, "florestad");
             }
 
-            if let Ok(client) = Self::wait_for_rpc_client(&rpc_url, Duration::from_secs(10)) {
-                if let Ok(electrum_client) = Self::wait_for_electrum_client(
-                    electrum_socket,
-                    &mut process,
-                    Duration::from_secs(10),
-                ) {
+            if let Ok(client) = Self::wait_for_rpc_client(&rpc_url, STARTUP_TIMEOUT) {
+                if let Ok(electrum_client) =
+                    Self::wait_for_electrum_client(electrum_socket, &mut process, STARTUP_TIMEOUT)
+                {
                     debug!(
                         "Started {} [PID={}, RPC_SOCKET={}, ELECTRUM_SOCKET={}, DATADIR={}]",
                         Self::get_name(),

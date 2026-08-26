@@ -52,6 +52,7 @@ use crate::IPV4_LOCALHOST;
 use crate::POLL_INTERVAL;
 use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
+use crate::STARTUP_TIMEOUT;
 use crate::WAIT_TIMEOUT;
 use crate::find_conflicting_argument;
 use crate::get_available_port;
@@ -427,7 +428,7 @@ impl UtreexoD {
             }
 
             let auth = Auth::CookieFile(cookie_file);
-            if let Ok(client) = Self::wait_for_client(&rpc_url, &auth, Duration::from_secs(10)) {
+            if let Ok(client) = Self::wait_for_client(&rpc_url, &auth, STARTUP_TIMEOUT) {
                 sleep(Duration::from_millis(200));
 
                 debug!(

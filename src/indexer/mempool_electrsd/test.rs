@@ -36,7 +36,6 @@ use electrum_client::HeaderNotification;
 use tracing::Level;
 
 #[cfg(feature = "bitcoind")]
-use super::MEMPOOL_ELECTRS_INDEXING_TIMEOUT;
 use super::MempoolElectrsD;
 use super::MempoolElectrsDConf;
 use super::get_mempool_electrs_path;
@@ -46,6 +45,8 @@ use super::mempool_electrs_header_matches;
 use super::mempool_electrs_header_matches_with;
 use super::unresponsive_indexer;
 use crate::Error;
+#[cfg(feature = "bitcoind")]
+use crate::INDEXING_TIMEOUT;
 #[cfg(feature = "bitcoind")]
 use crate::MATURE_COINBASE_BLOCK_COUNT;
 #[cfg(feature = "bitcoind")]
@@ -64,6 +65,8 @@ use crate::indexer::test::scripted_electrum_client;
 use crate::indexer::test::scripted_electrum_reader;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::scripted_electrum_socket;
+#[cfg(feature = "bitcoind")]
+use crate::indexer::test::stalled_electrum_socket;
 #[cfg(unix)]
 use crate::indexer::test::test_program;
 use crate::node::PruneMode;
@@ -154,7 +157,7 @@ fn assert_esplora_tip(mempool_electrs: &MempoolElectrsD, bitcoind: &BitcoinD) {
     assert_eq!(esplora.url(), mempool_electrs.get_esplora_url());
 
     let start = Instant::now();
-    while start.elapsed() < MEMPOOL_ELECTRS_INDEXING_TIMEOUT {
+    while start.elapsed() < INDEXING_TIMEOUT {
         if matches!(esplora.get_height(), Ok(actual) if actual == height)
             && matches!(esplora.get_tip_hash(), Ok(actual) if actual == block_hash)
         {
@@ -186,7 +189,7 @@ fn assert_esplora_transaction_status(
 ) {
     let esplora = mempool_electrs.get_esplora_client();
     let start = Instant::now();
-    while start.elapsed() < MEMPOOL_ELECTRS_INDEXING_TIMEOUT {
+    while start.elapsed() < INDEXING_TIMEOUT {
         if esplora
             .get_tx_status(&txid)
             .is_ok_and(|status| status.confirmed == confirmed && status.block_hash == block_hash)
@@ -449,7 +452,7 @@ fn mempool_electrsd_accepts_bitcoind() {
     let height = bitcoind.get_chain_tip().unwrap();
     let block_hash = bitcoind.get_block_hash(height).unwrap();
     mempool_electrs
-        .wait_until_block(height, None, Some(MEMPOOL_ELECTRS_INDEXING_TIMEOUT))
+        .wait_until_block(height, None, Some(INDEXING_TIMEOUT))
         .unwrap();
     assert_esplora_tip(&mempool_electrs, &bitcoind);
 
@@ -512,15 +515,17 @@ fn mempool_electrsd_accepts_bitcoind() {
     ));
     server.join().unwrap();
 
-    let (socket, server) = scripted_electrum_socket(vec![Some(Ok(notification)), None]);
+    let (socket, release, server) = stalled_electrum_socket(notification);
     mempool_electrs.client =
         electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
             .unwrap();
+    let result = mempool_electrs.wait_until_block(height, None, Some(Duration::from_millis(250)));
+    release.send(()).unwrap();
+    server.join().unwrap();
     assert!(matches!(
-        mempool_electrs.wait_until_block(height, None, Some(Duration::from_millis(250))),
+        result,
         Err(Error::Indexer(IndexerError::IndexingTimeout { .. }))
     ));
-    server.join().unwrap();
 
     let older_notification = serde_json::json!({
         "height": height,
@@ -657,7 +662,7 @@ fn mempool_electrsd_sees_mempool_transactions() {
         Err(Error::Indexer(IndexerError::IndexingTimeout { .. }))
     ));
     mempool_electrs
-        .wait_until_mempool_tx(&script_pubkey, txid, Some(MEMPOOL_ELECTRS_INDEXING_TIMEOUT))
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
 
     let esplora = mempool_electrs.get_esplora_client();
@@ -702,7 +707,7 @@ fn mempool_electrsd_syncs_blocks() {
         height += count;
         let block_hash = bitcoind.get_block_hash(height).unwrap();
         mempool_electrs
-            .wait_until_tip(height, block_hash, Some(MEMPOOL_ELECTRS_INDEXING_TIMEOUT))
+            .wait_until_tip(height, block_hash, Some(INDEXING_TIMEOUT))
             .unwrap();
         assert_esplora_tip(&mempool_electrs, &bitcoind);
     }

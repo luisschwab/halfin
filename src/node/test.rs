@@ -54,11 +54,14 @@ use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
-#[cfg(any(
-    feature = "bitcoind",
-    feature = "btcd",
-    feature = "florestad",
-    feature = "utreexod"
+#[cfg(all(
+    unix,
+    any(
+        feature = "bitcoind",
+        feature = "btcd",
+        feature = "florestad",
+        feature = "utreexod"
+    )
 ))]
 use tempfile::TempDir;
 
