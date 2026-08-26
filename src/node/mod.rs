@@ -6,12 +6,15 @@
 //! [`NodeArgs`] contains configuration that is common to all [`Node`] implementations.
 //! The connection and wait functions coordinate two or more enabled [`Node`] implementations.
 //!
-//! Enable the `bitcoind`, `florestad`, or `utreexod` features to use the selected implementation.
+//! Enable the `bitcoind`, `btcd`, `florestad`, or `utreexod` features to use the selected
+//! implementation.
 //!
 //! [`Node`]: crate::node::Node
 
 #[cfg(feature = "bitcoind")]
 pub mod bitcoind;
+#[cfg(feature = "btcd")]
+pub mod btcd;
 pub mod error;
 #[cfg(feature = "florestad")]
 pub mod florestad;
@@ -20,11 +23,11 @@ pub mod utreexod;
 
 use core::net::SocketAddr;
 use core::time::Duration;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use std::fs::OpenOptions;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use std::io::Write;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use std::path::Path;
 use std::path::PathBuf;
 #[cfg(halfin_node)]
@@ -50,12 +53,13 @@ use crate::WAIT_TIMEOUT;
 use crate::error::Error;
 
 /// Minimum automatic pruning target for all supported daemons, in MiB.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
 
 /// File name for RPC authentication cookies that `halfin` creates.
 #[cfg(any(
     feature = "bitcoind",
+    feature = "btcd",
     feature = "utreexod",
     feature = "electrs",
     feature = "electrumx",
@@ -64,11 +68,11 @@ pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
 pub(crate) const RPC_COOKIE_FILE_NAME: &str = ".cookie";
 
 /// User name in RPC authentication cookies that `halfin` creates.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 pub(crate) const RPC_USER: &str = "__cookie__";
 
 /// Password in RPC authentication cookies that `halfin` creates.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 pub(crate) const RPC_PASS: &str = "halfin";
 
 /// Arguments shared by the supported [`Node`] implementations.
@@ -398,7 +402,7 @@ pub fn wait_for_filter_height<N: Node>(node: &N, filter_height: u32) -> Result<(
 }
 
 /// Validate constraints common to every [`Node`] implementation.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
     if let PruneMode::Automatic(target_mib) = args.prune {
         if target_mib < MIN_PRUNE_TARGET_MIB {
@@ -421,7 +425,7 @@ pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
 
 /// Write the RPC cookie shared by a [`Node`] and its [`Indexer`](crate::indexer::Indexer)
 /// implementations.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 pub(crate) fn write_rpc_cookie(data_dir: &Path) -> Result<PathBuf, Error> {
     let cookie_file = data_dir.join(RPC_COOKIE_FILE_NAME);
     let mut options = OpenOptions::new();

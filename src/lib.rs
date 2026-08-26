@@ -11,42 +11,21 @@
 //! | Kind    | Implementation      | Version   | Feature Flag       | Notes                  |
 //! |---------|---------------------|-----------|--------------------|------------------------|
 //! | Node    | [`Bitcoin Core`]    | `v31.0`   | `bitcoind`         |                        |
+//! | Node    | [`btcd`]            | `v0.26.2` | `btcd`             |                        |
 //! | Node    | [`Floresta`]        | `v0.9.1`  | `florestad`        |                        |
 //! | Node    | [`utreexod`]        | `v0.6.0`  | `utreexod`         |                        |
 //! |         |                     |           |                    |                        |
 //! | Indexer | [`romanz/electrs`]  | `v0.11.1` | `electrs`          |                        |
 //! | Indexer | [`mempool/electrs`] | `v3.3.0`  | `mempool_electrs`  | Unsupported on Windows |
-//! | Indexer | [`Electrumx`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
-//!
-//! The `mempool_electrs` feature and `mempool_electrsd` module are not available on Windows.
-//!
-//! ## Start and connect two [`Node`] implementations
-//!
-//! ```rust
-//! # #[cfg(all(feature = "bitcoind", feature = "utreexod"))]
-//! # {
-//! use halfin::node::bitcoind::BitcoinD;
-//! use halfin::node::connect;
-//! use halfin::node::utreexod::UtreexoD;
-//!
-//! let bitcoind = BitcoinD::new().unwrap();
-//! bitcoind.generate(10).unwrap();
-//! assert_eq!(bitcoind.get_chain_tip().unwrap(), 10);
-//!
-//! let utreexod = UtreexoD::new().unwrap();
-//! utreexod.generate(10).unwrap();
-//! assert_eq!(utreexod.get_chain_tip().unwrap(), 10);
-//!
-//! connect(&bitcoind, &utreexod).unwrap();
-//! # }
-//! ```
+//! | Indexer | [`ElectrumX`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
 //!
 //! [`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
+//! [`btcd`]: <https://github.com/btcsuite/btcd>
 //! [`Floresta`]: <https://github.com/getfloresta/Floresta>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
 //! [`romanz/electrs`]: <https://github.com/romanz/electrs>
 //! [`mempool/electrs`]: <https://github.com/mempool/electrs>
-//! [`Electrumx`]: <https://github.com/spesmilo/electrumx>
+//! [`ElectrumX`]: <https://github.com/spesmilo/electrumx>
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
@@ -93,7 +72,10 @@ pub(crate) const CONFIRMATION_BLOCK_COUNT: u32 = 3;
 pub(crate) const COINBASE_MATURITY_BLOCK_COUNT: u32 = 100;
 
 /// Number of blocks used to test compact block filter progress.
-#[cfg(all(test, any(feature = "bitcoind", feature = "utreexod")))]
+#[cfg(all(
+    test,
+    any(feature = "bitcoind", feature = "btcd", feature = "utreexod")
+))]
 pub(crate) const FILTER_BLOCK_COUNT: u32 = 21;
 
 /// Number of generated blocks that makes the first coinbase output mature.
@@ -101,7 +83,10 @@ pub(crate) const FILTER_BLOCK_COUNT: u32 = 21;
 pub(crate) const MATURE_COINBASE_BLOCK_COUNT: u32 = COINBASE_MATURITY_BLOCK_COUNT + 1;
 
 /// Number of blocks used to test persistent data directories.
-#[cfg(all(test, any(feature = "bitcoind", feature = "utreexod")))]
+#[cfg(all(
+    test,
+    any(feature = "bitcoind", feature = "btcd", feature = "utreexod")
+))]
 pub(crate) const PERSISTENCE_BLOCK_COUNT: u32 = 3;
 
 /// Block batches used for repeated synchronization tests.

@@ -11,35 +11,65 @@ use core::time::Duration;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::VecDeque;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "florestad",
+    feature = "utreexod"
+))]
 use std::fs;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "florestad",
+    feature = "utreexod"
+))]
 use std::io::Read;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "florestad",
+    feature = "utreexod"
+))]
 use std::io::Write;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "florestad",
+    feature = "utreexod"
+))]
 use std::net::TcpListener;
 use std::path::PathBuf;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "florestad",
+    feature = "utreexod"
+))]
 use std::thread::JoinHandle;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use std::thread::sleep;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "florestad",
+    feature = "utreexod"
+))]
 use tempfile::TempDir;
 
 use super::Node;
 use super::NodeArgs;
 use super::PruneMode;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use super::RPC_COOKIE_FILE_NAME;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use super::RPC_PASS;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use super::RPC_USER;
 #[cfg(all(feature = "bitcoind", feature = "utreexod"))]
 use super::connect;
@@ -47,12 +77,14 @@ use super::connect_with_timeout;
 use super::wait_for_filter_height;
 use super::wait_for_height;
 use super::wait_for_height_with_timeout;
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use crate::CONNECTION_INTERVAL;
 use crate::Error;
 use crate::node::NodeError;
 #[cfg(feature = "bitcoind")]
 use crate::node::bitcoind::BitcoinD;
+#[cfg(feature = "btcd")]
+use crate::node::btcd::BtcD;
 #[cfg(feature = "florestad")]
 use crate::node::florestad::FlorestaD;
 #[cfg(feature = "utreexod")]
@@ -183,7 +215,12 @@ impl Node for FakeNode {
 /// Create a temporary Unix program with the requested executable state.
 #[cfg(all(
     unix,
-    any(feature = "bitcoind", feature = "florestad", feature = "utreexod")
+    any(
+        feature = "bitcoind",
+        feature = "btcd",
+        feature = "florestad",
+        feature = "utreexod"
+    )
 ))]
 pub(super) fn test_program(body: &str, executable: bool) -> (TempDir, PathBuf) {
     use std::os::unix::fs::PermissionsExt;
@@ -197,7 +234,12 @@ pub(super) fn test_program(body: &str, executable: bool) -> (TempDir, PathBuf) {
 }
 
 /// Serve a sequence of JSON-RPC results over one HTTP request per result.
-#[cfg(any(feature = "bitcoind", feature = "florestad", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "florestad",
+    feature = "utreexod"
+))]
 pub(super) fn scripted_json_rpc_server(
     results: Vec<serde_json::Value>,
 ) -> (SocketAddr, JoinHandle<()>) {
@@ -345,7 +387,7 @@ fn height_waits_report_timeouts() {
 }
 
 /// Wait until a [`Node`] connects to all specified peers.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 pub(super) fn wait_for_fixed_peers<N: Node>(node: &N, peers: &[SocketAddr], timeout: Duration) {
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -381,7 +423,7 @@ fn assert_node_interface<N: Node>(node: &N, name: &str) {
 }
 
 /// Verify the contents and Unix permissions of an RPC cookie.
-#[cfg(any(feature = "bitcoind", feature = "utreexod"))]
+#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 fn assert_rpc_cookie<N: Node>(node: &N) {
     let cookie_file = node.get_working_directory().join(RPC_COOKIE_FILE_NAME);
 
@@ -407,6 +449,16 @@ fn bitcoind_implements_node() {
 
     assert_node_interface(&bitcoind, "BitcoinD");
     assert_rpc_cookie(&bitcoind);
+}
+
+/// Verify the [`Node`] interface and RPC cookie for [`BtcD`].
+#[cfg(feature = "btcd")]
+#[test]
+fn btcd_implements_node() {
+    let btcd = BtcD::new().unwrap();
+
+    assert_node_interface(&btcd, "BtcD");
+    assert_rpc_cookie(&btcd);
 }
 
 /// Verify the [`Node`] interface for [`FlorestaD`].
