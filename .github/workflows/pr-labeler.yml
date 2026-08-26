@@ -31,9 +31,12 @@ jobs:
                       const filePathsToLabels = {
                         '.github/': 'ci',
                         'sha256/': 'sha256',
+
                         'src/node/bitcoind/': 'M-bitcoind',
+                        'src/node/btcd/': 'M-btcd',
                         'src/node/florestad/': 'M-florestad',
                         'src/node/utreexod/': 'M-utreexod',
+
                         'src/indexer/electrsd/': 'M-electrsd',
                         'src/indexer/mempool_electrsd': 'M-mempool-electrsd',
                         'src/indexer/electrumxd/': 'M-electrumxd',

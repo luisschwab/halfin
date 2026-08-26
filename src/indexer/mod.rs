@@ -6,7 +6,7 @@
 //! The shared functions validate a backing [`Node`] and its RPC cookie.
 //!
 //! Enable the `electrs`, `electrumx`, or `mempool_electrs` feature to use the selected
-//! implementation. `mempool_electrs` is available on non-Windows targets.
+//! implementation.
 //!
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
@@ -39,8 +39,17 @@ use crate::node::Node;
 use crate::node::RPC_COOKIE_FILE_NAME;
 
 /// Reject a [`Node`] implementation that no [`Indexer`] supports.
+///
+/// Unsupported nodes:
+///
+/// * [`BtcD`]: does not implement `getnetworkinfo` or all Bitcoin Core response fields that the
+///   indexers require.
+/// * [`FlorestaD`]: does not accept inbound P2P connections and does not provide a compatible
+///   Bitcoin Core JSON-RPC interface.
+/// * [`UtreexoD`]: uses a `btcd`-derived JSON-RPC interface that does not provide all Bitcoin Core
+///   methods and response fields that the indexers require.
 pub(crate) fn validate_backend<N: Node>() -> Result<(), Error> {
-    if matches!(N::get_name(), "FlorestaD" | "UtreexoD") {
+    if matches!(N::get_name(), "BtcD" | "FlorestaD" | "UtreexoD") {
         return Err(IndexerError::UnsupportedBackend {
             node: N::get_name(),
         }

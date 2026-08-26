@@ -33,7 +33,6 @@ use tracing::Level;
 use tracing::info;
 
 #[cfg(feature = "bitcoind")]
-use super::ELECTRUMX_INDEXING_TIMEOUT;
 use super::ElectrumxD;
 use super::ElectrumxDArgs;
 use super::ElectrumxDConf;
@@ -46,6 +45,8 @@ use super::send_admin_rpc_to;
 #[cfg(feature = "bitcoind")]
 use crate::CONFIRMATION_BLOCK_COUNT;
 use crate::Error;
+#[cfg(feature = "bitcoind")]
+use crate::INDEXING_TIMEOUT;
 #[cfg(feature = "bitcoind")]
 use crate::MATURE_COINBASE_BLOCK_COUNT;
 #[cfg(feature = "bitcoind")]
@@ -67,6 +68,8 @@ use crate::indexer::test::test_program;
 use crate::indexer::test::wait_until_electrumx_confirms_transaction;
 #[cfg(feature = "bitcoind")]
 use crate::node::bitcoind::BitcoinD;
+#[cfg(feature = "btcd")]
+use crate::node::btcd::BtcD;
 #[cfg(feature = "florestad")]
 use crate::node::florestad::FlorestaD;
 #[cfg(feature = "utreexod")]
@@ -422,7 +425,7 @@ fn electrumxd_accepts_bitcoind() {
     let height = bitcoind.get_chain_tip().unwrap();
     let block_hash = bitcoind.get_block_hash(height).unwrap();
     electrumxd
-        .wait_until_block(height, None, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_block(height, None, Some(INDEXING_TIMEOUT))
         .unwrap();
     let error = electrumxd
         .wait_until_tip(
@@ -483,6 +486,27 @@ fn electrumxd_accepts_bitcoind() {
         electrumxd.fresh_electrum_client(),
         Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
     ));
+}
+
+/// Verify that rejection of [`BtcD`] occurs before data directory creation.
+#[cfg(feature = "btcd")]
+#[test]
+fn electrumxd_rejects_btcd() {
+    let btcd = BtcD::new().unwrap();
+    let temporary_directory = tempfile::tempdir().unwrap();
+    let directory = temporary_directory.path().join("electrumx");
+    let config = ElectrumxDConf {
+        staticdir: Some(directory.clone()),
+        ..ElectrumxDConf::default()
+    };
+
+    assert!(matches!(
+        ElectrumxD::from_bin_with_conf(get_electrumx_path().unwrap(), &btcd, &config),
+        Err(Error::Indexer(IndexerError::UnsupportedBackend {
+            node: "BtcD"
+        }))
+    ));
+    assert!(!directory.exists());
 }
 
 /// Verify that rejection of [`UtreexoD`] occurs before data directory creation.
@@ -574,7 +598,7 @@ fn electrumxd_sees_mempool_transactions() {
     ));
 
     electrumxd
-        .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
 }
 
@@ -598,7 +622,7 @@ fn electrumxd_syncs_blocks() {
         height += count;
         let block_hash = bitcoind.get_block_hash(height).unwrap();
         electrumxd
-            .wait_until_tip(height, block_hash, Some(ELECTRUMX_INDEXING_TIMEOUT))
+            .wait_until_tip(height, block_hash, Some(INDEXING_TIMEOUT))
             .unwrap();
         electrumxd.wait_until_caught_up(&bitcoind, None).unwrap();
     }
@@ -620,7 +644,7 @@ fn electrumxd_reindexes_reorgs() {
     let block_hash = bitcoind.get_block_hash(height).unwrap();
 
     electrumxd
-        .wait_until_tip(height, block_hash, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_tip(height, block_hash, Some(INDEXING_TIMEOUT))
         .unwrap();
 
     bitcoind.invalidate_blocks(REORG_DEPTH).unwrap();
@@ -636,11 +660,11 @@ fn electrumxd_reindexes_reorgs() {
         .wait_until_tip(
             replacement_height,
             bitcoind.get_block_hash(replacement_height).unwrap(),
-            Some(ELECTRUMX_INDEXING_TIMEOUT),
+            Some(INDEXING_TIMEOUT),
         )
         .unwrap();
     electrumxd
-        .wait_until_tip(height, replacement_hash, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_tip(height, replacement_hash, Some(INDEXING_TIMEOUT))
         .unwrap();
 }
 
@@ -784,7 +808,7 @@ fn electrumxd_updates_balance_when_payment_confirms() {
         .unwrap();
 
     electrumxd
-        .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRUMX_INDEXING_TIMEOUT))
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
     let balance = electrumxd
         .client

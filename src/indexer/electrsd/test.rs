@@ -34,7 +34,6 @@ use tracing::Level;
 use tracing::info;
 
 #[cfg(feature = "bitcoind")]
-use super::ELECTRS_INDEXING_TIMEOUT;
 use super::ElectrsD;
 use super::ElectrsDConf;
 #[cfg(feature = "bitcoind")]
@@ -46,6 +45,8 @@ use super::unresponsive_indexer;
 #[cfg(feature = "bitcoind")]
 use crate::CONFIRMATION_BLOCK_COUNT;
 use crate::Error;
+#[cfg(feature = "bitcoind")]
+use crate::INDEXING_TIMEOUT;
 #[cfg(feature = "bitcoind")]
 use crate::MATURE_COINBASE_BLOCK_COUNT;
 #[cfg(feature = "bitcoind")]
@@ -64,11 +65,15 @@ use crate::indexer::test::scripted_electrum_client;
 use crate::indexer::test::scripted_electrum_reader;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::scripted_electrum_socket;
+#[cfg(feature = "bitcoind")]
+use crate::indexer::test::stalled_electrum_socket;
 #[cfg(unix)]
 use crate::indexer::test::test_program;
 use crate::node::PruneMode;
 #[cfg(feature = "bitcoind")]
 use crate::node::bitcoind::BitcoinD;
+#[cfg(feature = "btcd")]
+use crate::node::btcd::BtcD;
 #[cfg(feature = "florestad")]
 use crate::node::florestad::FlorestaD;
 #[cfg(feature = "utreexod")]
@@ -378,7 +383,7 @@ fn electrsd_accepts_bitcoind() {
     let height = bitcoind.get_chain_tip().unwrap();
     let block_hash = bitcoind.get_block_hash(height).unwrap();
     electrsd
-        .wait_until_block(height, None, Some(ELECTRS_INDEXING_TIMEOUT))
+        .wait_until_block(height, None, Some(INDEXING_TIMEOUT))
         .unwrap();
     let tip = electrsd.client.block_headers_subscribe().unwrap();
     let notification = HeaderNotification {
@@ -439,24 +444,17 @@ fn electrsd_accepts_bitcoind() {
     ));
     server.join().unwrap();
 
-    let (socket, server) = scripted_electrum_socket(vec![Some(Ok(notification)), None]);
+    let (socket, release, server) = stalled_electrum_socket(notification);
     electrsd.client =
         electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
             .unwrap();
     let result = electrsd.wait_until_block(height, None, Some(Duration::from_millis(250)));
-    #[cfg(not(target_os = "windows"))]
+    release.send(()).unwrap();
+    server.join().unwrap();
     assert!(matches!(
         result,
         Err(Error::Indexer(IndexerError::IndexingTimeout { .. }))
     ));
-    #[cfg(target_os = "windows")]
-    assert!(matches!(
-        result,
-        Err(Error::Indexer(
-            IndexerError::IndexingTimeout { .. } | IndexerError::UnresponsiveIndexer { .. }
-        ))
-    ));
-    server.join().unwrap();
 
     let older_notification = serde_json::json!({
         "height": height,
@@ -489,6 +487,27 @@ fn electrsd_accepts_bitcoind() {
         Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
     ));
     server.join().unwrap();
+}
+
+/// Verify that rejection of [`BtcD`] occurs before data directory creation.
+#[cfg(feature = "btcd")]
+#[test]
+fn electrsd_rejects_btcd() {
+    let btcd = BtcD::new().unwrap();
+    let temporary_directory = tempfile::tempdir().unwrap();
+    let directory = temporary_directory.path().join("electrs");
+    let config = ElectrsDConf {
+        staticdir: Some(directory.clone()),
+        ..ElectrsDConf::default()
+    };
+
+    assert!(matches!(
+        ElectrsD::new_with_conf(&btcd, &config),
+        Err(Error::Indexer(IndexerError::UnsupportedBackend {
+            node: "BtcD"
+        }))
+    ));
+    assert!(!directory.exists());
 }
 
 /// Verify that rejection of [`UtreexoD`] occurs before data directory creation.
@@ -580,7 +599,7 @@ fn electrsd_sees_mempool_transactions() {
     ));
 
     electrsd
-        .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRS_INDEXING_TIMEOUT))
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
 }
 
@@ -602,7 +621,7 @@ fn electrsd_syncs_blocks() {
         height += count;
         let block_hash = bitcoind.get_block_hash(height).unwrap();
         electrsd
-            .wait_until_tip(height, block_hash, Some(ELECTRS_INDEXING_TIMEOUT))
+            .wait_until_tip(height, block_hash, Some(INDEXING_TIMEOUT))
             .unwrap();
         electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
     }
@@ -797,7 +816,7 @@ fn electrsd_updates_balances_across_reorganizations() {
 
     electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
     electrsd
-        .wait_until_mempool_tx(&script_pubkey, txid, Some(ELECTRS_INDEXING_TIMEOUT))
+        .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
     let balance = electrsd.client.script_get_balance(&script_pubkey).unwrap();
     assert_eq!(balance.confirmed, 0);

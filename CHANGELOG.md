@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-* `MempoolElectrsD` support
+* Add `BtcD`
+* Add `MempoolElectrsD`
 * Introduce `Cargo-maximum.lock`
 * Add code coverage testing by way of `cargo-llvm-cov`
 * Add `fixed_peers` to `NodeArgs`

@@ -59,10 +59,12 @@ use tracing::debug;
 
 use crate::DataDir;
 use crate::Error;
+use crate::INDEXING_TIMEOUT;
 use crate::IPV4_LOCALHOST;
 use crate::POLL_INTERVAL;
 use crate::SPAWN_ATTEMPTS;
 use crate::SPAWN_INTERVAL;
+use crate::STARTUP_TIMEOUT;
 use crate::find_conflicting_argument;
 use crate::get_available_port;
 use crate::indexer::Indexer;
@@ -78,9 +80,6 @@ use crate::pipe_to_tracing;
 
 /// Bundled `romanz/electrs` version metadata.
 mod versions;
-
-/// The default timeout for [`ElectrsD`] indexing helpers.
-pub const ELECTRS_INDEXING_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Wrap an Electrum client failure with [`Indexer`] context.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
@@ -400,7 +399,7 @@ impl ElectrsD {
             }
 
             if let Ok(client) =
-                Self::wait_for_client(electrum_socket, &mut process, Duration::from_secs(10))
+                Self::wait_for_client(electrum_socket, &mut process, STARTUP_TIMEOUT)
             {
                 sleep(Duration::from_millis(200));
 
@@ -444,18 +443,21 @@ impl ElectrsD {
             self.process.id()
         );
 
-        let status = Command::new("kill")
+        let output = Command::new("kill")
             .arg("-USR1")
             .arg(self.process.id().to_string())
-            .status()
+            .output()
             .map_err(Error::Io)?;
-        if status.success() {
+        if output.status.success() {
             debug!("{}: triggered rescan", Self::get_name());
 
             Ok(())
         } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
             Err(Error::UnexpectedResponse(format!(
-                "failed to trigger romanz/electrs rescan with exit status={status}"
+                "failed to trigger `romanz/electrs` rescan with exit status={}: {}",
+                output.status,
+                stderr.trim()
             )))
         }
     }
@@ -562,7 +564,7 @@ impl ElectrsD {
     /// Poll until the Electrum header tip matches the tip of a [`Node`].
     ///
     /// The function verifies the tip height and block hash.
-    /// Specify `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
+    /// Specify `None` to use [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -589,7 +591,7 @@ impl ElectrsD {
     /// Poll until the Electrum header tip of [`ElectrsD`] reaches `exp_height`.
     ///
     /// The function compares the block hash at `exp_height` with `exp_hash`.
-    /// Specify `None` to use [`ELECTRS_INDEXING_TIMEOUT`].
+    /// Specify `None` to use [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -613,7 +615,7 @@ impl ElectrsD {
 
     /// Poll until the history of `spk` contains `txid` as an unconfirmed transaction.
     ///
-    /// If `timeout` is `None`, the function uses [`ELECTRS_INDEXING_TIMEOUT`].
+    /// If `timeout` is `None`, the function uses [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -631,7 +633,7 @@ impl ElectrsD {
             txid
         );
 
-        let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
+        let timeout = timeout.unwrap_or(INDEXING_TIMEOUT);
         let start = Instant::now();
         while start.elapsed() < timeout {
             self.trigger()?;
@@ -733,7 +735,7 @@ impl ElectrsD {
             None => format!("block {exp_height}"),
         };
 
-        let timeout = timeout.unwrap_or(ELECTRS_INDEXING_TIMEOUT);
+        let timeout = timeout.unwrap_or(INDEXING_TIMEOUT);
         debug!(
             "{}: waiting until indexed {} timeout={:?}",
             Self::get_name(),

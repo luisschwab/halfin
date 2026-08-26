@@ -304,6 +304,52 @@ pub(super) fn scripted_electrum_socket(
     (socket, handle)
 }
 
+/// Start a local Electrum server that stalls after its initial response until released.
+#[cfg(feature = "bitcoind")]
+pub(super) fn stalled_electrum_socket(
+    initial_response: serde_json::Value,
+) -> (
+    core::net::SocketAddr,
+    std::sync::mpsc::Sender<()>,
+    JoinHandle<()>,
+) {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = listener.local_addr().unwrap();
+    let (release, wait_for_release) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut reader = scripted_electrum_reader(&stream);
+        let Some(version_request) = read_scripted_electrum_request(&mut reader) else {
+            return;
+        };
+        writeln!(
+            stream,
+            "{}",
+            serde_json::json!({
+                "id": version_request["id"].clone(),
+                "result": ["halfin-test", "1.4"]
+            })
+        )
+        .unwrap();
+
+        let Some(subscribe_request) = read_scripted_electrum_request(&mut reader) else {
+            return;
+        };
+        writeln!(
+            stream,
+            "{}",
+            serde_json::json!({
+                "id": subscribe_request["id"].clone(),
+                "result": initial_response
+            })
+        )
+        .unwrap();
+
+        let _ = wait_for_release.recv();
+    });
+    (socket, release, handle)
+}
+
 /// Connect a raw Electrum client to a one-request scripted server.
 pub(super) fn scripted_electrum_client(
     response: Option<Result<serde_json::Value, serde_json::Value>>,
@@ -522,7 +568,7 @@ pub(super) fn wait_until_electrumx_confirms_transaction(
             return;
         }
         assert!(
-            start.elapsed() < crate::indexer::electrumxd::ELECTRUMX_INDEXING_TIMEOUT,
+            start.elapsed() < crate::INDEXING_TIMEOUT,
             "{} did not report transaction {txid} at height {confirmation_height}: heights={heights:?}",
             ElectrumxD::get_name()
         );

@@ -10,6 +10,7 @@
 [![license-mit-apache][license-badge]](https://github.com/luisschwab/halfin/blob/master/LICENSE-MIT)
 [![test suite][rust-badge]](https://github.com/luisschwab/halfin/actions/workflows/rust.yml)
 [![cross builds][cross-badge]](https://github.com/luisschwab/halfin/actions/workflows/cross.yml)
+[![codecov][codecov-badge]](https://codecov.io/gh/luisschwab/halfin)
 
 [crates-badge]: https://img.shields.io/crates/v/halfin.svg
 [docs-badge]: https://img.shields.io/badge/docs.rs-halfin-green
@@ -17,13 +18,16 @@
 [license-badge]: https://img.shields.io/badge/License-MIT%2FApache--2.0-red.svg
 [rust-badge]: https://github.com/luisschwab/halfin/actions/workflows/rust.yml/badge.svg
 [cross-badge]: https://github.com/luisschwab/halfin/actions/workflows/cross.yml/badge.svg
+[codecov-badge]: https://codecov.io/gh/luisschwab/halfin/branch/master/graph/badge.svg
 
 > A runner for bitcoin nodes and indexers 🏃‍♂️
 
-This crate makes it simple to run [`bitcoind`], [`florestad`], [`utreexod`], [`romanz/electrs`],
-[`mempool/electrs`], and [`electrumx`] instances from Rust code, useful in integration test contexts.
+This crate makes it simple to run [`bitcoind`], [`btcd`], [`florestad`], [`utreexod`],
+[`romanz/electrs`], [`mempool/electrs`], and [`electrumx`] instances from Rust code, useful in
+integration test contexts.
 
 [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
+[`btcd`]: <https://github.com/btcsuite/btcd>
 [`florestad`]: <https://github.com/getfloresta/Floresta>
 [`utreexod`]: <https://github.com/utreexo/utreexod>
 [`romanz/electrs`]: <https://github.com/romanz/electrs>
@@ -35,22 +39,19 @@ This crate makes it simple to run [`bitcoind`], [`florestad`], [`utreexod`], [`r
 | Kind    | Implementation      | Version   | Feature Flag       | Notes                  |
 |---------|---------------------|-----------|--------------------|------------------------|
 | Node    | [`Bitcoin Core`]    | `v31.0`   | `bitcoind`         |                        |
+| Node    | [`btcd`]            | `v0.26.2` | `btcd`             |                        |
 | Node    | [`Floresta`]        | `v0.9.1`  | `florestad`        |                        |
 | Node    | [`utreexod`]        | `v0.6.0`  | `utreexod`         |                        |
 |         |                     |           |                    |                        |
 | Indexer | [`romanz/electrs`]  | `v0.11.1` | `electrs`          |                        |
 | Indexer | [`mempool/electrs`] | `v3.3.0`  | `mempool_electrs`  | Unsupported on Windows |
-| Indexer | [`Electrumx`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
+| Indexer | [`ElectrumX`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
 
 [`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
 [`Floresta`]: <https://github.com/getfloresta/Floresta>
 [`ElectrumX`]: <https://github.com/spesmilo/electrumx>
 
-Published binaries are downloaded automatically at build time: see [`build.rs`].
-The `mempool_electrs` feature and `mempool_electrsd` module are available on macOS and Linux,
-but not on Windows.
-
-[`build.rs`]: <./build.rs>
+Published binaries are downloaded automatically at build time: see [`build.rs`](./build.rs).
 
 ### BitcoinD
 
@@ -77,6 +78,17 @@ assert_eq!(bitcoind_alpha.get_chain_tip().unwrap(), 100);
 // Wait for a node to catch up with the other
 wait_for_height(&bitcoind_beta, 100).unwrap();
 assert_eq!(bitcoind_beta.get_chain_tip().unwrap(), 100);
+```
+
+### BtcD
+
+```rust
+use halfin::node::btcd::BtcD;
+
+let btcd = BtcD::new().unwrap();
+
+btcd.generate(100).unwrap();
+assert_eq!(btcd.get_chain_tip().unwrap(), 100);
 ```
 
 ### ElectrsD

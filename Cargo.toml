@@ -15,6 +15,7 @@ edition = "2024"
 default = []
 # Nodes
 bitcoind = []
+btcd = []
 florestad = ["dep:electrum-client", "dep:miniscript"]
 utreexod = []
 # Indexers
@@ -97,6 +98,7 @@ zizmor = "1.29.0"
 # features, so skip redundant test runs
 exclude_features = [
     "bitcoind",
+    "btcd",
     "florestad",
     "utreexod",
     "electrs",

@@ -81,7 +81,7 @@ jobs:
             - name: Setup cargo-rbmt
               uses: ./.github/actions/setup-rbmt
 
-            - name: Run ${{ matrix.task }}
+            - name: Check ${{ matrix.name }}
               shell: bash
               run: cargo rbmt ${{ matrix.task }}
 
