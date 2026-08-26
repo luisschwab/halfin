@@ -69,6 +69,9 @@ mod binary {
         /// Name of the executable inside the downloaded archive.
         pub(crate) name: &'static str,
 
+        /// Human-readable implementation name displayed in build warnings.
+        pub(crate) implementation: &'static str,
+
         /// Version displayed in build warnings and used in destination paths.
         pub(crate) version: &'static str,
 
@@ -180,7 +183,7 @@ mod binary {
                 if self.cached_archive_hash_matches(&download_directory, expected_hash) {
                     println!(
                         "cargo:warning=Found cached `{}` @ v{} at `{}`, skipping download...",
-                        self.name,
+                        self.implementation,
                         self.version,
                         existing_path.display(),
                     );
@@ -189,7 +192,7 @@ mod binary {
 
                 println!(
                     "cargo:warning=Cached `{}` @ v{} at `{}` is stale, re-downloading...",
-                    self.name,
+                    self.implementation,
                     self.version,
                     existing_path.display(),
                 );
@@ -265,7 +268,7 @@ mod binary {
 
                 println!(
                     "cargo:warning=Downloading `{}` @ v{} from `{}`",
-                    self.name, self.version, download_url,
+                    self.implementation, self.version, download_url,
                 );
 
                 let response = Request::new(Method::Get, download_url.as_str())
@@ -552,6 +555,7 @@ mod mempool_electrs {
 
         Binary {
             name: "electrs",
+            implementation: "mempool/electrs",
             version: MEMPOOL_ELECTRS_VERSION,
             env_var: HALFIN_MEMPOOL_ELECTRS_PATH,
             destination_dir_prefix: "mempool-electrs",
@@ -619,6 +623,7 @@ mod bitcoind {
     pub(crate) fn download() {
         Binary {
             name: "bitcoind",
+            implementation: "bitcoind",
             version: BITCOIND_VERSION,
             env_var: HALFIN_BITCOIND_PATH,
             destination_dir_prefix: "bitcoin",
@@ -674,6 +679,7 @@ mod florestad {
     pub(crate) fn download() {
         Binary {
             name: "florestad",
+            implementation: "florestad",
             version: FLORESTAD_VERSION,
             env_var: HALFIN_FLORESTAD_PATH,
             destination_dir_prefix: "florestad",
@@ -732,6 +738,7 @@ mod utreexod {
     pub(crate) fn download() {
         Binary {
             name: "utreexod",
+            implementation: "utreexod",
             version: UTREEXOD_VERSION,
             env_var: HALFIN_UTREEXOD_PATH,
             destination_dir_prefix: "utreexod",
@@ -793,6 +800,7 @@ mod electrs {
     pub(crate) fn download() {
         Binary {
             name: "electrs",
+            implementation: "romanz/electrs",
             version: ELECTRS_VERSION,
             env_var: HALFIN_ELECTRS_PATH,
             destination_dir_prefix: "electrs",
@@ -854,6 +862,7 @@ mod electrumx {
     pub(crate) fn download() {
         Binary {
             name: "electrumx",
+            implementation: "electrumx",
             version: ELECTRUMX_VERSION,
             env_var: HALFIN_ELECTRUMX_PATH,
             destination_dir_prefix: "electrumx",
