@@ -364,7 +364,7 @@ fn electrsd_rejects_oversized_notification_height() {
     assert!(matches!(error, Error::UnexpectedResponse(_)));
 }
 
-/// Verify that [`ElectrsD`] uses the selected Bitcoin Core P2P port and accepts requests.
+/// Verify that [`ElectrsD`] accepts requests without a Bitcoin Core P2P connection.
 #[cfg(feature = "bitcoind")]
 #[test]
 #[allow(clippy::too_many_lines)]
@@ -378,7 +378,7 @@ fn electrsd_accepts_bitcoind() {
     assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
 
     let mut electrsd = ElectrsD::new(&bitcoind).unwrap();
-    assert_eq!(bitcoind.get_peer_count().unwrap(), 1);
+    assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
 
     let height = bitcoind.get_chain_tip().unwrap();
     let block_hash = bitcoind.get_block_hash(height).unwrap();
@@ -700,8 +700,6 @@ fn electrsd_rejects_owned_raw_arguments() {
         "--db-dir=/tmp/electrs",
         "--daemon-rpc-addr",
         "--daemon-rpc-addr=127.0.0.1:1",
-        "--daemon-p2p-addr",
-        "--daemon-p2p-addr=127.0.0.1:2",
         "--electrum-rpc-addr",
         "--electrum-rpc-addr=127.0.0.1:3",
         "--monitoring-addr",

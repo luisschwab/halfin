@@ -55,7 +55,8 @@ target:
 cargo run --example cross-compile-electrs -- --force
 ```
 
-The script hardcodes upstream `romanz/electrs` release `v0.11.1`. 
+The script reads the upstream `romanz/electrs` release from
+`src/indexer/electrsd/versions.rs` (currently `v0.12.0`).
 It clones or updates the source tree under:
 
 ```text
@@ -65,7 +66,7 @@ contrib/bins/compile_electrs/tmp/electrs
 It writes archives and checksums under:
 
 ```text
-contrib/bins/compile_electrs/dist/electrs-0.11.1/
+contrib/bins/compile_electrs/dist/electrs-0.12.0/
 ```
 
 Generated files:
@@ -77,7 +78,7 @@ electrs-linux-amd64.tar.gz
 electrs-linux-arm64.tar.gz
 electrs-windows-amd64.zip
 electrs-windows-arm64.zip
-electrs-0.11.1-SHA256SUMS
+electrs-0.12.0-SHA256SUMS
 ```
 
 Upload those files to the web server location that `build.rs`
@@ -87,9 +88,11 @@ will later use for `romanz/electrs` downloads.
 
 The Linux builds use `Cross.toml` from this directory. The macOS builds use
 `cargo build`, and the Windows MSVC builds use `cargo xwin build`.
-The script pins `LIBCLANG_PATH=/usr/lib/llvm-10/lib` and
-`CLANG_PATH=/usr/bin/clang-10` for `cross` because `romanz/electrs`' RocksDB bindings
-need a newer libclang than the older one present in some cross base images.
+The Linux images install `clang` and `libclang-dev` for the RocksDB bindings.
+The build discovers Clang inside the container; host Clang paths are not forwarded.
+RocksDB is built from source and linked statically, following the
+[upstream build instructions](https://github.com/romanz/electrs/blob/v0.12.0/doc/install.md).
+The resulting binaries still depend on the target system's C/C++ runtime libraries.
 
 The `romanz/electrs` checkout and Cargo build cache are kept under `tmp/` so reruns can
 reuse previously compiled dependencies. The script checks out the pinned tag on

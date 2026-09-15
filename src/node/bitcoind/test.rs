@@ -3,6 +3,9 @@
 //! Configuration and runtime integration tests for [`BitcoinD`].
 
 use std::fs;
+use std::io::Read;
+use std::io::Write;
+use std::net::TcpStream;
 use std::time::Duration;
 
 use corepc_client::bitcoin::Amount;
@@ -335,6 +338,7 @@ fn bitcoind_default_configuration_preserves_existing_behavior() {
         BitcoinD::configured_args(&conf).unwrap(),
         [
             "-chain=regtest",
+            "-rest=1",
             "-blockfilterindex=1",
             "-prune=0",
             "-v2transport=1",
@@ -436,6 +440,10 @@ fn bitcoind_rejects_raw_typed_argument_spellings() {
         "-chain=signet",
         "--regtest",
         "-noregtest",
+        "-rest=0",
+        "--rest",
+        "-norest",
+        "--no-rest",
         "-blockfilterindex=0",
         "--blockfilterindex",
         "-noblockfilterindex",
@@ -499,6 +507,19 @@ fn bitcoind_lifecycle_exposes_runtime_state_and_removes_temporary_directory() {
         "__cookie__:halfin"
     );
     bitcoind.client.uptime().unwrap();
+
+    let mut rest = TcpStream::connect(bitcoind.get_rpc_socket()).unwrap();
+    rest.set_read_timeout(Some(CONNECTION_TIMEOUT)).unwrap();
+    rest.set_write_timeout(Some(CONNECTION_TIMEOUT)).unwrap();
+    rest.write_all(
+        b"GET /rest/blockhashbyheight/0.hex HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+    )
+    .unwrap();
+    let mut response = String::new();
+    rest.read_to_string(&mut response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 200 OK\r\n"), "{response}");
+    let (_, body) = response.split_once("\r\n\r\n").unwrap();
+    assert_eq!(body.trim(), bitcoind.get_block_hash(0).unwrap().to_string());
 
     #[cfg(unix)]
     {

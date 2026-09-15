@@ -792,6 +792,7 @@ impl BitcoinD {
             "port",
             "prune",
             "regtest",
+            "rest",
             "rpcbind",
             "rpcpassword",
             "rpcport",
@@ -807,6 +808,7 @@ impl BitcoinD {
             "listen",
             "prune",
             "regtest",
+            "rest",
             "signet",
             "testnet",
             "testnet4",
@@ -835,6 +837,7 @@ impl BitcoinD {
 
         let mut args = vec![
             format!("-chain={}", conf.args.network.to_core_arg()),
+            "-rest=1".to_string(),
             format!("-blockfilterindex={}", bool_value(conf.args.cbf_index)),
             format!("-prune={prune}"),
             format!("-v2transport={}", bool_value(conf.args.v2_transport)),

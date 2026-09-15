@@ -269,10 +269,6 @@ fn build_target(
             command = command.env("CROSS_CONFIG", cross_config_s);
             command = command.env("CROSS_CONTAINER_ENGINE", container_engine);
             command = command.env("DOCKER_DEFAULT_PLATFORM", "linux/amd64");
-            // `romanz/electrs`' RocksDB bindings need a newer libclang than what some
-            // cross base images expose by default.
-            command = command.env("LIBCLANG_PATH", "/usr/lib/llvm-10/lib");
-            command = command.env("CLANG_PATH", "/usr/bin/clang-10");
             if let Some(bindgen_args) = target.bindgen_args {
                 log_target(
                     target,

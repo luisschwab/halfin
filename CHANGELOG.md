@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Bump `romanz/electrs` to v0.12.0
 * Add `BtcD`
 * Add `MempoolElectrsD`
 * Introduce `Cargo-maximum.lock`
