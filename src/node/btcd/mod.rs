@@ -818,6 +818,13 @@ impl BtcD {
             Network::Testnet4 => args.push("--testnet4".to_string()),
             Network::Signet => args.push("--signet".to_string()),
             Network::Regtest => args.push("--regtest".to_string()),
+            #[allow(unreachable_patterns)]
+            network => {
+                return Err(NodeError::InvalidConfiguration(format!(
+                    "unsupported network: {network}"
+                ))
+                .into());
+            }
         }
 
         args.extend(

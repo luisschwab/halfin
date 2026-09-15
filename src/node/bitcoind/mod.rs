@@ -167,7 +167,7 @@ impl Default for BitcoinDConf {
                 txindex: true,
             },
             bitcoind_args: BitcoinDArgs {
-                fallback_fee_rate: FeeRate::from_sat_per_vb_u32(10),
+                fallback_fee_rate: FeeRate::from_sat_per_vb(10).expect("10 sat/vB fits in FeeRate"),
             },
             raw_args: Vec::new(),
             tmpdir: None,

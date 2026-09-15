@@ -866,6 +866,13 @@ impl UtreexoD {
             Network::Testnet4 => unreachable!("testnet4 was rejected above"),
             Network::Signet => args.push("--signet".to_string()),
             Network::Regtest => args.push("--regtest".to_string()),
+            #[allow(unreachable_patterns)]
+            network => {
+                return Err(NodeError::InvalidConfiguration(format!(
+                    "unsupported network: {network}"
+                ))
+                .into());
+            }
         }
 
         args.extend(
@@ -912,14 +919,21 @@ impl UtreexoD {
 
     /// Return the `utreexod` data directory name for a supported network.
     #[cfg(any(target_os = "windows", test))]
-    fn network_data_dir_name(network: Network) -> &'static str {
-        match network {
+    fn network_data_dir_name(network: Network) -> Result<&'static str, Error> {
+        Ok(match network {
             Network::Bitcoin => "mainnet",
             Network::Testnet => "testnet3",
             Network::Testnet4 => "testnet4",
             Network::Signet => "signet",
             Network::Regtest => "regtest",
-        }
+            #[allow(unreachable_patterns)]
+            network => {
+                return Err(NodeError::InvalidConfiguration(format!(
+                    "unsupported network: {network}"
+                ))
+                .into());
+            }
+        })
     }
 
     /// Mark the Utreexo forest data file as sparse before `utreexod` opens it.
@@ -934,7 +948,7 @@ impl UtreexoD {
     ) -> Result<(), Error> {
         let forest_dir = working_directory
             .path()
-            .join(Self::network_data_dir_name(network))
+            .join(Self::network_data_dir_name(network)?)
             .join("utreexostate_flat");
         fs::create_dir_all(&forest_dir).map_err(Error::Io)?;
 

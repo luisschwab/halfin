@@ -717,6 +717,13 @@ impl MempoolElectrsD {
             Network::Testnet4 => "testnet4",
             Network::Signet => "signet",
             Network::Regtest => "regtest",
+            #[allow(unreachable_patterns)]
+            network => {
+                return Err(IndexerError::InvalidConfiguration(format!(
+                    "unsupported network: {network}"
+                ))
+                .into());
+            }
         };
 
         Ok(vec!["--network".to_string(), network.to_string()])
