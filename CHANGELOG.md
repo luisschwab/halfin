@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] – 2026-09-15
+
 * Bump `romanz/electrs` to v0.12.0
 * Add `BtcD`
 * Add `MempoolElectrsD`
@@ -55,6 +57,7 @@
   Electrum header notifications.
 * Add `ElectrsD` reorg coverage to verify the indexer follows replacement chain tips.
 
-[Unreleased]: https://github.com/luisschwab/halfin/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/luisschwab/halfin/compare/v0.6.0...HEAD
 
+[0.6.0]: https://github.com/luisschwab/halfin/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/luisschwab/halfin/compare/v0.4.0...v0.5.0
