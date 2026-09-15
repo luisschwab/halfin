@@ -329,7 +329,7 @@ fn bitcoind_default_configuration_preserves_existing_behavior() {
     assert!(conf.args.txindex);
     assert_eq!(
         conf.bitcoind_args.fallback_fee_rate,
-        FeeRate::from_sat_per_vb_u32(10)
+        FeeRate::from_sat_per_vb(10).expect("10 sat/vB fits in FeeRate")
     );
     assert_eq!(
         BitcoinD::configured_args(&conf).unwrap(),
@@ -406,7 +406,10 @@ fn bitcoind_rejects_pruning_with_txindex() {
 #[test]
 fn bitcoind_formats_fallback_fee_with_bitcoin_amount() {
     let cases = [
-        (FeeRate::from_sat_per_vb_u32(10), "-fallbackfee=0.0001"),
+        (
+            FeeRate::from_sat_per_vb(10).expect("10 sat/vB fits in FeeRate"),
+            "-fallbackfee=0.0001",
+        ),
         (FeeRate::from_sat_per_kwu(1), "-fallbackfee=0.00000004"),
         (FeeRate::ZERO, "-fallbackfee=0"),
         (FeeRate::from_sat_per_kwu(25_000_000), "-fallbackfee=1"),

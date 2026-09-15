@@ -362,11 +362,14 @@ fn utreexod_renders_supported_networks_and_data_paths() {
                 );
             }
         }
-        assert_eq!(UtreexoD::network_data_dir_name(network), data_directory);
+        assert_eq!(
+            UtreexoD::network_data_dir_name(network).unwrap(),
+            data_directory
+        );
     }
 
     assert_eq!(
-        UtreexoD::network_data_dir_name(Network::Testnet4),
+        UtreexoD::network_data_dir_name(Network::Testnet4).unwrap(),
         "testnet4"
     );
 }
