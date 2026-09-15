@@ -43,8 +43,7 @@ mod binary {
     const BIN_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
     /// Base URLs for binary archive downloads.
-    const BIN_DOWNLOAD_MIRRORS: &[&str] =
-        &["https://bin.luisschwab.net", "https://bin.lab.vinteum.org"];
+    const BIN_DOWNLOAD_MIRRORS: &[&str] = &["https://bin.luisschwab.net"];
 
     /// Return the root directory used to cache extracted binaries.
     fn download_directory() -> PathBuf {

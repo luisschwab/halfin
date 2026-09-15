@@ -15,7 +15,7 @@
 //! | Node    | [`Floresta`]        | `v0.9.1`  | `florestad`        |                        |
 //! | Node    | [`utreexod`]        | `v0.6.0`  | `utreexod`         |                        |
 //! |         |                     |           |                    |                        |
-//! | Indexer | [`romanz/electrs`]  | `v0.11.1` | `electrs`          |                        |
+//! | Indexer | [`romanz/electrs`]  | `v0.12.0` | `electrs`          |                        |
 //! | Indexer | [`mempool/electrs`] | `v3.3.0`  | `mempool_electrs`  | Unsupported on Windows |
 //! | Indexer | [`ElectrumX`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
 //!

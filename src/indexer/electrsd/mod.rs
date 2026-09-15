@@ -285,7 +285,7 @@ impl ElectrsD {
     /// The method uses at most [`ElectrsDConf::max_retries`] attempts.
     ///
     /// 1. Select new temporary Electrum and monitoring ports.
-    /// 2. Start `romanz/electrs` with the RPC and P2P sockets of the specified [`Node`].
+    /// 2. Start `romanz/electrs` with the RPC socket of the specified [`Node`].
     /// 3. Wait a maximum of 10 seconds for the Electrum RPC server to respond.
     ///
     /// # Errors
@@ -323,7 +323,6 @@ impl ElectrsD {
         let (cookie_file, _) = read_backend_cookie(node)?;
         ensure_backend_ready(node, node_args.network, Self::get_name())?;
         let node_rpc_socket = node.get_rpc_socket();
-        let node_p2p_socket = node.get_p2p_socket();
 
         for _attempt in 0..conf.max_retries {
             let working_directory = init_data_dir(
@@ -345,8 +344,6 @@ impl ElectrsD {
                 working_directory.path().display().to_string(),
                 "--daemon-rpc-addr".to_string(),
                 node_rpc_socket.to_string(),
-                "--daemon-p2p-addr".to_string(),
-                node_p2p_socket.to_string(),
                 "--electrum-rpc-addr".to_string(),
                 electrum_socket.to_string(),
                 "--monitoring-addr".to_string(),
@@ -663,7 +660,6 @@ impl ElectrsD {
     fn configured_args(conf: &ElectrsDConf, network: Network) -> Result<Vec<String>, Error> {
         const OPTIONS: &[&str] = &[
             "cookie-file",
-            "daemon-p2p-addr",
             "daemon-rpc-addr",
             "db-dir",
             "electrum-rpc-addr",
