@@ -162,20 +162,32 @@ A `justfile` is provided for convenience. Run `just` to see available commands:
 > A runner for bitcoin nodes and indexers
 
 Available recipes:
-    audit                # Run cargo-audit across all lockfiles and prune stale advisories [alias: a]
-    build                # Build `halfin` [alias: b]
-    check                # Check Formatting, Linting and Documentation [alias: c]
-    doc                  # Generate Documentation [alias: d]
-    doc-open             # Generate and Open Documentation [alias: do]
-    fmt                  # Format Code [alias: f]
-    lock                 # Regenerate Lockfiles [alias: l]
-    pre-push             # Run pre-push checks [alias: p]
-    shellcheck           # Run ShellCheck [alias: sc]
-    test features=""     # Run Tests [alias: t]
-    test-all features="" # Run Tests with Lockfile and Toolchain Combos
-    toolchains           # Update Stable and Nightly Toolchains
-    tools                # Install cargo-rbmt Tools
-    zizmor               # Run Zizmor Static Analysis [alias: z]
+    [Build]
+    build                           # Build `halfin`
+
+    [Dependencies]
+    lock                            # Regenerate Lockfiles [alias: l]
+
+    [Documentation]
+    docs                            # Generate Documentation [alias: d]
+    docs-open                       # Generate and Open Documentation [alias: do]
+
+    [Quality]
+    audit                           # Audit Cargo Dependencies and Prune Stale Advisories [alias: a]
+    bisectability baseline="master" # Assert Commit Bisectability [alias: b]
+    check                           # Check Formatting, Linting and Documentation [alias: c]
+    fmt                             # Format Code [alias: f]
+    pre-push                        # Run Pre-Push Checks [alias: p]
+    shellcheck                      # Run ShellCheck [alias: sc]
+    zizmor                          # Run Zizmor [alias: z]
+
+    [Setup]
+    install-tools-toolchains        # Install Tools and Toolchains
+    update-tools-toolchains         # Update Tools and Toolchains
+
+    [Testing]
+    coverage                        # Generate Coverage Report [alias: cov]
+    test features=""                # Run Tests with Lockfile and Toolchain Combinations [alias: t]
 ```
 
 ## Minimum Supported Rust Version
