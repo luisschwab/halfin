@@ -21,11 +21,15 @@ _default:
 
 # Quality
 
-[doc: "Audit Cargo Dependencies and Prune Stale Advisories"]
+[doc: "Audit Cargo Dependencies"]
 [group("Quality")]
 audit:
-    bash contrib/run-cargo-audit.sh
-    bash contrib/prune-audit-ignores.sh
+    @echo "Auditing Cargo.lock"
+    cargo audit --file Cargo.lock
+    @echo "\nAuditing Cargo-recent.lock"
+    cargo audit --file Cargo-recent.lock
+    @echo "\nAuditing Cargo-minimal.lock"
+    cargo audit --file Cargo-minimal.lock
 
 [doc: "Assert Commit Bisectability"]
 [group("Quality")]

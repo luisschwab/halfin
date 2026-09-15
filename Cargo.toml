@@ -60,6 +60,8 @@ flate2 = { version = "1.1.1" }
 bitreq = { version = "0.3.7", features = ["https"] }
 tar = { version = "0.4.46" }
 zip = { version = "7", default-features = false, features = ["bzip2", "deflate"] }
+# Pinned transitive deps:
+rustls = { version = "0.23.45", default-features = false } # blame: bitreq@0.3.7 -> rustls@0.23.38 (RUSTSEC-2026-0285)
 
 [dev-dependencies]
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }

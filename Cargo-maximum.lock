@@ -299,6 +299,7 @@ dependencies = [
  "flate2",
  "lazy_static",
  "miniscript",
+ "rustls",
  "serde_json",
  "tar",
  "tempfile",

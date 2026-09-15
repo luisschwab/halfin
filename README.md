@@ -173,7 +173,7 @@ Available recipes:
     docs-open                       # Generate and Open Documentation [alias: do]
 
     [Quality]
-    audit                           # Audit Cargo Dependencies and Prune Stale Advisories [alias: a]
+    audit                           # Audit Cargo Dependencies [alias: a]
     bisectability baseline="master" # Assert Commit Bisectability [alias: b]
     check                           # Check Formatting, Linting and Documentation [alias: c]
     fmt                             # Format Code [alias: f]
