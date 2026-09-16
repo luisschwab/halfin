@@ -13,6 +13,8 @@ contrib/bins/compile_electrumx/local_wheels/
 
 contrib/bins/compile_mempool_electrs/dist/
 contrib/bins/compile_mempool_electrs/tmp/
+contrib/bins/package_frigate/dist/
+contrib/bins/package_frigate/tmp/
 
 contrib/bins/compile_blockstream_electrs/dist/
 contrib/bins/compile_blockstream_electrs/tmp/

@@ -21,6 +21,7 @@ utreexod = []
 # Indexers
 blockstream_electrs = ["dep:electrum-client", "dep:esplora-client"]
 electrumx = ["dep:electrum-client"]
+frigate = ["dep:electrum-client"]
 mempool_electrs = ["dep:electrum-client", "dep:esplora-client"]
 romanz_electrs = ["dep:electrum-client"]
 
@@ -33,6 +34,12 @@ bench = false
 [[example]]
 name = "cross-compile-electrumx"
 path = "contrib/bins/compile_electrumx/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "package-frigate"
+path = "contrib/bins/package_frigate/build.rs"
 test = false
 bench = false
 
@@ -111,6 +118,7 @@ exclude_features = [
     "utreexod",
     "blockstream_electrs",
     "electrumx",
+    "frigate",
     "mempool_electrs",
     "romanz_electrs"
 ]
