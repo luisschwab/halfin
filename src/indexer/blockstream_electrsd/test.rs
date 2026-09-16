@@ -63,7 +63,7 @@ use crate::indexer::test::read_scripted_electrum_request;
 use crate::indexer::test::scripted_electrum_client;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::scripted_electrum_reader;
-#[cfg(feature = "bitcoind")]
+#[cfg(any(feature = "bitcoind", unix))]
 use crate::indexer::test::scripted_electrum_socket;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::stalled_electrum_socket;
@@ -331,6 +331,19 @@ fn blockstream_electrsd_reports_client_setup_failures() {
     process.kill().unwrap();
     process.wait().unwrap();
 
+    let (socket, server) = scripted_electrum_socket(vec![Some(Err(serde_json::json!({
+        "code": -1,
+        "message": "indexing"
+    })))]);
+    let mut process = Command::new("sleep").arg("2").spawn().unwrap();
+    assert!(matches!(
+        BlockstreamElectrsD::wait_for_client(socket, &mut process, Duration::from_millis(250)),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    process.kill().unwrap();
+    process.wait().unwrap();
+    server.join().unwrap();
+
     let mut process = Command::new("true").spawn().unwrap();
     process.wait().unwrap();
     assert!(matches!(
@@ -354,6 +367,13 @@ fn blockstream_electrsd_treats_socket_timeouts_as_incomplete_reads() {
         let error = ElectrumError::SharedIOError(Arc::new(IoError::from(kind)));
         assert!(is_incomplete_read(&error));
     }
+
+    assert!(!is_incomplete_read(&ElectrumError::IOError(IoError::from(
+        ErrorKind::PermissionDenied
+    ))));
+    assert!(!is_incomplete_read(&ElectrumError::SharedIOError(
+        Arc::new(IoError::from(ErrorKind::PermissionDenied))
+    )));
 
     let error = ElectrumError::Message("complete error".to_string());
     assert!(!is_incomplete_read(&error));

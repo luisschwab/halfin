@@ -139,6 +139,28 @@ fn btcd_rejects_malformed_rpc_results() {
     server.join().unwrap();
 }
 
+/// Verify inbound peers are identified by the local listening address.
+#[test]
+fn btcd_identifies_inbound_peer() {
+    let mut btcd = BtcD::new().unwrap();
+    let local_socket = btcd.get_p2p_socket();
+    let (socket, server) = scripted_json_rpc_server(vec![serde_json::json!([
+        {
+            "inbound": true,
+            "addr": "127.0.0.1:49152",
+            "addrlocal": local_socket.to_string()
+        }
+    ])]);
+    btcd.client = Client::new_with_auth(
+        &format!("http://{socket}"),
+        Auth::UserPass("user".to_string(), "password".to_string()),
+    )
+    .unwrap();
+
+    assert!(btcd.has_peer("127.0.0.1:18444".parse().unwrap()).unwrap());
+    server.join().unwrap();
+}
+
 /// Verify [`BtcD`] startup, process data, and P2P data.
 #[test]
 fn btcd_starts() {
