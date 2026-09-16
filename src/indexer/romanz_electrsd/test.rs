@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Configuration and runtime integration tests for [`ElectrsD`].
+//! Configuration and runtime integration tests for [`RomanzElectrsD`].
 
 use core::time::Duration;
 use std::io::Error as IoError;
@@ -34,12 +34,12 @@ use tracing::Level;
 use tracing::info;
 
 #[cfg(feature = "bitcoind")]
-use super::ElectrsD;
-use super::ElectrsDConf;
+use super::RomanzElectrsD;
+use super::RomanzElectrsDConf;
 #[cfg(feature = "bitcoind")]
 use super::electrs_header_matches;
 use super::electrs_header_matches_with;
-use super::get_electrs_path;
+use super::get_romanz_electrs_path;
 use super::is_incomplete_read;
 use super::unresponsive_indexer;
 #[cfg(feature = "bitcoind")]
@@ -63,7 +63,7 @@ use crate::indexer::test::read_scripted_electrum_request;
 use crate::indexer::test::scripted_electrum_client;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::scripted_electrum_reader;
-#[cfg(feature = "bitcoind")]
+#[cfg(any(feature = "bitcoind", unix))]
 use crate::indexer::test::scripted_electrum_socket;
 #[cfg(feature = "bitcoind")]
 use crate::indexer::test::stalled_electrum_socket;
@@ -144,96 +144,97 @@ fn electrum_server_with_invalid_queued_header(
 
 /// Verify binary-path validation and zero start attempts.
 #[test]
-fn electrsd_validates_binary_path_and_start_attempts() {
+fn romanz_electrsd_validates_binary_path_and_start_attempts() {
     let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }));
 
-    let error = ElectrsD::from_bin("electrs", &node).unwrap_err();
+    let error = RomanzElectrsD::from_bin("romanz_electrs", &node).unwrap_err();
     assert!(matches!(error, Error::BinaryPathNotAbsolute { .. }));
 
     let root = tempfile::tempdir().unwrap();
-    let error = ElectrsD::from_bin(root.path().join("missing-electrs"), &node).unwrap_err();
+    let error = RomanzElectrsD::from_bin(root.path().join("missing-electrs"), &node).unwrap_err();
     assert!(matches!(error, Error::BinaryPathNotFile { .. }));
 
     node.write_cookie("user:password");
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         max_retries: 0,
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
     let error =
-        ElectrsD::from_bin_with_conf(get_electrs_path().unwrap(), &node, &config).unwrap_err();
+        RomanzElectrsD::from_bin_with_conf(get_romanz_electrs_path().unwrap(), &node, &config)
+            .unwrap_err();
     assert!(matches!(error, Error::StartupAttemptsExhausted(0)));
 }
 
 /// Verify directory, spawn, retry, and client-timeout startup failures.
 #[cfg(unix)]
 #[test]
-fn electrsd_reports_test_program_startup_failures() {
+fn romanz_electrsd_reports_test_program_startup_failures() {
     let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }));
     node.write_cookie("user:password");
 
     let (_program_directory, program) = test_program("exit 1", true);
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         tmpdir: Some(program.clone()),
         max_retries: 1,
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
     assert!(matches!(
-        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        RomanzElectrsD::from_bin_with_conf(&program, &node, &config),
         Err(Error::Io(_))
     ));
 
     let (_program_directory, program) = test_program("exit 1", false);
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         max_retries: 1,
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
     assert!(matches!(
-        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        RomanzElectrsD::from_bin_with_conf(&program, &node, &config),
         Err(Error::FailedToSpawn(_))
     ));
 
     let (_program_directory, program) = test_program("exit 1", true);
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         max_retries: 2,
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
     assert!(matches!(
-        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        RomanzElectrsD::from_bin_with_conf(&program, &node, &config),
         Err(Error::StartupAttemptsExhausted(2))
     ));
 
     let (_program_directory, program) = test_program("exec sleep 30", true);
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         max_retries: 1,
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
     assert!(matches!(
-        ElectrsD::from_bin_with_conf(&program, &node, &config),
+        RomanzElectrsD::from_bin_with_conf(&program, &node, &config),
         Err(Error::StartupAttemptsExhausted(1))
     ));
 }
 
 /// Verify pruned backing nodes are rejected before startup.
 #[test]
-fn electrsd_rejects_pruned_backends() {
+fn romanz_electrsd_rejects_pruned_backends() {
     let node = FakeNode::new(Network::Regtest, serde_json::json!({ "blocks": 1 }))
         .with_prune(PruneMode::Automatic(1));
     node.write_cookie("user:password");
 
     assert!(matches!(
-        ElectrsD::from_bin(get_electrs_path().unwrap(), &node),
+        RomanzElectrsD::from_bin(get_romanz_electrs_path().unwrap(), &node),
         Err(Error::Indexer(IndexerError::InvalidConfiguration(_)))
     ));
 }
 
 /// Verify Electrum history transport and protocol failures are classified.
 #[test]
-fn electrsd_classifies_history_failures() {
+fn romanz_electrsd_classifies_history_failures() {
     let script = ScriptBuf::new();
     let txid = Txid::all_zeros();
 
     let (client, server) = scripted_electrum_client(None);
-    assert!(!ElectrsD::script_history_has_mempool_tx(&client, &script, txid).unwrap());
+    assert!(!RomanzElectrsD::script_history_has_mempool_tx(&client, &script, txid).unwrap());
     server.join().unwrap();
 
     let (client, server) = scripted_electrum_client(Some(Err(serde_json::json!({
@@ -241,7 +242,7 @@ fn electrsd_classifies_history_failures() {
         "message": "unavailable"
     }))));
     assert!(matches!(
-        ElectrsD::script_history_has_mempool_tx(&client, &script, txid),
+        RomanzElectrsD::script_history_has_mempool_tx(&client, &script, txid),
         Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
     ));
     server.join().unwrap();
@@ -250,30 +251,43 @@ fn electrsd_classifies_history_failures() {
 /// Verify client setup distinguishes an exited process from an unavailable socket.
 #[cfg(unix)]
 #[test]
-fn electrsd_reports_client_setup_failures() {
+fn romanz_electrsd_reports_client_setup_failures() {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let socket = listener.local_addr().unwrap();
     drop(listener);
 
     let mut process = Command::new("sleep").arg("2").spawn().unwrap();
     assert!(matches!(
-        ElectrsD::wait_for_client(socket, &mut process, Duration::from_millis(250)),
+        RomanzElectrsD::wait_for_client(socket, &mut process, Duration::from_millis(250)),
         Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
     ));
     process.kill().unwrap();
     process.wait().unwrap();
 
+    let (socket, server) = scripted_electrum_socket(vec![Some(Err(serde_json::json!({
+        "code": -1,
+        "message": "indexing"
+    })))]);
+    let mut process = Command::new("sleep").arg("2").spawn().unwrap();
+    assert!(matches!(
+        RomanzElectrsD::wait_for_client(socket, &mut process, Duration::from_millis(250)),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    process.kill().unwrap();
+    process.wait().unwrap();
+    server.join().unwrap();
+
     let mut process = Command::new("true").spawn().unwrap();
     process.wait().unwrap();
     assert!(matches!(
-        ElectrsD::wait_for_client(socket, &mut process, Duration::from_secs(1)),
+        RomanzElectrsD::wait_for_client(socket, &mut process, Duration::from_secs(1)),
         Err(Error::ClientSetupTimeout)
     ));
 }
 
 /// Verify that socket timeouts are treated as incomplete reads.
 #[test]
-fn electrsd_treats_socket_timeouts_as_incomplete_reads() {
+fn romanz_electrsd_treats_socket_timeouts_as_incomplete_reads() {
     for kind in [
         ErrorKind::WouldBlock,
         ErrorKind::TimedOut,
@@ -287,13 +301,20 @@ fn electrsd_treats_socket_timeouts_as_incomplete_reads() {
         assert!(is_incomplete_read(&error));
     }
 
+    assert!(!is_incomplete_read(&ElectrumError::IOError(IoError::from(
+        ErrorKind::PermissionDenied
+    ))));
+    assert!(!is_incomplete_read(&ElectrumError::SharedIOError(
+        Arc::new(IoError::from(ErrorKind::PermissionDenied))
+    )));
+
     let error = ElectrumError::Message("complete error".to_string());
     assert!(!is_incomplete_read(&error));
 
     assert!(matches!(
         unresponsive_indexer(error),
         IndexerError::UnresponsiveIndexer {
-            indexer: "ElectrsD",
+            indexer: "RomanzElectrsD",
             ..
         }
     ));
@@ -301,7 +322,7 @@ fn electrsd_treats_socket_timeouts_as_incomplete_reads() {
 
 /// Verify `romanz/electrs` header matching without a running server.
 #[test]
-fn electrsd_matches_header_notifications() {
+fn romanz_electrsd_matches_header_notifications() {
     let header = genesis_block(Network::Regtest).header;
     let notification = HeaderNotification { height: 1, header };
 
@@ -353,7 +374,7 @@ fn electrsd_matches_header_notifications() {
 /// Verify oversized notification heights are rejected.
 #[cfg(target_pointer_width = "64")]
 #[test]
-fn electrsd_rejects_oversized_notification_height() {
+fn romanz_electrsd_rejects_oversized_notification_height() {
     let header = genesis_block(Network::Regtest).header;
     let notification = HeaderNotification {
         height: usize::MAX,
@@ -364,11 +385,11 @@ fn electrsd_rejects_oversized_notification_height() {
     assert!(matches!(error, Error::UnexpectedResponse(_)));
 }
 
-/// Verify that [`ElectrsD`] accepts requests without a Bitcoin Core P2P connection.
+/// Verify that [`RomanzElectrsD`] accepts requests without a Bitcoin Core P2P connection.
 #[cfg(feature = "bitcoind")]
 #[test]
 #[allow(clippy::too_many_lines)]
-fn electrsd_accepts_bitcoind() {
+fn romanz_electrsd_accepts_bitcoind() {
     let _ = tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .with_test_writer()
@@ -377,29 +398,29 @@ fn electrsd_accepts_bitcoind() {
     let bitcoind = BitcoinD::new().unwrap();
     assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
 
-    let mut electrsd = ElectrsD::new(&bitcoind).unwrap();
+    let mut romanz_electrsd = RomanzElectrsD::new(&bitcoind).unwrap();
     assert_eq!(bitcoind.get_peer_count().unwrap(), 0);
 
     let height = bitcoind.get_chain_tip().unwrap();
     let block_hash = bitcoind.get_block_hash(height).unwrap();
-    electrsd
+    romanz_electrsd
         .wait_until_block(height, None, Some(INDEXING_TIMEOUT))
         .unwrap();
-    let tip = electrsd.client.block_headers_subscribe().unwrap();
+    let tip = romanz_electrsd.client.block_headers_subscribe().unwrap();
     let notification = HeaderNotification {
         height: tip.height + 1,
         header: tip.header,
     };
     assert!(
         electrs_header_matches(
-            &electrsd.client,
+            &romanz_electrsd.client,
             &notification,
             u32::try_from(tip.height).unwrap(),
             Some(tip.header.block_hash()),
         )
         .unwrap()
     );
-    let error = electrsd
+    let error = romanz_electrsd
         .wait_until_tip(height + 1, block_hash, Some(Duration::ZERO))
         .unwrap_err();
     assert!(matches!(
@@ -407,24 +428,34 @@ fn electrsd_accepts_bitcoind() {
         Error::Indexer(IndexerError::IndexingTimeout { .. })
     ));
     assert!(matches!(
-        ElectrsD::wait_for_client(
-            electrsd.get_electrum_socket(),
-            &mut electrsd.process,
+        RomanzElectrsD::wait_for_client(
+            romanz_electrsd.get_electrum_socket(),
+            &mut romanz_electrsd.process,
             Duration::ZERO,
         ),
         Err(Error::ClientSetupTimeout)
     ));
 
-    electrsd.client.ping().unwrap();
+    romanz_electrsd.client.ping().unwrap();
 
-    info!("PID: {}", electrsd.get_pid());
-    info!("Working Directory: {:?}", electrsd.get_working_directory());
-    info!("Electrum Socket: {}", electrsd.get_electrum_socket());
+    info!("PID: {}", romanz_electrsd.get_pid());
+    info!(
+        "Working Directory: {:?}",
+        romanz_electrsd.get_working_directory()
+    );
+    info!("Electrum Socket: {}", romanz_electrsd.get_electrum_socket());
     info!(
         "Electrum Server Protocol Version: {}",
-        electrsd.client.server_features().unwrap().protocol_max
+        romanz_electrsd
+            .client
+            .server_features()
+            .unwrap()
+            .protocol_max
     );
-    info!("Monitoring Socket: {}", electrsd.get_monitoring_socket());
+    info!(
+        "Monitoring Socket: {}",
+        romanz_electrsd.get_monitoring_socket()
+    );
 
     let notification = serde_json::json!({
         "height": height,
@@ -435,20 +466,20 @@ fn electrsd_accepts_bitcoind() {
         Some(Ok(notification.clone())),
         Some(Err(protocol_error)),
     ]);
-    electrsd.client =
+    romanz_electrsd.client =
         electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
             .unwrap();
     assert!(matches!(
-        electrsd.wait_until_block(height, None, Some(Duration::from_secs(1))),
+        romanz_electrsd.wait_until_block(height, None, Some(Duration::from_secs(1))),
         Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
     ));
     server.join().unwrap();
 
     let (socket, release, server) = stalled_electrum_socket(notification);
-    electrsd.client =
+    romanz_electrsd.client =
         electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
             .unwrap();
-    let result = electrsd.wait_until_block(height, None, Some(Duration::from_millis(250)));
+    let result = romanz_electrsd.wait_until_block(height, None, Some(Duration::from_millis(250)));
     release.send(()).unwrap();
     server.join().unwrap();
     assert!(matches!(
@@ -465,11 +496,11 @@ fn electrsd_accepts_bitcoind() {
         Some(Ok(serde_json::Value::Null)),
         Some(Ok(serde_json::Value::Null)),
     ]);
-    electrsd.client =
+    romanz_electrsd.client =
         electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
             .unwrap();
     assert!(matches!(
-        electrsd.wait_until_block(height + 1, None, Some(Duration::from_millis(250))),
+        romanz_electrsd.wait_until_block(height + 1, None, Some(Duration::from_millis(250))),
         Err(Error::Indexer(IndexerError::IndexingTimeout { .. }))
     ));
     server.join().unwrap();
@@ -479,11 +510,11 @@ fn electrsd_accepts_bitcoind() {
         "hex": serialize(&genesis_block(Network::Regtest).header).to_lower_hex_string(),
     });
     let (socket, server) = electrum_server_with_invalid_queued_header(initial_header, height);
-    electrsd.client =
+    romanz_electrsd.client =
         electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)
             .unwrap();
     assert!(matches!(
-        electrsd.wait_until_block(height + 1, None, Some(Duration::from_secs(1))),
+        romanz_electrsd.wait_until_block(height + 1, None, Some(Duration::from_secs(1))),
         Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
     ));
     server.join().unwrap();
@@ -492,17 +523,17 @@ fn electrsd_accepts_bitcoind() {
 /// Verify that rejection of [`BtcD`] occurs before data directory creation.
 #[cfg(feature = "btcd")]
 #[test]
-fn electrsd_rejects_btcd() {
+fn romanz_electrsd_rejects_btcd() {
     let btcd = BtcD::new().unwrap();
     let temporary_directory = tempfile::tempdir().unwrap();
     let directory = temporary_directory.path().join("electrs");
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         staticdir: Some(directory.clone()),
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
 
     assert!(matches!(
-        ElectrsD::new_with_conf(&btcd, &config),
+        RomanzElectrsD::new_with_conf(&btcd, &config),
         Err(Error::Indexer(IndexerError::UnsupportedBackend {
             node: "BtcD"
         }))
@@ -513,17 +544,17 @@ fn electrsd_rejects_btcd() {
 /// Verify that rejection of [`UtreexoD`] occurs before data directory creation.
 #[cfg(feature = "utreexod")]
 #[test]
-fn electrsd_rejects_utreexod() {
+fn romanz_electrsd_rejects_utreexod() {
     let utreexod = UtreexoD::new().unwrap();
     let temporary_directory = tempfile::tempdir().unwrap();
     let directory = temporary_directory.path().join("electrs");
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         staticdir: Some(directory.clone()),
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
 
     assert!(matches!(
-        ElectrsD::new_with_conf(&utreexod, &config),
+        RomanzElectrsD::new_with_conf(&utreexod, &config),
         Err(Error::Indexer(IndexerError::UnsupportedBackend {
             node: "UtreexoD"
         }))
@@ -534,17 +565,17 @@ fn electrsd_rejects_utreexod() {
 /// Verify that rejection of [`FlorestaD`] occurs before data directory creation.
 #[cfg(feature = "florestad")]
 #[test]
-fn electrsd_rejects_florestad() {
+fn romanz_electrsd_rejects_florestad() {
     let florestad = FlorestaD::new().unwrap();
     let temporary_directory = tempfile::tempdir().unwrap();
     let directory = temporary_directory.path().join("electrs");
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         staticdir: Some(directory.clone()),
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
 
     assert!(matches!(
-        ElectrsD::new_with_conf(&florestad, &config),
+        RomanzElectrsD::new_with_conf(&florestad, &config),
         Err(Error::Indexer(IndexerError::UnsupportedBackend {
             node: "FlorestaD"
         }))
@@ -552,16 +583,18 @@ fn electrsd_rejects_florestad() {
     assert!(!directory.exists());
 }
 
-/// Verify that [`ElectrsD`] indexes mempool transactions.
+/// Verify that [`RomanzElectrsD`] indexes mempool transactions.
 #[cfg(feature = "bitcoind")]
 #[test]
-fn electrsd_sees_mempool_transactions() {
+fn romanz_electrsd_sees_mempool_transactions() {
     let bitcoind = BitcoinD::new().unwrap();
     bitcoind.generate(MATURE_COINBASE_BLOCK_COUNT).unwrap();
-    let electrsd = ElectrsD::new(&bitcoind).unwrap();
+    let romanz_electrsd = RomanzElectrsD::new(&bitcoind).unwrap();
 
-    electrsd.client.ping().unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    romanz_electrsd.client.ping().unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
 
     let address = bitcoind
         .client
@@ -571,7 +604,7 @@ fn electrsd_sees_mempool_transactions() {
         .unwrap()
         .assume_checked();
     let script_pubkey = address.script_pubkey();
-    let error = electrsd
+    let error = romanz_electrsd
         .wait_until_mempool_tx(
             &script_pubkey,
             Txid::all_zeros(),
@@ -588,9 +621,9 @@ fn electrsd_sees_mempool_transactions() {
         .unwrap()
         .txid()
         .unwrap();
-    electrsd.trigger().unwrap();
+    romanz_electrsd.trigger().unwrap();
 
-    let error = electrsd
+    let error = romanz_electrsd
         .wait_until_mempool_tx(&script_pubkey, txid, Some(Duration::ZERO))
         .unwrap_err();
     assert!(matches!(
@@ -598,49 +631,57 @@ fn electrsd_sees_mempool_transactions() {
         Error::Indexer(IndexerError::IndexingTimeout { .. })
     ));
 
-    electrsd
+    romanz_electrsd
         .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
 }
 
-/// Verify repeated synchronization of [`ElectrsD`] with the [`BitcoinD`] chain tip.
+/// Verify repeated synchronization of [`RomanzElectrsD`] with the [`BitcoinD`] chain tip.
 #[cfg(feature = "bitcoind")]
 #[test]
-fn electrsd_syncs_blocks() {
+fn romanz_electrsd_syncs_blocks() {
     let bitcoind = BitcoinD::new().unwrap();
     bitcoind.generate(SYNC_INITIAL_BLOCK_COUNT).unwrap();
 
-    let electrsd = ElectrsD::new(&bitcoind).unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    let romanz_electrsd = RomanzElectrsD::new(&bitcoind).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
 
     let mut height = SYNC_INITIAL_BLOCK_COUNT;
     for count in SYNC_BLOCK_BATCHES {
         bitcoind.generate(*count).unwrap();
-        electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+        romanz_electrsd
+            .wait_until_caught_up(&bitcoind, None)
+            .unwrap();
 
         height += count;
         let block_hash = bitcoind.get_block_hash(height).unwrap();
-        electrsd
+        romanz_electrsd
             .wait_until_tip(height, block_hash, Some(INDEXING_TIMEOUT))
             .unwrap();
-        electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+        romanz_electrsd
+            .wait_until_caught_up(&bitcoind, None)
+            .unwrap();
     }
 }
 
-/// Verify that [`ElectrsD`] uses the replacement tip after a reorganization.
+/// Verify that [`RomanzElectrsD`] uses the replacement tip after a reorganization.
 #[cfg(feature = "bitcoind")]
 #[test]
-fn electrsd_reindexes_reorgs() {
+fn romanz_electrsd_reindexes_reorgs() {
     let bitcoind = BitcoinD::new().unwrap();
-    let electrsd = ElectrsD::new(&bitcoind).unwrap();
+    let romanz_electrsd = RomanzElectrsD::new(&bitcoind).unwrap();
 
     bitcoind.generate(10).unwrap();
 
     let height = bitcoind.get_chain_tip().unwrap();
     let block_hash = bitcoind.get_block_hash(height).unwrap();
 
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    let tip = electrsd.client.block_headers_subscribe().unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let tip = romanz_electrsd.client.block_headers_subscribe().unwrap();
     assert_eq!(tip.height as u32, height);
     assert_eq!(tip.header.block_hash(), block_hash);
 
@@ -653,26 +694,28 @@ fn electrsd_reindexes_reorgs() {
     assert_ne!(block_hash, replacement_hash);
     assert_eq!(height, replacement_height);
 
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    let tip = electrsd.client.block_headers_subscribe().unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let tip = romanz_electrsd.client.block_headers_subscribe().unwrap();
     assert_eq!(tip.height as u32, replacement_height);
     assert_eq!(tip.header.block_hash(), replacement_hash);
 }
 
 #[test]
-fn electrsd_configuration_defaults() {
-    let config = ElectrsDConf::default();
+fn romanz_electrsd_configuration_defaults() {
+    let config = RomanzElectrsDConf::default();
 
     assert!(config.raw_args.is_empty());
     assert_eq!(config.max_retries, SPAWN_ATTEMPTS);
     assert_eq!(
-        ElectrsD::configured_args(&config, Network::Regtest).unwrap(),
+        RomanzElectrsD::configured_args(&config, Network::Regtest).unwrap(),
         ["--network", "regtest"]
     );
 }
 
 #[test]
-fn electrsd_renders_every_network() {
+fn romanz_electrsd_renders_every_network() {
     let cases = [
         (Network::Bitcoin, "bitcoin"),
         (Network::Testnet, "testnet"),
@@ -682,17 +725,17 @@ fn electrsd_renders_every_network() {
     ];
 
     for (network, expected) in cases {
-        let config = ElectrsDConf::default();
+        let config = RomanzElectrsDConf::default();
 
         assert_eq!(
-            ElectrsD::configured_args(&config, network).unwrap(),
+            RomanzElectrsD::configured_args(&config, network).unwrap(),
             ["--network", expected]
         );
     }
 }
 
 #[test]
-fn electrsd_rejects_owned_raw_arguments() {
+fn romanz_electrsd_rejects_owned_raw_arguments() {
     let cases = [
         "--network",
         "--network=signet",
@@ -709,71 +752,73 @@ fn electrsd_rejects_owned_raw_arguments() {
     ];
 
     for arg in cases {
-        let config = ElectrsDConf {
+        let config = RomanzElectrsDConf {
             raw_args: vec![arg.to_string()],
-            ..ElectrsDConf::default()
+            ..RomanzElectrsDConf::default()
         };
 
         assert!(matches!(
-            ElectrsD::configured_args(&config, Network::Regtest),
+            RomanzElectrsD::configured_args(&config, Network::Regtest),
             Err(Error::Indexer(IndexerError::ConflictingArgument(conflict))) if conflict == arg
         ));
     }
 }
 
 #[test]
-fn electrsd_accepts_unmodeled_raw_arguments() {
-    let config = ElectrsDConf {
+fn romanz_electrsd_accepts_unmodeled_raw_arguments() {
+    let config = RomanzElectrsDConf {
         raw_args: vec![
             "--log-filters=debug".to_string(),
             "--index-batch-size=100".to_string(),
         ],
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
 
-    assert!(ElectrsD::configured_args(&config, Network::Regtest).is_ok());
+    assert!(RomanzElectrsD::configured_args(&config, Network::Regtest).is_ok());
 }
 
 /// Verify process state, shutdown, and temporary cleanup.
 #[cfg(feature = "bitcoind")]
 #[test]
-fn electrsd_lifecycle_exposes_runtime_state_and_removes_temporary_directory() {
+fn romanz_electrsd_lifecycle_exposes_runtime_state_and_removes_temporary_directory() {
     let bitcoind = BitcoinD::new().unwrap();
-    let config = ElectrsDConf::default();
-    let mut electrsd = ElectrsD::new_with_conf(&bitcoind, &config).unwrap();
-    let directory = electrsd.get_working_directory();
+    let config = RomanzElectrsDConf::default();
+    let mut romanz_electrsd = RomanzElectrsD::new_with_conf(&bitcoind, &config).unwrap();
+    let directory = romanz_electrsd.get_working_directory();
 
-    assert!(electrsd.get_pid() > 0);
+    assert!(romanz_electrsd.get_pid() > 0);
     assert!(directory.is_dir());
-    assert_eq!(electrsd.get_config(), &config);
-    assert!(electrsd.get_electrum_socket().ip().is_loopback());
-    assert!(electrsd.get_monitoring_socket().ip().is_loopback());
+    assert_eq!(romanz_electrsd.get_config(), &config);
+    assert!(romanz_electrsd.get_electrum_socket().ip().is_loopback());
+    assert!(romanz_electrsd.get_monitoring_socket().ip().is_loopback());
     assert_ne!(
-        electrsd.get_electrum_socket(),
-        electrsd.get_monitoring_socket()
+        romanz_electrsd.get_electrum_socket(),
+        romanz_electrsd.get_monitoring_socket()
     );
-    electrsd.client.ping().unwrap();
+    romanz_electrsd.client.ping().unwrap();
 
-    electrsd.stop().unwrap();
+    romanz_electrsd.stop().unwrap();
     #[cfg(not(target_os = "windows"))]
     assert!(matches!(
-        electrsd.trigger(),
+        romanz_electrsd.trigger(),
         Err(Error::UnexpectedResponse(_))
     ));
     #[cfg(target_os = "windows")]
-    electrsd.trigger().unwrap();
-    drop(electrsd);
+    romanz_electrsd.trigger().unwrap();
+    drop(romanz_electrsd);
     assert!(!directory.exists());
 }
 
 /// Verify confirmed and unconfirmed balances across a reorganization.
 #[cfg(feature = "bitcoind")]
 #[test]
-fn electrsd_updates_balances_across_reorganizations() {
+fn romanz_electrsd_updates_balances_across_reorganizations() {
     let bitcoind = BitcoinD::new().unwrap();
     bitcoind.generate(MATURE_COINBASE_BLOCK_COUNT).unwrap();
-    let electrsd = ElectrsD::new(&bitcoind).unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    let romanz_electrsd = RomanzElectrsD::new(&bitcoind).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
 
     let address = bitcoind.client.new_address().unwrap();
     let script_pubkey = address.script_pubkey();
@@ -791,8 +836,13 @@ fn electrsd_updates_balances_across_reorganizations() {
         .into_iter()
         .next()
         .unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    let balance = electrsd.client.script_get_balance(&script_pubkey).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let balance = romanz_electrsd
+        .client
+        .script_get_balance(&script_pubkey)
+        .unwrap();
     assert_eq!(balance.confirmed, amount.to_sat());
     assert_eq!(balance.unconfirmed, 0);
 
@@ -812,17 +862,27 @@ fn electrsd_updates_balances_across_reorganizations() {
         .unwrap();
     assert_ne!(replacement_hash, block_hash);
 
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    electrsd
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    romanz_electrsd
         .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
-    let balance = electrsd.client.script_get_balance(&script_pubkey).unwrap();
+    let balance = romanz_electrsd
+        .client
+        .script_get_balance(&script_pubkey)
+        .unwrap();
     assert_eq!(balance.confirmed, 0);
     assert_eq!(balance.unconfirmed, i64::try_from(amount.to_sat()).unwrap());
 
     bitcoind.generate(CONFIRMATION_BLOCK_COUNT).unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    let balance = electrsd.client.script_get_balance(&script_pubkey).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let balance = romanz_electrsd
+        .client
+        .script_get_balance(&script_pubkey)
+        .unwrap();
     assert_eq!(balance.confirmed, amount.to_sat());
     assert_eq!(balance.unconfirmed, 0);
 }
@@ -830,33 +890,37 @@ fn electrsd_updates_balances_across_reorganizations() {
 /// Verify that a static directory retains indexed chain state across a restart.
 #[cfg(feature = "bitcoind")]
 #[test]
-fn electrsd_static_directory_restores_indexed_state() {
+fn romanz_electrsd_static_directory_restores_indexed_state() {
     let bitcoind = BitcoinD::new().unwrap();
     bitcoind.generate(PERSISTENCE_BLOCK_COUNT).unwrap();
 
     let temporary_directory = tempfile::tempdir().unwrap();
     let directory = temporary_directory.path().join("electrs");
-    let config = ElectrsDConf {
+    let config = RomanzElectrsDConf {
         staticdir: Some(directory.clone()),
-        ..ElectrsDConf::default()
+        ..RomanzElectrsDConf::default()
     };
 
-    let mut electrsd = ElectrsD::new_with_conf(&bitcoind, &config).unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    electrsd.stop().unwrap();
-    drop(electrsd);
+    let mut romanz_electrsd = RomanzElectrsD::new_with_conf(&bitcoind, &config).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    romanz_electrsd.stop().unwrap();
+    drop(romanz_electrsd);
 
     assert!(directory.is_dir());
 
-    let mut electrsd = ElectrsD::new_with_conf(&bitcoind, &config).unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
-    let tip = electrsd.client.block_headers_subscribe().unwrap();
+    let mut romanz_electrsd = RomanzElectrsD::new_with_conf(&bitcoind, &config).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let tip = romanz_electrsd.client.block_headers_subscribe().unwrap();
     assert_eq!(tip.height as u32, PERSISTENCE_BLOCK_COUNT);
     assert_eq!(
         tip.header.block_hash(),
         bitcoind.get_block_hash(PERSISTENCE_BLOCK_COUNT).unwrap()
     );
-    electrsd.stop().unwrap();
-    drop(electrsd);
+    romanz_electrsd.stop().unwrap();
+    drop(romanz_electrsd);
     assert!(directory.is_dir());
 }

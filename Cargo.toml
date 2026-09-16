@@ -19,13 +19,14 @@ btcd = []
 florestad = ["dep:electrum-client", "dep:miniscript"]
 utreexod = []
 # Indexers
-electrs = ["dep:electrum-client"]
+blockstream_electrs = ["dep:electrum-client", "dep:esplora-client"]
 electrumx = ["dep:electrum-client"]
 mempool_electrs = ["dep:electrum-client", "dep:esplora-client"]
+romanz_electrs = ["dep:electrum-client"]
 
 [[example]]
-name = "cross-compile-electrs"
-path = "contrib/bins/compile_electrs/build.rs"
+name = "cross-compile-blockstream-electrs"
+path = "contrib/bins/compile_blockstream_electrs/build.rs"
 test = false
 bench = false
 
@@ -38,6 +39,12 @@ bench = false
 [[example]]
 name = "cross-compile-mempool-electrs"
 path = "contrib/bins/compile_mempool_electrs/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "cross-compile-romanz-electrs"
+path = "contrib/bins/compile_romanz_electrs/build.rs"
 test = false
 bench = false
 
@@ -96,15 +103,16 @@ zizmor = "1.30.1"
 [package.metadata.rbmt.test]
 # `cargo-rbmt` already runs tests with `--all-features`
 # unconditionally and there are no mutually exclusive
-# features, so skip redundant test runs
+# features, so we may skip redundant test runs
 exclude_features = [
     "bitcoind",
     "btcd",
     "florestad",
     "utreexod",
-    "electrs",
+    "blockstream_electrs",
     "electrumx",
-    "mempool_electrs"
+    "mempool_electrs",
+    "romanz_electrs"
 ]
 
 [lints.rust]

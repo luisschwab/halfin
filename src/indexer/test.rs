@@ -44,16 +44,28 @@ use tempfile::TempDir;
 use super::Indexer;
 use super::ensure_backend_ready;
 use super::read_backend_cookie;
-#[cfg(all(feature = "bitcoind", feature = "electrs", feature = "electrumx"))]
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "romanz_electrs",
+    feature = "electrumx"
+))]
 use crate::CONFIRMATION_BLOCK_COUNT;
 use crate::Error;
 #[cfg(feature = "bitcoind")]
 use crate::MATURE_COINBASE_BLOCK_COUNT;
 use crate::indexer::IndexerError;
-#[cfg(all(feature = "bitcoind", feature = "electrs"))]
-use crate::indexer::electrsd::ElectrsD;
-#[cfg(all(feature = "bitcoind", feature = "electrs"))]
-use crate::indexer::electrsd::ElectrsDConf;
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "blockstream_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::blockstream_electrsd::BlockstreamElectrsD;
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "blockstream_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::blockstream_electrsd::BlockstreamElectrsDConf;
 #[cfg(all(feature = "bitcoind", feature = "electrumx"))]
 use crate::indexer::electrumxd::ElectrumxD;
 #[cfg(all(feature = "bitcoind", feature = "electrumx"))]
@@ -70,6 +82,10 @@ use crate::indexer::mempool_electrsd::MempoolElectrsD;
     not(target_os = "windows")
 ))]
 use crate::indexer::mempool_electrsd::MempoolElectrsDConf;
+#[cfg(all(feature = "bitcoind", feature = "romanz_electrs"))]
+use crate::indexer::romanz_electrsd::RomanzElectrsD;
+#[cfg(all(feature = "bitcoind", feature = "romanz_electrs"))]
+use crate::indexer::romanz_electrsd::RomanzElectrsDConf;
 use crate::node::Node;
 use crate::node::NodeArgs;
 use crate::node::PruneMode;
@@ -489,7 +505,11 @@ pub(super) fn electrumx_test_permit() -> ElectrumxTestPermit {
 }
 
 /// Consensus values returned by an [`Indexer`] for one script and transaction.
-#[cfg(all(feature = "bitcoind", feature = "electrs", feature = "electrumx"))]
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "romanz_electrs",
+    feature = "electrumx"
+))]
 #[derive(Debug, PartialEq, Eq)]
 struct IndexedValues {
     /// Hash of the block at the selected height.
@@ -509,7 +529,11 @@ struct IndexedValues {
 }
 
 /// Read comparable consensus values from an [`Indexer`].
-#[cfg(all(feature = "bitcoind", feature = "electrs", feature = "electrumx"))]
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "romanz_electrs",
+    feature = "electrumx"
+))]
 fn indexed_values(
     indexer: &impl Indexer,
     height: u32,
@@ -626,16 +650,55 @@ fn assert_indexer_interface<I>(
     Indexer::stop(indexer).unwrap();
 }
 
-/// Verify the [`Indexer`] interface for [`ElectrsD`].
-#[cfg(all(feature = "bitcoind", feature = "electrs"))]
+/// Verify the [`Indexer`] interface for [`RomanzElectrsD`].
+#[cfg(all(feature = "bitcoind", feature = "romanz_electrs"))]
 #[test]
-fn electrsd_implements_indexer() {
+fn romanz_electrsd_implements_indexer() {
     let bitcoind = BitcoinD::new().unwrap();
     let (script_pubkey, txid) = build_transaction(&bitcoind);
-    let config = ElectrsDConf::default();
-    let mut electrsd = ElectrsD::new_with_conf(&bitcoind, &config).unwrap();
+    let config = RomanzElectrsDConf::default();
+    let mut romanz_electrsd = RomanzElectrsD::new_with_conf(&bitcoind, &config).unwrap();
 
-    assert_indexer_interface(&mut electrsd, &config, &bitcoind, &script_pubkey, txid);
+    assert_indexer_interface(
+        &mut romanz_electrsd,
+        &config,
+        &bitcoind,
+        &script_pubkey,
+        txid,
+    );
+}
+
+/// Verify the [`Indexer`] interface and Esplora endpoint for [`BlockstreamElectrsD`].
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "blockstream_electrs",
+    not(target_os = "windows")
+))]
+#[test]
+fn blockstream_electrsd_implements_indexer() {
+    let bitcoind = BitcoinD::new().unwrap();
+    let (script_pubkey, txid) = build_transaction(&bitcoind);
+    let config = BlockstreamElectrsDConf::default();
+    let mut blockstream_electrs = BlockstreamElectrsD::new_with_conf(&bitcoind, &config).unwrap();
+
+    blockstream_electrs
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let height = bitcoind.get_chain_tip().unwrap();
+    let block_hash = bitcoind.get_block_hash(height).unwrap();
+    let esplora = blockstream_electrs.get_esplora_client();
+    assert_eq!(esplora.url(), blockstream_electrs.get_esplora_url());
+    assert_eq!(esplora.get_height().unwrap(), height);
+    assert_eq!(esplora.get_tip_hash().unwrap(), block_hash);
+    assert_eq!(esplora.get_block_hash(height).unwrap(), block_hash);
+
+    assert_indexer_interface(
+        &mut blockstream_electrs,
+        &config,
+        &bitcoind,
+        &script_pubkey,
+        txid,
+    );
 }
 
 /// Verify the [`Indexer`] interface and Esplora endpoint for [`MempoolElectrsD`].
@@ -684,17 +747,23 @@ fn electrumxd_implements_indexer() {
     assert_indexer_interface(&mut electrumxd, &config, &bitcoind, &script_pubkey, txid);
 }
 
-/// Verify that [`ElectrsD`] and [`ElectrumxD`] index the same values.
-#[cfg(all(feature = "bitcoind", feature = "electrs", feature = "electrumx"))]
+/// Verify that [`RomanzElectrsD`] and [`ElectrumxD`] index the same values.
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "romanz_electrs",
+    feature = "electrumx"
+))]
 #[test]
-fn electrsd_and_electrumxd_index_same_values() {
+fn romanz_electrsd_and_electrumxd_index_same_values() {
     let _permit = electrumx_test_permit();
     let bitcoind = BitcoinD::new().unwrap();
     bitcoind.generate(MATURE_COINBASE_BLOCK_COUNT).unwrap();
 
-    let electrsd = ElectrsD::new(&bitcoind).unwrap();
+    let romanz_electrsd = RomanzElectrsD::new(&bitcoind).unwrap();
     let electrumxd = ElectrumxD::new(&bitcoind).unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
     electrumxd.wait_until_caught_up(&bitcoind, None).unwrap();
 
     let height = bitcoind.get_chain_tip().unwrap();
@@ -710,14 +779,14 @@ fn electrsd_and_electrumxd_index_same_values() {
         .txid()
         .unwrap();
 
-    electrsd
+    romanz_electrsd
         .wait_until_mempool_tx(&script_pubkey, txid, None)
         .unwrap();
     electrumxd
         .wait_until_mempool_tx(&script_pubkey, txid, None)
         .unwrap();
 
-    let electrs_mempool = indexed_values(&electrsd, height, &script_pubkey, txid);
+    let electrs_mempool = indexed_values(&romanz_electrsd, height, &script_pubkey, txid);
     let electrumx_mempool = indexed_values(&electrumxd, height, &script_pubkey, txid);
     assert_eq!(electrs_mempool, electrumx_mempool);
     assert_eq!(electrs_mempool.block_hash, block_hash);
@@ -732,7 +801,9 @@ fn electrsd_and_electrumxd_index_same_values() {
     assert_eq!(electrs_mempool.unspent[0].3, amount.to_sat());
 
     bitcoind.generate(CONFIRMATION_BLOCK_COUNT).unwrap();
-    electrsd.wait_until_caught_up(&bitcoind, None).unwrap();
+    romanz_electrsd
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
     electrumxd.wait_until_caught_up(&bitcoind, None).unwrap();
 
     let confirmation_height = height + 1;
@@ -743,7 +814,7 @@ fn electrsd_and_electrumxd_index_same_values() {
         confirmation_height,
     );
     let height = bitcoind.get_chain_tip().unwrap();
-    let electrs_confirmed = indexed_values(&electrsd, height, &script_pubkey, txid);
+    let electrs_confirmed = indexed_values(&romanz_electrsd, height, &script_pubkey, txid);
     let electrumx_confirmed = indexed_values(&electrumxd, height, &script_pubkey, txid);
     assert_eq!(electrs_confirmed, electrumx_confirmed);
     assert_eq!(
@@ -765,7 +836,7 @@ fn electrsd_and_electrumxd_index_same_values() {
     assert_eq!(electrs_confirmed.transaction, electrs_mempool.transaction);
 
     let confirmation_height = usize::try_from(confirmation_height).unwrap();
-    let electrs_merkle = electrsd
+    let electrs_merkle = romanz_electrsd
         .client
         .transaction_get_merkle(&txid, confirmation_height)
         .unwrap();

@@ -11,9 +11,10 @@
     feature = "btcd",
     feature = "florestad",
     feature = "utreexod",
-    feature = "electrs",
+    feature = "blockstream_electrs",
     feature = "electrumx",
-    feature = "mempool_electrs"
+    feature = "mempool_electrs",
+    feature = "romanz_electrs"
 ))]
 /// Shared binary download and extraction helpers.
 mod binary {
@@ -43,7 +44,8 @@ mod binary {
     const BIN_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
     /// Base URLs for binary archive downloads.
-    const BIN_DOWNLOAD_MIRRORS: &[&str] = &["https://bin.luisschwab.net"];
+    const BIN_DOWNLOAD_MIRRORS: &[&str] =
+        &["https://bin.luisschwab.net", "https://bin.lab.vinteum.org"];
 
     /// Return the root directory used to cache extracted binaries.
     fn download_directory() -> PathBuf {
@@ -84,7 +86,7 @@ mod binary {
         /// Bundled `SHA256SUMS` file for the binary archives.
         pub(crate) checksum_file: PathBuf,
 
-        /// Top-level remote directory for this binary on the mirror.
+        /// Category and implementation directory for this binary on the mirror.
         pub(crate) remote_dir: &'static str,
 
         /// Version-specific remote directory for this binary on the mirror.
@@ -485,9 +487,10 @@ fn main() {
 
     // Emit `halfin_indexer` if any `Indexer` feature is enabled
     let indexer_enabled = cfg!(any(
-        feature = "electrs",
+        feature = "blockstream_electrs",
         feature = "electrumx",
-        feature = "mempool_electrs"
+        feature = "mempool_electrs",
+        feature = "romanz_electrs"
     ));
     emit_cfg_alias("halfin_indexer", indexer_enabled);
 
@@ -505,14 +508,86 @@ fn main() {
         #[cfg(feature = "utreexod")]
         utreexod::download();
 
-        #[cfg(feature = "electrs")]
-        electrs::download();
+        #[cfg(feature = "blockstream_electrs")]
+        blockstream_electrs::download();
 
         #[cfg(feature = "electrumx")]
         electrumx::download();
 
         #[cfg(feature = "mempool_electrs")]
         mempool_electrs::download();
+
+        #[cfg(feature = "romanz_electrs")]
+        romanz_electrs::download();
+    }
+}
+
+/// Select the `Blockstream/electrs` binary for the enabled version feature.
+#[cfg(feature = "blockstream_electrs")]
+mod blockstream_electrs {
+    use std::env;
+
+    use super::binary::Binary;
+    use super::binary::PathBuf;
+
+    include!("src/indexer/blockstream_electrsd/versions.rs");
+
+    /// Compile-time environment variable containing the extracted `Blockstream/electrs` path.
+    const HALFIN_BLOCKSTREAM_ELECTRS_PATH: &str = "HALFIN_BLOCKSTREAM_ELECTRS_PATH";
+
+    /// Return the platform-specific archive file name for this `Blockstream/electrs` version.
+    ///
+    /// Panics if the current operating system and architecture are not supported.
+    fn get_download_filename() -> String {
+        let os = env::var("CARGO_CFG_TARGET_OS").expect("Cargo did not set CARGO_CFG_TARGET_OS");
+        let arch =
+            env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo did not set CARGO_CFG_TARGET_ARCH");
+        match (os.as_str(), arch.as_str()) {
+            ("macos", "aarch64") => "blockstream-electrs-darwin-arm64.tar.gz",
+            ("macos", "x86_64") => "blockstream-electrs-darwin-amd64.tar.gz",
+            ("linux", "x86_64") => "blockstream-electrs-linux-amd64.tar.gz",
+            ("linux", "aarch64") => "blockstream-electrs-linux-arm64.tar.gz",
+            _ => panic!("No download file for {os}+{arch}"),
+        }
+        .to_string()
+    }
+
+    /// Download, verify, and extract the `Blockstream/electrs` binary.
+    /// Use `<OUT_DIR>/bin/blockstream-electrs-<VERSION>/electrs` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
+    ///
+    /// Do not download the binary if it is already in the build cache.
+    pub(crate) fn download() {
+        if target_is_windows() {
+            return;
+        }
+
+        Binary {
+            name: "electrs",
+            implementation: "Blockstream/electrs",
+            version: BLOCKSTREAM_ELECTRS_VERSION,
+            env_var: HALFIN_BLOCKSTREAM_ELECTRS_PATH,
+            destination_dir_prefix: "blockstream-electrs",
+            checksum_file: PathBuf::from(format!(
+                "sha256/indexer/blockstream_electrs/blockstream-electrs-{}-SHA256SUMS",
+                BLOCKSTREAM_ELECTRS_VERSION
+            )),
+            remote_dir: "indexer/blockstream_electrs",
+            remote_version_dir: PathBuf::from(format!(
+                "blockstream-electrs-{}",
+                BLOCKSTREAM_ELECTRS_VERSION
+            )),
+            archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            codesign_on_macos_aarch64: false,
+        }
+        .download_and_install();
+    }
+
+    /// Return whether Cargo is compiling `halfin` for an unsupported Windows target.
+    fn target_is_windows() -> bool {
+        env::var("CARGO_CFG_TARGET_OS").expect("Cargo did not set CARGO_CFG_TARGET_OS for build.rs")
+            == "windows"
     }
 }
 
@@ -568,7 +643,7 @@ mod mempool_electrs {
                 "sha256/indexer/mempool_electrs/mempool-electrs-{}-SHA256SUMS",
                 MEMPOOL_ELECTRS_VERSION
             )),
-            remote_dir: "mempool_electrs",
+            remote_dir: "indexer/mempool_electrs",
             remote_version_dir: PathBuf::from(format!(
                 "mempool-electrs-{}",
                 MEMPOOL_ELECTRS_VERSION
@@ -636,7 +711,7 @@ mod bitcoind {
                 "sha256/node/bitcoind/bitcoin-core-{}-SHA256SUMS",
                 BITCOIND_VERSION
             )),
-            remote_dir: "bitcoind",
+            remote_dir: "node/bitcoind",
             remote_version_dir: PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -694,7 +769,7 @@ mod btcd {
             checksum_file: PathBuf::from(format!(
                 "sha256/node/btcd/btcd-{BTCD_VERSION}-SHA256SUMS"
             )),
-            remote_dir: "btcd",
+            remote_dir: "node/btcd",
             remote_version_dir: PathBuf::from(format!("btcd-{BTCD_VERSION}")),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -750,7 +825,7 @@ mod florestad {
                 "sha256/node/florestad/florestad-{}-SHA256SUMS",
                 FLORESTAD_VERSION
             )),
-            remote_dir: "florestad",
+            remote_dir: "node/florestad",
             remote_version_dir: PathBuf::from(format!("florestad-{}", FLORESTAD_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -809,7 +884,7 @@ mod utreexod {
                 "sha256/node/utreexod/utreexod-{}-SHA256SUMS",
                 UTREEXOD_VERSION
             )),
-            remote_dir: "utreexod",
+            remote_dir: "node/utreexod",
             remote_version_dir: PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -820,15 +895,15 @@ mod utreexod {
 }
 
 /// Read and verify the `romanz/electrs` binary for the enabled version feature.
-#[cfg(feature = "electrs")]
-mod electrs {
+#[cfg(feature = "romanz_electrs")]
+mod romanz_electrs {
     use super::binary::Binary;
     use super::binary::PathBuf;
 
-    include!("src/indexer/electrsd/versions.rs");
+    include!("src/indexer/romanz_electrsd/versions.rs");
 
     /// Compile-time environment variable containing the extracted `romanz/electrs` path.
-    const HALFIN_ELECTRS_PATH: &str = "HALFIN_ELECTRS_PATH";
+    const HALFIN_ROMANZ_ELECTRS_PATH: &str = "HALFIN_ROMANZ_ELECTRS_PATH";
 
     /// Return the platform-specific archive file name for this `romanz/electrs` version.
     ///
@@ -864,15 +939,15 @@ mod electrs {
         Binary {
             name: "electrs",
             implementation: "romanz/electrs",
-            version: ELECTRS_VERSION,
-            env_var: HALFIN_ELECTRS_PATH,
+            version: ROMANZ_ELECTRS_VERSION,
+            env_var: HALFIN_ROMANZ_ELECTRS_PATH,
             destination_dir_prefix: "electrs",
             checksum_file: PathBuf::from(format!(
-                "sha256/indexer/electrs/electrs-{}-SHA256SUMS",
-                ELECTRS_VERSION
+                "sha256/indexer/romanz_electrs/electrs-{}-SHA256SUMS",
+                ROMANZ_ELECTRS_VERSION
             )),
-            remote_dir: "electrs",
-            remote_version_dir: PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
+            remote_dir: "indexer/romanz_electrs",
+            remote_version_dir: PathBuf::from(format!("electrs-{}", ROMANZ_ELECTRS_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: false,
@@ -933,7 +1008,7 @@ mod electrumx {
                 "sha256/indexer/electrumx/electrumx-{}-SHA256SUMS",
                 ELECTRUMX_VERSION
             )),
-            remote_dir: "electrumx",
+            remote_dir: "indexer/electrumx",
             remote_version_dir: PathBuf::from(format!("electrumx-{}", ELECTRUMX_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]

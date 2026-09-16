@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+* Rename `ElectrsD`/`electrs` to `RomanzElectrsD`/`romanz_electrs`
+* Add `BlockstreamElectrsD` at commit `4b1a018`
+
 ## [0.6.0] – 2026-09-15
 
 * Bump `romanz/electrs` to v0.12.0

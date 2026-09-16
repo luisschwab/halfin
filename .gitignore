@@ -1,10 +1,11 @@
+TODO.md
+
+/target
 Cargo.lock
 Cargo.lock.backup
 
-/target
-
-contrib/bins/compile_electrs/dist/
-contrib/bins/compile_electrs/tmp/
+contrib/bins/compile_romanz_electrs/dist/
+contrib/bins/compile_romanz_electrs/tmp/
 
 contrib/bins/compile_electrumx/dist/
 contrib/bins/compile_electrumx/tmp/
@@ -12,3 +13,6 @@ contrib/bins/compile_electrumx/local_wheels/
 
 contrib/bins/compile_mempool_electrs/dist/
 contrib/bins/compile_mempool_electrs/tmp/
+
+contrib/bins/compile_blockstream_electrs/dist/
+contrib/bins/compile_blockstream_electrs/tmp/

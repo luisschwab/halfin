@@ -45,28 +45,28 @@ downloads.
 From the repository root:
 
 ```sh
-cargo run --example cross-compile-electrs
+cargo run --example cross-compile-romanz-electrs
 ```
 
 Existing archives are skipped on later runs. To rebuild and repackage every
 target:
 
 ```sh
-cargo run --example cross-compile-electrs -- --force
+cargo run --example cross-compile-romanz-electrs -- --force
 ```
 
 The script reads the upstream `romanz/electrs` release from
-`src/indexer/electrsd/versions.rs` (currently `v0.12.0`).
+`src/indexer/romanz_electrsd/versions.rs` (currently `v0.12.0`).
 It clones or updates the source tree under:
 
 ```text
-contrib/bins/compile_electrs/tmp/electrs
+contrib/bins/compile_romanz_electrs/tmp/electrs
 ```
 
 It writes archives and checksums under:
 
 ```text
-contrib/bins/compile_electrs/dist/electrs-0.12.0/
+contrib/bins/compile_romanz_electrs/dist/electrs-0.12.0/
 ```
 
 Generated files:

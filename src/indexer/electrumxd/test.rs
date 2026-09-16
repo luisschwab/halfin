@@ -111,6 +111,13 @@ fn electrumxd_classifies_subscription_reads() {
         empty_read_is_no_ping_response(error).unwrap();
     }
 
+    assert!(!is_empty_subscription_read(&ElectrumError::IOError(
+        IoError::from(ErrorKind::PermissionDenied)
+    )));
+    assert!(!is_empty_subscription_read(&ElectrumError::SharedIOError(
+        Arc::new(IoError::from(ErrorKind::PermissionDenied))
+    )));
+
     let error = ElectrumError::Protocol(serde_json::Value::Null);
     assert!(is_header_not_ready(&error));
 
@@ -600,6 +607,30 @@ fn electrumxd_sees_mempool_transactions() {
     electrumxd
         .wait_until_mempool_tx(&script_pubkey, txid, Some(INDEXING_TIMEOUT))
         .unwrap();
+}
+
+/// Verify a failed script subscription retains the Electrum error context.
+#[cfg(feature = "bitcoind")]
+#[test]
+fn electrumxd_reports_mempool_subscription_failure() {
+    let _permit = electrumx_test_permit();
+    let bitcoind = BitcoinD::new().unwrap();
+    let mut electrumxd = ElectrumxD::new(&bitcoind).unwrap();
+    let (socket, server) = scripted_electrum_socket(vec![Some(Err(serde_json::json!({
+        "code": 1,
+        "message": "subscription unavailable"
+    })))]);
+    electrumxd.electrum_socket = socket;
+
+    assert!(matches!(
+        electrumxd.wait_until_mempool_tx(
+            &ScriptBuf::new(),
+            Txid::all_zeros(),
+            Some(Duration::ZERO)
+        ),
+        Err(Error::Indexer(IndexerError::UnresponsiveIndexer { .. }))
+    ));
+    server.join().unwrap();
 }
 
 /// Verify repeated synchronization of [`ElectrumxD`] with the [`BitcoinD`] chain tip.

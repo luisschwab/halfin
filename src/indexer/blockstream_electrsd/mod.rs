@@ -1,39 +1,44 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Start and control a `mempool/electrs` [`Indexer`] process.
+//! Start and control a `Blockstream/electrs` [`Indexer`] process.
 //!
-//! [`MempoolElectrsD`] starts the mempool/electrs fork and connects it to a local [`Node`].
+//! [`BlockstreamElectrsD`] starts the Blockstream/electrs fork and connects it to a local [`Node`].
 //! It gives Electrum and Esplora clients and wait operations for integration tests.
 //!
 //! ## Start an [`Indexer`]
 //!
 //! ```rust
-//! use halfin::indexer::mempool_electrsd::MempoolElectrsD;
+//! use halfin::indexer::blockstream_electrsd::BlockstreamElectrsD;
 //! use halfin::node::Node;
 //!
-//! fn start_mempool_electrs(node: &impl Node) {
+//! fn start_blockstream_electrs(node: &impl Node) {
 //!     node.generate(10).unwrap();
-//!     let mempool_electrs = MempoolElectrsD::new(node).unwrap();
-//!     mempool_electrs.wait_until_caught_up(node, None).unwrap();
-//!     let height = mempool_electrs.get_esplora_client().get_height().unwrap();
+//!     let blockstream_electrs = BlockstreamElectrsD::new(node).unwrap();
+//!     blockstream_electrs
+//!         .wait_until_caught_up(node, None)
+//!         .unwrap();
+//!     let height = blockstream_electrs
+//!         .get_esplora_client()
+//!         .get_height()
+//!         .unwrap();
 //! }
 //!
 //! # #[cfg(feature = "bitcoind")]
 //! # {
 //! # let node = halfin::node::bitcoind::BitcoinD::new().unwrap();
-//! # start_mempool_electrs(&node);
+//! # start_blockstream_electrs(&node);
 //! # }
 //! ```
 //!
-//! `mempool/electrs` serves an Esplora-compatible API on the dynamically selected
-//! [`MempoolElectrsD::get_esplora_socket`] address. Use
-//! [`MempoolElectrsD::get_esplora_client`] for a configured blocking client.
+//! `Blockstream/electrs` serves an Esplora-compatible API on the dynamically selected
+//! [`BlockstreamElectrsD::get_esplora_socket`] address. Use
+//! [`BlockstreamElectrsD::get_esplora_client`] for a configured blocking client.
 //!
 //! ## Select a data directory
 //!
-//! By default, each [`MempoolElectrsD`] instance uses a temporary directory.
+//! By default, each [`BlockstreamElectrsD`] instance uses a temporary directory.
 //! [`Drop`] removes this directory.
-//! Set [`MempoolElectrsDConf::staticdir`] to keep the data after the process stops.
+//! Set [`BlockstreamElectrsDConf::staticdir`] to keep the data after the process stops.
 //!
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
@@ -84,38 +89,38 @@ use crate::node::NodeArgs;
 use crate::node::PruneMode;
 use crate::pipe_to_tracing;
 
-/// Bundled `mempool/electrs` version metadata.
+/// Bundled `Blockstream/electrs` version metadata.
 mod versions;
 
 /// Wrap an Electrum client failure with [`Indexer`] context.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     IndexerError::UnresponsiveIndexer {
-        indexer: MempoolElectrsD::get_name(),
+        indexer: BlockstreamElectrsD::get_name(),
         source,
     }
 }
 
-/// Return the path to the downloaded `mempool/electrs` binary.
+/// Return the path to the downloaded `Blockstream/electrs` binary.
 ///
 /// At compile time, `build.rs` downloads and extracts the binary.
-/// It stores the binary path in `HALFIN_MEMPOOL_ELECTRS_PATH`.
+/// It stores the binary path in `HALFIN_BLOCKSTREAM_ELECTRS_PATH`.
 ///
 /// # Errors
 ///
 /// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
-pub fn get_mempool_electrs_path() -> Result<PathBuf, Error> {
-    let bin_path = PathBuf::from(option_env!("HALFIN_MEMPOOL_ELECTRS_PATH").unwrap_or(""));
+pub fn get_blockstream_electrs_path() -> Result<PathBuf, Error> {
+    let bin_path = PathBuf::from(option_env!("HALFIN_BLOCKSTREAM_ELECTRS_PATH").unwrap_or(""));
 
-    let bin_name = MempoolElectrsD::get_bin_name().to_string();
+    let bin_name = BlockstreamElectrsD::get_bin_name().to_string();
     match bin_path.exists() {
         true => Ok(bin_path),
         false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
 }
 
-/// Configuration for an [`MempoolElectrsD`] instance.
+/// Configuration for an [`BlockstreamElectrsD`] instance.
 ///
-/// Specify each field or use [`MempoolElectrsDConf::default`] for standard regtest values.
+/// Specify each field or use [`BlockstreamElectrsDConf::default`] for standard regtest values.
 ///
 /// # Directory precedence
 ///
@@ -129,8 +134,8 @@ pub fn get_mempool_electrs_path() -> Result<PathBuf, Error> {
 /// | `None`   | `Some`      | Persistent directory (kept at `Drop`) |
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct MempoolElectrsDConf {
-    /// Extra CLI arguments sent unchanged to the `mempool/electrs` process.
+pub struct BlockstreamElectrsDConf {
+    /// Extra CLI arguments sent unchanged to the `Blockstream/electrs` process.
     ///
     /// Do not use a raw argument for an option that `halfin` controls.
     /// A duplicate option returns [`IndexerError::ConflictingArgument`].
@@ -146,14 +151,14 @@ pub struct MempoolElectrsDConf {
     /// [`Drop`] stops the process but keeps the files.
     pub staticdir: Option<PathBuf>,
 
-    /// Maximum number of attempts to start `mempool/electrs`.
+    /// Maximum number of attempts to start `Blockstream/electrs`.
     ///
     /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
     /// conflict. The default value is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
-impl Default for MempoolElectrsDConf {
+impl Default for BlockstreamElectrsDConf {
     fn default() -> Self {
         Self {
             raw_args: Vec::new(),
@@ -164,13 +169,13 @@ impl Default for MempoolElectrsDConf {
     }
 }
 
-/// A running `mempool/electrs` [`Indexer`].
+/// A running `Blockstream/electrs` [`Indexer`].
 #[derive(Debug)]
-pub struct MempoolElectrsD {
-    /// Handle for the `mempool/electrs` child process.
+pub struct BlockstreamElectrsD {
+    /// Handle for the `Blockstream/electrs` child process.
     process: Child,
 
-    /// Plaintext Electrum client connected to `mempool/electrs`.
+    /// Plaintext Electrum client connected to `Blockstream/electrs`.
     pub client: RawClient<ElectrumPlaintextStream>,
 
     /// Blocking client connected to the Esplora endpoint.
@@ -180,7 +185,7 @@ pub struct MempoolElectrsD {
     working_directory: DataDir,
 
     /// Complete configuration used to start the [`Indexer`].
-    config: MempoolElectrsDConf,
+    config: BlockstreamElectrsDConf,
 
     /// Address of the Electrum RPC server.
     electrum_socket: SocketAddr,
@@ -193,8 +198,8 @@ pub struct MempoolElectrsD {
 }
 
 #[rustfmt::skip]
-impl Indexer for MempoolElectrsD {
-    type Config = MempoolElectrsDConf;
+impl Indexer for BlockstreamElectrsD {
+    type Config = BlockstreamElectrsDConf;
 
     fn get_name() -> &'static str { Self::get_name() }
 
@@ -208,7 +213,7 @@ impl Indexer for MempoolElectrsD {
 
     fn get_working_directory(&self) -> PathBuf { self.get_working_directory() }
 
-    fn get_config(&self) -> &MempoolElectrsDConf { self.get_config() }
+    fn get_config(&self) -> &BlockstreamElectrsDConf { self.get_config() }
 
     fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> { self.get_electrum_client() }
 
@@ -230,17 +235,17 @@ impl Indexer for MempoolElectrsD {
 }
 
 #[rustfmt::skip]
-impl MempoolElectrsD {
-    /// Human-readable name of [`MempoolElectrsD`].
-    pub fn get_name() -> &'static str { versions::MEMPOOL_ELECTRS_NAME }
+impl BlockstreamElectrsD {
+    /// Human-readable name of [`BlockstreamElectrsD`].
+    pub fn get_name() -> &'static str { versions::BLOCKSTREAM_ELECTRS_NAME }
 
-    /// Binary name of [`MempoolElectrsD`].
-    pub fn get_bin_name() -> &'static str { versions::MEMPOOL_ELECTRS_BIN_NAME }
+    /// Binary name of [`BlockstreamElectrsD`].
+    pub fn get_bin_name() -> &'static str { versions::BLOCKSTREAM_ELECTRS_BIN_NAME }
 }
 
-impl MempoolElectrsD {
-    /// Start an [`MempoolElectrsD`] [`Indexer`] with the binary from [`get_mempool_electrs_path`].
-    /// Use the default [`MempoolElectrsDConf`].
+impl BlockstreamElectrsD {
+    /// Start an [`BlockstreamElectrsD`] [`Indexer`] with the binary from
+    /// [`get_blockstream_electrs_path`]. Use the default [`BlockstreamElectrsDConf`].
     ///
     /// The [`Indexer`] connects to the specified [`Node`].
     ///
@@ -249,11 +254,11 @@ impl MempoolElectrsD {
     /// Returns an error if the function cannot find the binary or start the [`Indexer`].
     /// Returns an error if the [`Node`] is not ready.
     pub fn new<N: Node>(node: &N) -> Result<Self, Error> {
-        Self::from_bin(get_mempool_electrs_path()?, node)
+        Self::from_bin(get_blockstream_electrs_path()?, node)
     }
 
-    /// Start an [`MempoolElectrsD`] [`Indexer`] with the binary from [`get_mempool_electrs_path`].
-    /// Use the specified [`MempoolElectrsDConf`].
+    /// Start an [`BlockstreamElectrsD`] [`Indexer`] with the binary from
+    /// [`get_blockstream_electrs_path`]. Use the specified [`BlockstreamElectrsDConf`].
     ///
     /// The [`Indexer`] connects to the specified [`Node`].
     ///
@@ -261,26 +266,26 @@ impl MempoolElectrsD {
     ///
     /// Returns an error if the function cannot find the binary or start the [`Indexer`].
     /// Returns an error if the configuration is not valid or the [`Node`] is not ready.
-    pub fn new_with_conf<N: Node>(node: &N, conf: &MempoolElectrsDConf) -> Result<Self, Error> {
-        Self::from_bin_with_conf(get_mempool_electrs_path()?, node, conf)
+    pub fn new_with_conf<N: Node>(node: &N, conf: &BlockstreamElectrsDConf) -> Result<Self, Error> {
+        Self::from_bin_with_conf(get_blockstream_electrs_path()?, node, conf)
     }
 
-    /// Start the binary at [`Path`] with the default [`MempoolElectrsDConf`].
+    /// Start the binary at [`Path`] with the default [`BlockstreamElectrsDConf`].
     ///
     /// # Errors
     ///
     /// Returns an error if `electrs_bin` is not valid or the [`Node`] is not ready.
     /// Returns an error if the function cannot start the [`Indexer`].
     pub fn from_bin<P: AsRef<Path>, N: Node>(electrs_bin: P, node: &N) -> Result<Self, Error> {
-        Self::from_bin_with_conf(electrs_bin, node, &MempoolElectrsDConf::default())
+        Self::from_bin_with_conf(electrs_bin, node, &BlockstreamElectrsDConf::default())
     }
 
-    /// Start the binary at [`Path`] with the specified [`MempoolElectrsDConf`].
+    /// Start the binary at [`Path`] with the specified [`BlockstreamElectrsDConf`].
     ///
-    /// The method uses at most [`MempoolElectrsDConf::max_retries`] attempts.
+    /// The method uses at most [`BlockstreamElectrsDConf::max_retries`] attempts.
     ///
     /// 1. Select new temporary Electrum, Esplora, and monitoring ports.
-    /// 2. Start `mempool/electrs` with the RPC socket of the specified [`Node`].
+    /// 2. Start `Blockstream/electrs` with the RPC socket of the specified [`Node`].
     /// 3. Wait a maximum of 10 seconds for the Electrum RPC server to respond.
     ///
     /// # Errors
@@ -291,7 +296,7 @@ impl MempoolElectrsD {
     pub fn from_bin_with_conf<P: AsRef<Path>, N: Node>(
         electrs_bin: P,
         node: &N,
-        conf: &MempoolElectrsDConf,
+        conf: &BlockstreamElectrsDConf,
     ) -> Result<Self, Error> {
         validate_backend::<N>()?;
         let node_args = node.get_config().as_ref();
@@ -323,7 +328,7 @@ impl MempoolElectrsD {
             let working_directory = init_data_dir(
                 conf.tmpdir.as_deref(),
                 conf.staticdir.as_deref(),
-                "halfin-mempool-electrs-",
+                "halfin-blockstream-electrs-",
             )?;
 
             let electrum_port = get_available_port();
@@ -373,13 +378,13 @@ impl MempoolElectrsD {
             // visible alongside halfin's own. The reader threads exit on EOF
             // when the process dies.
             if let Some(stdout) = process.stdout.take() {
-                pipe_to_tracing(stdout, "mempool-electrs");
+                pipe_to_tracing(stdout, "blockstream-electrs");
             }
             if let Some(stderr) = process.stderr.take() {
-                pipe_to_tracing(stderr, "mempool-electrs");
+                pipe_to_tracing(stderr, "blockstream-electrs");
             }
 
-            // Add a small timeout to let `mempool/electrs` fail
+            // Add a small timeout to let `Blockstream/electrs` fail
             // and retry in the case of a port collision.
             sleep(SPAWN_INTERVAL);
 
@@ -459,14 +464,14 @@ impl MempoolElectrsD {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(Error::UnexpectedResponse(format!(
-                "failed to trigger `mempool/electrs` rescan with exit status={}: {}",
+                "failed to trigger `Blockstream/electrs` rescan with exit status={}: {}",
                 output.status,
                 stderr.trim()
             )))
         }
     }
 
-    /// Terminate the `mempool/electrs` process and wait for it to exit.
+    /// Terminate the `Blockstream/electrs` process and wait for it to exit.
     ///
     /// [`Drop`] stops the process without a call to this method.
     /// Call this method to get the exit status or confirm that the process has stopped.
@@ -480,7 +485,7 @@ impl MempoolElectrsD {
         self.process.wait().map_err(Error::Io)
     }
 
-    /// Return the operating system process ID of `mempool/electrs`.
+    /// Return the operating system process ID of `Blockstream/electrs`.
     pub fn get_pid(&self) -> u32 {
         let pid = self.process.id();
 
@@ -489,7 +494,7 @@ impl MempoolElectrsD {
         pid
     }
 
-    /// Return the data directory of [`MempoolElectrsD`].
+    /// Return the data directory of [`BlockstreamElectrsD`].
     pub fn get_working_directory(&self) -> PathBuf {
         let working_directory = self.working_directory.path();
 
@@ -503,11 +508,11 @@ impl MempoolElectrsD {
     }
 
     /// Return the complete configuration used to start this [`Indexer`].
-    pub fn get_config(&self) -> &MempoolElectrsDConf {
+    pub fn get_config(&self) -> &BlockstreamElectrsDConf {
         &self.config
     }
 
-    /// Return a reference to the Electrum [`RawClient`] of [`MempoolElectrsD`].
+    /// Return a reference to the Electrum [`RawClient`] of [`BlockstreamElectrsD`].
     pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
         debug!(
             "{}: got electrum client for socket={}",
@@ -601,7 +606,7 @@ impl MempoolElectrsD {
         self.wait_until_block(height, Some(hash), timeout)
     }
 
-    /// Poll until the Electrum header tip of [`MempoolElectrsD`] reaches `exp_height`.
+    /// Poll until the Electrum header tip of [`BlockstreamElectrsD`] reaches `exp_height`.
     ///
     /// The function compares the block hash at `exp_height` with `exp_hash`.
     /// Specify `None` to use [`INDEXING_TIMEOUT`].
@@ -673,7 +678,10 @@ impl MempoolElectrsD {
     }
 
     /// Validate raw arguments and create [`Indexer`] arguments.
-    fn configured_args(conf: &MempoolElectrsDConf, network: Network) -> Result<Vec<String>, Error> {
+    fn configured_args(
+        conf: &BlockstreamElectrsDConf,
+        network: Network,
+    ) -> Result<Vec<String>, Error> {
         const OPTIONS: &[&str] = &[
             "cookie",
             "daemon-rpc-addr",
@@ -735,9 +743,9 @@ impl MempoolElectrsD {
 
     /// Wait for an Electrum block header notification for `exp_height` and `exp_hash`.
     ///
-    /// `mempool/electrs` sends a header notification after it updates confirmed script histories
-    /// for that tip. Thus, this function uses notifications and does not poll block headers
-    /// directly.
+    /// `Blockstream/electrs` sends a header notification after it updates confirmed script
+    /// histories for that tip. Thus, this function uses notifications and does not poll block
+    /// headers directly.
     fn wait_until_block(
         &self,
         exp_height: u32,
@@ -789,7 +797,7 @@ impl MempoolElectrsD {
                 continue;
             };
 
-            if mempool_electrs_header_matches(client, &notification, exp_height, exp_hash)? {
+            if blockstream_electrs_header_matches(client, &notification, exp_height, exp_hash)? {
                 debug!("{}: finished indexing {}", Self::get_name(), description);
 
                 return Ok(());
@@ -806,11 +814,11 @@ impl MempoolElectrsD {
         .into())
     }
 
-    /// Reject [`Node`] configurations that `mempool/electrs` cannot index.
+    /// Reject [`Node`] configurations that `Blockstream/electrs` cannot index.
     fn validate_node_args(args: &NodeArgs) -> Result<(), Error> {
         if args.prune != PruneMode::Disabled {
             return Err(IndexerError::InvalidConfiguration(
-                "mempool/electrs requires an unpruned backing node".to_string(),
+                "Blockstream/electrs requires an unpruned backing node".to_string(),
             )
             .into());
         }
@@ -852,8 +860,8 @@ impl MempoolElectrsD {
     }
 }
 
-impl Drop for MempoolElectrsD {
-    /// Terminate the `mempool/electrs` process and wait for it to exit.
+impl Drop for BlockstreamElectrsD {
+    /// Terminate the `Blockstream/electrs` process and wait for it to exit.
     ///
     /// Ignore errors from `kill` and `wait` to prevent a panic in [`Drop`].
     fn drop(&mut self) {
@@ -867,24 +875,24 @@ impl Drop for MempoolElectrsD {
     }
 }
 
-/// Check whether an Electrum header notification shows that [`MempoolElectrsD`] indexed
+/// Check whether an Electrum header notification shows that [`BlockstreamElectrsD`] indexed
 /// `exp_height`.
 ///
 /// If the notification is above `exp_height`, get the header at `exp_height`.
 /// Then, compare its hash with `exp_hash`.
-fn mempool_electrs_header_matches(
+fn blockstream_electrs_header_matches(
     client: &RawClient<ElectrumPlaintextStream>,
     notification: &HeaderNotification,
     exp_height: u32,
     exp_hash: Option<BlockHash>,
 ) -> Result<bool, Error> {
-    mempool_electrs_header_matches_with(notification, exp_height, exp_hash, |height| {
+    blockstream_electrs_header_matches_with(notification, exp_height, exp_hash, |height| {
         client.block_header(height)
     })
 }
 
 /// Check an Electrum header notification with an injected historical-header lookup.
-fn mempool_electrs_header_matches_with<F>(
+fn blockstream_electrs_header_matches_with<F>(
     notification: &HeaderNotification,
     exp_height: u32,
     exp_hash: Option<BlockHash>,

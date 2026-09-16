@@ -5,7 +5,7 @@
 //! Run this Cargo example from the repository root:
 //!
 //! ```text
-//! cargo run --example cross-compile-electrs
+//! cargo run --example cross-compile-romanz-electrs
 //! ```
 //!
 //! The program gets the specified upstream release and builds each supported target.
@@ -16,7 +16,7 @@
 // `romanz/electrs` release that the crate downloads.
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/src/indexer/electrsd/versions.rs"
+    "/src/indexer/romanz_electrsd/versions.rs"
 ));
 
 use std::env;
@@ -30,7 +30,7 @@ use xshell::Shell;
 use xshell::cmd;
 
 /// `romanz/electrs` repository used as the release source.
-const ELECTRS_REPO: &str = "https://github.com/romanz/electrs";
+const ROMANZ_ELECTRS_REPO: &str = "https://github.com/romanz/electrs";
 
 /// Build backend used for a target triple.
 ///
@@ -111,12 +111,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let force = parse_args()?;
     let sh = Shell::new()?;
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let compile_electrs_dir = manifest_dir.join("contrib/bins/compile_electrs");
-    let cross_config = compile_electrs_dir.join("Cross.toml");
-    let dist_dir = compile_electrs_dir
+    let compile_romanz_electrs_dir = manifest_dir.join("contrib/bins/compile_romanz_electrs");
+    let cross_config = compile_romanz_electrs_dir.join("Cross.toml");
+    let dist_dir = compile_romanz_electrs_dir
         .join("dist")
-        .join(format!("electrs-{ELECTRS_VERSION}"));
-    let workdir = compile_electrs_dir.join("tmp");
+        .join(format!("electrs-{ROMANZ_ELECTRS_VERSION}"));
+    let workdir = compile_romanz_electrs_dir.join("tmp");
     let source_dir = workdir.join("electrs");
 
     // Fail up front with actionable messages before spending time cloning or
@@ -165,14 +165,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     log_step("writing SHA256SUMS");
     write_sha256sums(&dist_dir)?;
 
-    println!("romanz/electrs {} artifacts:", ELECTRS_VERSION);
+    println!("romanz/electrs {} artifacts:", ROMANZ_ELECTRS_VERSION);
     for target in TARGETS {
         println!("  {}", dist_dir.join(target.artifact_name).display());
     }
     println!(
         "  {}",
         dist_dir
-            .join(format!("electrs-{}-SHA256SUMS", ELECTRS_VERSION))
+            .join(format!("electrs-{}-SHA256SUMS", ROMANZ_ELECTRS_VERSION))
             .display()
     );
 
@@ -191,10 +191,10 @@ fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::erro
     } else {
         log_step(format!(
             "cloning romanz/electrs {} into {}",
-            ELECTRS_VERSION,
+            ROMANZ_ELECTRS_VERSION,
             source_dir.display()
         ));
-        let repo = ELECTRS_REPO;
+        let repo = ROMANZ_ELECTRS_REPO;
         cmd!(sh, "git clone {repo} {source_dir_s}").run_echo()?;
     }
 
@@ -202,7 +202,7 @@ fn prepare_source(sh: &Shell, source_dir: &Path) -> Result<(), Box<dyn std::erro
     log_step("fetching romanz/electrs tags");
     cmd!(sh, "git fetch --tags --force").run_echo()?;
 
-    let tag = format!("v{ELECTRS_VERSION}");
+    let tag = format!("v{ROMANZ_ELECTRS_VERSION}");
     log_step(format!("checking out romanz/electrs {}", tag));
     cmd!(sh, "git checkout --force {tag}").run_echo()?;
 
@@ -218,7 +218,7 @@ fn parse_args() -> Result<bool, Box<dyn std::error::Error>> {
             "--force" => force = true,
             "-h" | "--help" => {
                 println!(
-                    "usage: cargo run --example cross-compile-electrs -- [--force]\n\n  --force    rebuild and repackage targets even when artifacts already exist"
+                    "usage: cargo run --example cross-compile-romanz-electrs -- [--force]\n\n  --force    rebuild and repackage targets even when artifacts already exist"
                 );
                 std::process::exit(0);
             }
@@ -401,7 +401,7 @@ fn write_sha256sums(dist_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     fs::write(
-        dist_dir.join(format!("electrs-{}-SHA256SUMS", ELECTRS_VERSION)),
+        dist_dir.join(format!("electrs-{}-SHA256SUMS", ROMANZ_ELECTRS_VERSION)),
         format!("{}\n", lines.join("\n")),
     )?;
 
