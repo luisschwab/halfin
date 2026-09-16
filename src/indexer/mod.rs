@@ -5,12 +5,14 @@
 //! The [`Indexer`] trait defines the operations that each implementation supplies.
 //! The shared functions validate a backing [`Node`] and its RPC cookie.
 //!
-//! Enable the `electrs`, `electrumx`, or `mempool_electrs` feature to use the selected
-//! implementation.
+//! Enable the `electrs`, `electrumx`, `mempool_electrs`, or `blockstream_electrs` feature to use
+//! the selected implementation.
 //!
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
 
+#[cfg(all(feature = "blockstream_electrs", not(target_os = "windows")))]
+pub mod blockstream_electrsd;
 #[cfg(feature = "electrs")]
 pub mod electrsd;
 #[cfg(feature = "electrumx")]

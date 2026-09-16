@@ -8,16 +8,17 @@
 //!
 //! ## Supported implementations
 //!
-//! | Kind    | Implementation      | Version   | Feature Flag       | Notes                  |
-//! |---------|---------------------|-----------|--------------------|------------------------|
-//! | Node    | [`Bitcoin Core`]    | `v31.0`   | `bitcoind`         |                        |
-//! | Node    | [`btcd`]            | `v0.26.2` | `btcd`             |                        |
-//! | Node    | [`Floresta`]        | `v0.9.1`  | `florestad`        |                        |
-//! | Node    | [`utreexod`]        | `v0.6.0`  | `utreexod`         |                        |
-//! |         |                     |           |                    |                        |
-//! | Indexer | [`romanz/electrs`]  | `v0.12.0` | `electrs`          |                        |
-//! | Indexer | [`mempool/electrs`] | `v3.3.0`  | `mempool_electrs`  | Unsupported on Windows |
-//! | Indexer | [`ElectrumX`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
+//! | Kind    | Implementation          | Version   | Feature Flag          | Notes                  |
+//! |---------|-------------------------|-----------|-----------------------|------------------------|
+//! | Node    | [`Bitcoin Core`]        | `v31.0`   | `bitcoind`            |                        |
+//! | Node    | [`btcd`]                | `v0.26.2` | `btcd`                |                        |
+//! | Node    | [`Floresta`]            | `v0.9.1`  | `florestad`           |                        |
+//! | Node    | [`utreexod`]            | `v0.6.0`  | `utreexod`            |                        |
+//! |         |                         |           |                       |                        |
+//! | Indexer | [`romanz/electrs`]      | `v0.12.0` | `electrs`             |                        |
+//! | Indexer | [`mempool/electrs`]     | `v3.3.0`  | `mempool_electrs`     | Unsupported on Windows |
+//! | Indexer | [`Blockstream/electrs`] | `4b1a018` | `blockstream_electrs` | Unsupported on Windows |
+//! | Indexer | [`ElectrumX`]           | `v1.20.0` | `electrumx`           | Needs Python 3.10      |
 //!
 //! [`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
 //! [`btcd`]: <https://github.com/btcsuite/btcd>
@@ -25,6 +26,7 @@
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
 //! [`romanz/electrs`]: <https://github.com/romanz/electrs>
 //! [`mempool/electrs`]: <https://github.com/mempool/electrs>
+//! [`Blockstream/electrs`]: <https://github.com/Blockstream/electrs>
 //! [`ElectrumX`]: <https://github.com/spesmilo/electrumx>
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
 //! [`Indexer`]: crate::indexer::Indexer

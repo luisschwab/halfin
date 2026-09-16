@@ -23,8 +23,8 @@
 > A runner for bitcoin nodes and indexers 🏃‍♂️
 
 This crate makes it simple to run [`bitcoind`], [`btcd`], [`florestad`], [`utreexod`],
-[`romanz/electrs`], [`mempool/electrs`], and [`electrumx`] instances from Rust code, useful in
-integration test contexts.
+[`romanz/electrs`], [`mempool/electrs`], [`Blockstream/electrs`], and [`electrumx`]
+instances from Rust code, useful in integration test contexts.
 
 [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
 [`btcd`]: <https://github.com/btcsuite/btcd>
@@ -32,20 +32,22 @@ integration test contexts.
 [`utreexod`]: <https://github.com/utreexo/utreexod>
 [`romanz/electrs`]: <https://github.com/romanz/electrs>
 [`mempool/electrs`]: <https://github.com/mempool/electrs>
+[`Blockstream/electrs`]: <https://github.com/Blockstream/electrs>
 [`electrumx`]: <https://github.com/spesmilo/electrumx>
 
 ## Supported Implementations
 
-| Kind    | Implementation      | Version   | Feature Flag       | Notes                  |
-|---------|---------------------|-----------|--------------------|------------------------|
-| Node    | [`Bitcoin Core`]    | `v31.0`   | `bitcoind`         |                        |
-| Node    | [`btcd`]            | `v0.26.2` | `btcd`             |                        |
-| Node    | [`Floresta`]        | `v0.9.1`  | `florestad`        |                        |
-| Node    | [`utreexod`]        | `v0.6.0`  | `utreexod`         |                        |
-|         |                     |           |                    |                        |
-| Indexer | [`romanz/electrs`]  | `v0.12.0` | `electrs`          |                        |
-| Indexer | [`mempool/electrs`] | `v3.3.0`  | `mempool_electrs`  | Unsupported on Windows |
-| Indexer | [`ElectrumX`]       | `v1.20.0` | `electrumx`        | Needs Python 3.10      |
+| Kind    | Implementation          | Version   | Feature Flag          | Notes                  |
+|---------|-------------------------|-----------|---------------------- |------------------------|
+| Node    | [`Bitcoin Core`]        | `v31.0`   | `bitcoind`            |                        |
+| Node    | [`btcd`]                | `v0.26.2` | `btcd`                |                        |
+| Node    | [`Floresta`]            | `v0.9.1`  | `florestad`           |                        |
+| Node    | [`utreexod`]            | `v0.6.0`  | `utreexod`            |                        |
+|         |                         |           |                       |                        |
+| Indexer | [`romanz/electrs`]      | `v0.12.0` | `electrs`             |                        |
+| Indexer | [`mempool/electrs`]     | `v3.3.0`  | `mempool_electrs`     | Unsupported on Windows |
+| Indexer | [`Blockstream/electrs`] | `4b1a018` | `blockstream_electrs` | Unsupported on Windows |
+| Indexer | [`ElectrumX`]           | `v1.20.0` | `electrumx`           | Needs Python 3.10      |
 
 [`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
 [`Floresta`]: <https://github.com/getfloresta/Floresta>
@@ -102,6 +104,19 @@ bitcoind.generate(100).unwrap();
 
 let electrs = ElectrsD::new(&bitcoind).unwrap();
 electrs.wait_until_caught_up(&bitcoind, None).unwrap();
+```
+
+### BlockstreamElectrsD
+
+```rust
+use halfin::indexer::blockstream_electrsd::BlockstreamElectrsD;
+use halfin::node::bitcoind::BitcoinD;
+
+let bitcoind = BitcoinD::new().unwrap();
+bitcoind.generate(100).unwrap();
+let indexer = BlockstreamElectrsD::new(&bitcoind).unwrap();
+indexer.wait_until_caught_up(&bitcoind, None).unwrap();
+assert_eq!(indexer.get_esplora_client().get_height().unwrap(), 100);
 ```
 
 ### UtreexoD

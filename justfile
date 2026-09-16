@@ -60,9 +60,9 @@ pre-push:
     # Check Documentation
     cargo rbmt docs
     # Run Tests
-    cargo rbmt test --toolchain stable --lockfile recent
-    cargo rbmt test --toolchain stable --lockfile minimal
-    cargo rbmt test --toolchain msrv --lockfile minimal
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile recent
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
+    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
     # Audit Cargo Dependencies
     @just audit
     # Audit Shell Scripts
@@ -108,7 +108,7 @@ coverage:
         --output-path target/llvm-cov/lcov.info \
         --ignore-filename-regex '(^|/)test[.]rs$'
 
-[doc: "Run Tests with Lockfile and Toolchain Combinations"]
+[doc: "Run Tests with Specific Features"]
 [group("Testing")]
 [env("RBMT_LOG_LEVEL", "verbose")]
 test features="":
@@ -135,6 +135,11 @@ test features="":
     } }}
 
 # Build
+
+[doc: "Compile Binaries with a Cargo Example"]
+[group("Build")]
+compile-bins example_name:
+    RBMT_LOG_LEVEL=versbose cargo rbmt run -- run --example "{{ example_name }}"
 
 [doc: "Build `halfin`"]
 [env("RBMT_LOG_LEVEL", "verbose")]

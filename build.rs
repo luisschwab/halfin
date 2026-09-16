@@ -12,6 +12,7 @@
     feature = "florestad",
     feature = "utreexod",
     feature = "electrs",
+    feature = "blockstream_electrs",
     feature = "electrumx",
     feature = "mempool_electrs"
 ))]
@@ -43,7 +44,8 @@ mod binary {
     const BIN_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 
     /// Base URLs for binary archive downloads.
-    const BIN_DOWNLOAD_MIRRORS: &[&str] = &["https://bin.luisschwab.net"];
+    const BIN_DOWNLOAD_MIRRORS: &[&str] =
+        &["https://bin.luisschwab.net", "https://bin.lab.vinteum.org"];
 
     /// Return the root directory used to cache extracted binaries.
     fn download_directory() -> PathBuf {
@@ -486,6 +488,7 @@ fn main() {
     // Emit `halfin_indexer` if any `Indexer` feature is enabled
     let indexer_enabled = cfg!(any(
         feature = "electrs",
+        feature = "blockstream_electrs",
         feature = "electrumx",
         feature = "mempool_electrs"
     ));
@@ -507,12 +510,83 @@ fn main() {
 
         #[cfg(feature = "electrs")]
         electrs::download();
+        #[cfg(feature = "blockstream_electrs")]
+        blockstream_electrs::download();
 
         #[cfg(feature = "electrumx")]
         electrumx::download();
 
         #[cfg(feature = "mempool_electrs")]
         mempool_electrs::download();
+    }
+}
+
+/// Select the `Blockstream/electrs` binary for the enabled version feature.
+#[cfg(feature = "blockstream_electrs")]
+mod blockstream_electrs {
+    use std::env;
+
+    use super::binary::Binary;
+    use super::binary::PathBuf;
+
+    include!("src/indexer/blockstream_electrsd/versions.rs");
+
+    /// Compile-time environment variable containing the extracted `Blockstream/electrs` path.
+    const HALFIN_BLOCKSTREAM_ELECTRS_PATH: &str = "HALFIN_BLOCKSTREAM_ELECTRS_PATH";
+
+    /// Return the platform-specific archive file name for this `Blockstream/electrs` version.
+    ///
+    /// Panics if the current operating system and architecture are not supported.
+    fn get_download_filename() -> String {
+        let os = env::var("CARGO_CFG_TARGET_OS").expect("Cargo did not set CARGO_CFG_TARGET_OS");
+        let arch =
+            env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo did not set CARGO_CFG_TARGET_ARCH");
+        match (os.as_str(), arch.as_str()) {
+            ("macos", "aarch64") => "blockstream-electrs-darwin-arm64.tar.gz",
+            ("macos", "x86_64") => "blockstream-electrs-darwin-amd64.tar.gz",
+            ("linux", "x86_64") => "blockstream-electrs-linux-amd64.tar.gz",
+            ("linux", "aarch64") => "blockstream-electrs-linux-arm64.tar.gz",
+            _ => panic!("No download file for {os}+{arch}"),
+        }
+        .to_string()
+    }
+
+    /// Download, verify, and extract the `Blockstream/electrs` binary.
+    /// Use `<OUT_DIR>/bin/blockstream-electrs-<VERSION>/electrs` as the default destination.
+    /// If `HALFIN_BIN_DIR` is set, use that directory as the root.
+    ///
+    /// Do not download the binary if it is already in the build cache.
+    pub(crate) fn download() {
+        if target_is_windows() {
+            return;
+        }
+
+        Binary {
+            name: "electrs",
+            implementation: "Blockstream/electrs",
+            version: BLOCKSTREAM_ELECTRS_VERSION,
+            env_var: HALFIN_BLOCKSTREAM_ELECTRS_PATH,
+            destination_dir_prefix: "blockstream-electrs",
+            checksum_file: PathBuf::from(format!(
+                "sha256/indexer/blockstream_electrs/blockstream-electrs-{}-SHA256SUMS",
+                BLOCKSTREAM_ELECTRS_VERSION
+            )),
+            remote_dir: "blockstream_electrs",
+            remote_version_dir: PathBuf::from(format!(
+                "blockstream-electrs-{}",
+                BLOCKSTREAM_ELECTRS_VERSION
+            )),
+            archive_filename: PathBuf::from(get_download_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            codesign_on_macos_aarch64: false,
+        }
+        .download_and_install();
+    }
+
+    /// Return whether Cargo is compiling `halfin` for an unsupported Windows target.
+    fn target_is_windows() -> bool {
+        env::var("CARGO_CFG_TARGET_OS").expect("Cargo did not set CARGO_CFG_TARGET_OS for build.rs")
+            == "windows"
     }
 }
 

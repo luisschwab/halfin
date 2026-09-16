@@ -50,6 +50,18 @@ use crate::Error;
 #[cfg(feature = "bitcoind")]
 use crate::MATURE_COINBASE_BLOCK_COUNT;
 use crate::indexer::IndexerError;
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "blockstream_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::blockstream_electrsd::BlockstreamElectrsD;
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "blockstream_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::blockstream_electrsd::BlockstreamElectrsDConf;
 #[cfg(all(feature = "bitcoind", feature = "electrs"))]
 use crate::indexer::electrsd::ElectrsD;
 #[cfg(all(feature = "bitcoind", feature = "electrs"))]
@@ -636,6 +648,39 @@ fn electrsd_implements_indexer() {
     let mut electrsd = ElectrsD::new_with_conf(&bitcoind, &config).unwrap();
 
     assert_indexer_interface(&mut electrsd, &config, &bitcoind, &script_pubkey, txid);
+}
+
+/// Verify the [`Indexer`] interface and Esplora endpoint for [`BlockstreamElectrsD`].
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "blockstream_electrs",
+    not(target_os = "windows")
+))]
+#[test]
+fn blockstream_electrsd_implements_indexer() {
+    let bitcoind = BitcoinD::new().unwrap();
+    let (script_pubkey, txid) = build_transaction(&bitcoind);
+    let config = BlockstreamElectrsDConf::default();
+    let mut blockstream_electrs = BlockstreamElectrsD::new_with_conf(&bitcoind, &config).unwrap();
+
+    blockstream_electrs
+        .wait_until_caught_up(&bitcoind, None)
+        .unwrap();
+    let height = bitcoind.get_chain_tip().unwrap();
+    let block_hash = bitcoind.get_block_hash(height).unwrap();
+    let esplora = blockstream_electrs.get_esplora_client();
+    assert_eq!(esplora.url(), blockstream_electrs.get_esplora_url());
+    assert_eq!(esplora.get_height().unwrap(), height);
+    assert_eq!(esplora.get_tip_hash().unwrap(), block_hash);
+    assert_eq!(esplora.get_block_hash(height).unwrap(), block_hash);
+
+    assert_indexer_interface(
+        &mut blockstream_electrs,
+        &config,
+        &bitcoind,
+        &script_pubkey,
+        txid,
+    );
 }
 
 /// Verify the [`Indexer`] interface and Esplora endpoint for [`MempoolElectrsD`].
