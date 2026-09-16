@@ -86,7 +86,7 @@ mod binary {
         /// Bundled `SHA256SUMS` file for the binary archives.
         pub(crate) checksum_file: PathBuf,
 
-        /// Top-level remote directory for this binary on the mirror.
+        /// Category and implementation directory for this binary on the mirror.
         pub(crate) remote_dir: &'static str,
 
         /// Version-specific remote directory for this binary on the mirror.
@@ -572,7 +572,7 @@ mod blockstream_electrs {
                 "sha256/indexer/blockstream_electrs/blockstream-electrs-{}-SHA256SUMS",
                 BLOCKSTREAM_ELECTRS_VERSION
             )),
-            remote_dir: "blockstream_electrs",
+            remote_dir: "indexer/blockstream_electrs",
             remote_version_dir: PathBuf::from(format!(
                 "blockstream-electrs-{}",
                 BLOCKSTREAM_ELECTRS_VERSION
@@ -643,7 +643,7 @@ mod mempool_electrs {
                 "sha256/indexer/mempool_electrs/mempool-electrs-{}-SHA256SUMS",
                 MEMPOOL_ELECTRS_VERSION
             )),
-            remote_dir: "mempool_electrs",
+            remote_dir: "indexer/mempool_electrs",
             remote_version_dir: PathBuf::from(format!(
                 "mempool-electrs-{}",
                 MEMPOOL_ELECTRS_VERSION
@@ -711,7 +711,7 @@ mod bitcoind {
                 "sha256/node/bitcoind/bitcoin-core-{}-SHA256SUMS",
                 BITCOIND_VERSION
             )),
-            remote_dir: "bitcoind",
+            remote_dir: "node/bitcoind",
             remote_version_dir: PathBuf::from(format!("bitcoin-core-{}", BITCOIND_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -769,7 +769,7 @@ mod btcd {
             checksum_file: PathBuf::from(format!(
                 "sha256/node/btcd/btcd-{BTCD_VERSION}-SHA256SUMS"
             )),
-            remote_dir: "btcd",
+            remote_dir: "node/btcd",
             remote_version_dir: PathBuf::from(format!("btcd-{BTCD_VERSION}")),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -825,7 +825,7 @@ mod florestad {
                 "sha256/node/florestad/florestad-{}-SHA256SUMS",
                 FLORESTAD_VERSION
             )),
-            remote_dir: "florestad",
+            remote_dir: "node/florestad",
             remote_version_dir: PathBuf::from(format!("florestad-{}", FLORESTAD_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -884,7 +884,7 @@ mod utreexod {
                 "sha256/node/utreexod/utreexod-{}-SHA256SUMS",
                 UTREEXOD_VERSION
             )),
-            remote_dir: "utreexod",
+            remote_dir: "node/utreexod",
             remote_version_dir: PathBuf::from(format!("utreexod-{}", UTREEXOD_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -946,7 +946,7 @@ mod romanz_electrs {
                 "sha256/indexer/romanz_electrs/electrs-{}-SHA256SUMS",
                 ROMANZ_ELECTRS_VERSION
             )),
-            remote_dir: "romanz_electrs",
+            remote_dir: "indexer/romanz_electrs",
             remote_version_dir: PathBuf::from(format!("electrs-{}", ROMANZ_ELECTRS_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -1008,7 +1008,7 @@ mod electrumx {
                 "sha256/indexer/electrumx/electrumx-{}-SHA256SUMS",
                 ELECTRUMX_VERSION
             )),
-            remote_dir: "electrumx",
+            remote_dir: "indexer/electrumx",
             remote_version_dir: PathBuf::from(format!("electrumx-{}", ELECTRUMX_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
