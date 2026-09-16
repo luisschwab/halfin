@@ -2,18 +2,18 @@
 
 //! Start and control a `romanz/electrs` [`Indexer`] process.
 //!
-//! [`ElectrsD`] starts `romanz/electrs` and connects it to a local [`Node`].
+//! [`RomanzElectrsD`] starts `romanz/electrs` and connects it to a local [`Node`].
 //! It gives an Electrum client and wait operations for integration tests.
 //!
 //! ## Start an [`Indexer`]
 //!
 //! ```rust
-//! use halfin::indexer::electrsd::ElectrsD;
+//! use halfin::indexer::romanz_electrsd::RomanzElectrsD;
 //! use halfin::node::Node;
 //!
 //! fn start_electrs(node: &impl Node) {
 //!     node.generate(10).unwrap();
-//!     let electrs = ElectrsD::new(node).unwrap();
+//!     let electrs = RomanzElectrsD::new(node).unwrap();
 //!     electrs.wait_until_caught_up(node, None).unwrap();
 //! }
 //!
@@ -26,9 +26,9 @@
 //!
 //! ## Select a data directory
 //!
-//! By default, each [`ElectrsD`] instance uses a temporary directory.
+//! By default, each [`RomanzElectrsD`] instance uses a temporary directory.
 //! [`Drop`] removes this directory.
-//! Set [`ElectrsDConf::staticdir`] to keep the data after the process stops.
+//! Set [`RomanzElectrsDConf::staticdir`] to keep the data after the process stops.
 //!
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
@@ -84,7 +84,7 @@ mod versions;
 /// Wrap an Electrum client failure with [`Indexer`] context.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     IndexerError::UnresponsiveIndexer {
-        indexer: ElectrsD::get_name(),
+        indexer: RomanzElectrsD::get_name(),
         source,
     }
 }
@@ -92,14 +92,14 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
 /// Return the path to the downloaded `romanz/electrs` binary.
 ///
 /// At compile time, `build.rs` reads and extracts the local archive.
-/// It stores the binary path in `HALFIN_ELECTRS_PATH`.
+/// It stores the binary path in `HALFIN_ROMANZ_ELECTRS_PATH`.
 ///
 /// # Errors
 ///
 /// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
-pub fn get_electrs_path() -> Result<PathBuf, Error> {
+pub fn get_romanz_electrs_path() -> Result<PathBuf, Error> {
     #[allow(unused_mut)]
-    let mut bin_path = PathBuf::from(option_env!("HALFIN_ELECTRS_PATH").unwrap_or(""));
+    let mut bin_path = PathBuf::from(option_env!("HALFIN_ROMANZ_ELECTRS_PATH").unwrap_or(""));
 
     // Add the `.exe` suffix on Windows.
     #[cfg(target_os = "windows")]
@@ -107,16 +107,16 @@ pub fn get_electrs_path() -> Result<PathBuf, Error> {
         bin_path.set_extension("exe");
     }
 
-    let bin_name = ElectrsD::get_bin_name().to_string();
+    let bin_name = RomanzElectrsD::get_bin_name().to_string();
     match bin_path.exists() {
         true => Ok(bin_path),
         false => Err(Error::BinaryNotFound((bin_name, bin_path))),
     }
 }
 
-/// Configuration for an [`ElectrsD`] instance.
+/// Configuration for an [`RomanzElectrsD`] instance.
 ///
-/// Specify each field or use [`ElectrsDConf::default`] for standard regtest values.
+/// Specify each field or use [`RomanzElectrsDConf::default`] for standard regtest values.
 ///
 /// # Directory precedence
 ///
@@ -130,7 +130,7 @@ pub fn get_electrs_path() -> Result<PathBuf, Error> {
 /// | `None`   | `Some`      | Persistent directory (kept at `Drop`) |
 /// | `Some`   | `Some`      | **Error** |
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ElectrsDConf {
+pub struct RomanzElectrsDConf {
     /// Extra CLI arguments sent unchanged to the `romanz/electrs` process.
     ///
     /// Do not use a raw argument for an option that `halfin` controls.
@@ -154,7 +154,7 @@ pub struct ElectrsDConf {
     pub max_retries: u8,
 }
 
-impl Default for ElectrsDConf {
+impl Default for RomanzElectrsDConf {
     fn default() -> Self {
         Self {
             raw_args: Vec::new(),
@@ -167,17 +167,17 @@ impl Default for ElectrsDConf {
 
 /// A running `romanz/electrs` [`Indexer`].
 ///
-/// [`ElectrsD::from_bin`] and related functions start the [`Indexer`].
+/// [`RomanzElectrsD::from_bin`] and related functions start the [`Indexer`].
 /// The [`Indexer`] connects to the specified [`Node`].
 /// [`Drop`] stops the [`Indexer`].
 ///
 /// # Networking
 ///
 /// At startup, the operating system selects temporary Electrum RPC and monitoring ports.
-/// Use [`get_electrum_socket`](ElectrsD::get_electrum_socket) to get the Electrum RPC port.
-/// Use [`get_monitoring_socket`](ElectrsD::get_monitoring_socket) to get the monitoring port.
+/// Use [`get_electrum_socket`](RomanzElectrsD::get_electrum_socket) to get the Electrum RPC port.
+/// Use [`get_monitoring_socket`](RomanzElectrsD::get_monitoring_socket) to get the monitoring port.
 #[derive(Debug)]
-pub struct ElectrsD {
+pub struct RomanzElectrsD {
     /// Handle for the `romanz/electrs` child process.
     process: Child,
 
@@ -188,7 +188,7 @@ pub struct ElectrsD {
     working_directory: DataDir,
 
     /// Complete configuration used to start the [`Indexer`].
-    config: ElectrsDConf,
+    config: RomanzElectrsDConf,
 
     /// Address of the Electrum RPC server.
     electrum_socket: SocketAddr,
@@ -198,8 +198,8 @@ pub struct ElectrsD {
 }
 
 #[rustfmt::skip]
-impl Indexer for ElectrsD {
-    type Config = ElectrsDConf;
+impl Indexer for RomanzElectrsD {
+    type Config = RomanzElectrsDConf;
 
     fn get_name() -> &'static str { Self::get_name() }
 
@@ -213,7 +213,7 @@ impl Indexer for ElectrsD {
 
     fn get_working_directory(&self) -> PathBuf { self.get_working_directory() }
 
-    fn get_config(&self) -> &ElectrsDConf { self.get_config() }
+    fn get_config(&self) -> &RomanzElectrsDConf { self.get_config() }
 
     fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> { self.get_electrum_client() }
 
@@ -235,17 +235,17 @@ impl Indexer for ElectrsD {
 }
 
 #[rustfmt::skip]
-impl ElectrsD {
-    /// Human-readable name of [`ElectrsD`].
-    pub fn get_name() -> &'static str { versions::ELECTRS_NAME }
+impl RomanzElectrsD {
+    /// Human-readable name of [`RomanzElectrsD`].
+    pub fn get_name() -> &'static str { versions::ROMANZ_ELECTRS_NAME }
 
-    /// Binary name of [`ElectrsD`].
-    pub fn get_bin_name() -> &'static str { versions::ELECTRS_BIN_NAME }
+    /// Binary name of [`RomanzElectrsD`].
+    pub fn get_bin_name() -> &'static str { versions::ROMANZ_ELECTRS_BIN_NAME }
 }
 
-impl ElectrsD {
-    /// Start an [`ElectrsD`] [`Indexer`] with the binary from [`get_electrs_path`].
-    /// Use the default [`ElectrsDConf`].
+impl RomanzElectrsD {
+    /// Start an [`RomanzElectrsD`] [`Indexer`] with the binary from [`get_romanz_electrs_path`].
+    /// Use the default [`RomanzElectrsDConf`].
     ///
     /// The [`Indexer`] connects to the specified [`Node`].
     ///
@@ -254,11 +254,11 @@ impl ElectrsD {
     /// Returns an error if the function cannot find the binary or start the [`Indexer`].
     /// Returns an error if the [`Node`] is not ready.
     pub fn new<N: Node>(node: &N) -> Result<Self, Error> {
-        Self::from_bin(get_electrs_path()?, node)
+        Self::from_bin(get_romanz_electrs_path()?, node)
     }
 
-    /// Start an [`ElectrsD`] [`Indexer`] with the binary from [`get_electrs_path`].
-    /// Use the specified [`ElectrsDConf`].
+    /// Start an [`RomanzElectrsD`] [`Indexer`] with the binary from [`get_romanz_electrs_path`].
+    /// Use the specified [`RomanzElectrsDConf`].
     ///
     /// The [`Indexer`] connects to the specified [`Node`].
     ///
@@ -266,23 +266,23 @@ impl ElectrsD {
     ///
     /// Returns an error if the function cannot find the binary or start the [`Indexer`].
     /// Returns an error if the configuration is not valid or the [`Node`] is not ready.
-    pub fn new_with_conf<N: Node>(node: &N, conf: &ElectrsDConf) -> Result<Self, Error> {
-        Self::from_bin_with_conf(get_electrs_path()?, node, conf)
+    pub fn new_with_conf<N: Node>(node: &N, conf: &RomanzElectrsDConf) -> Result<Self, Error> {
+        Self::from_bin_with_conf(get_romanz_electrs_path()?, node, conf)
     }
 
-    /// Start the binary at [`Path`] with the default [`ElectrsDConf`].
+    /// Start the binary at [`Path`] with the default [`RomanzElectrsDConf`].
     ///
     /// # Errors
     ///
     /// Returns an error if `electrs_bin` is not valid or the [`Node`] is not ready.
     /// Returns an error if the function cannot start the [`Indexer`].
     pub fn from_bin<P: AsRef<Path>, N: Node>(electrs_bin: P, node: &N) -> Result<Self, Error> {
-        Self::from_bin_with_conf(electrs_bin, node, &ElectrsDConf::default())
+        Self::from_bin_with_conf(electrs_bin, node, &RomanzElectrsDConf::default())
     }
 
-    /// Start the binary at [`Path`] with the specified [`ElectrsDConf`].
+    /// Start the binary at [`Path`] with the specified [`RomanzElectrsDConf`].
     ///
-    /// The method uses at most [`ElectrsDConf::max_retries`] attempts.
+    /// The method uses at most [`RomanzElectrsDConf::max_retries`] attempts.
     ///
     /// 1. Select new temporary Electrum and monitoring ports.
     /// 2. Start `romanz/electrs` with the RPC socket of the specified [`Node`].
@@ -296,7 +296,7 @@ impl ElectrsD {
     pub fn from_bin_with_conf<P: AsRef<Path>, N: Node>(
         electrs_bin: P,
         node: &N,
-        conf: &ElectrsDConf,
+        conf: &RomanzElectrsDConf,
     ) -> Result<Self, Error> {
         validate_backend::<N>()?;
         let node_args = node.get_config().as_ref();
@@ -494,7 +494,7 @@ impl ElectrsD {
         pid
     }
 
-    /// Return the data directory of [`ElectrsD`].
+    /// Return the data directory of [`RomanzElectrsD`].
     pub fn get_working_directory(&self) -> PathBuf {
         let working_directory = self.working_directory.path();
 
@@ -508,11 +508,11 @@ impl ElectrsD {
     }
 
     /// Return the complete configuration used to start this [`Indexer`].
-    pub fn get_config(&self) -> &ElectrsDConf {
+    pub fn get_config(&self) -> &RomanzElectrsDConf {
         &self.config
     }
 
-    /// Return a reference to the Electrum [`RawClient`] of [`ElectrsD`].
+    /// Return a reference to the Electrum [`RawClient`] of [`RomanzElectrsD`].
     pub fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream> {
         debug!(
             "{}: got electrum client for socket={}",
@@ -585,7 +585,7 @@ impl ElectrsD {
         self.wait_until_block(height, Some(hash), timeout)
     }
 
-    /// Poll until the Electrum header tip of [`ElectrsD`] reaches `exp_height`.
+    /// Poll until the Electrum header tip of [`RomanzElectrsD`] reaches `exp_height`.
     ///
     /// The function compares the block hash at `exp_height` with `exp_hash`.
     /// Specify `None` to use [`INDEXING_TIMEOUT`].
@@ -657,7 +657,7 @@ impl ElectrsD {
     }
 
     /// Validate raw arguments and create [`Indexer`] arguments.
-    fn configured_args(conf: &ElectrsDConf, network: Network) -> Result<Vec<String>, Error> {
+    fn configured_args(conf: &RomanzElectrsDConf, network: Network) -> Result<Vec<String>, Error> {
         const OPTIONS: &[&str] = &[
             "cookie-file",
             "daemon-rpc-addr",
@@ -834,7 +834,7 @@ impl ElectrsD {
     }
 }
 
-impl Drop for ElectrsD {
+impl Drop for RomanzElectrsD {
     /// Terminate the `romanz/electrs` process and wait for it to exit.
     ///
     /// Ignore errors from `kill` and `wait` to prevent a panic in [`Drop`].
@@ -849,7 +849,8 @@ impl Drop for ElectrsD {
     }
 }
 
-/// Check whether an Electrum header notification shows that [`ElectrsD`] indexed `exp_height`.
+/// Check whether an Electrum header notification shows that [`RomanzElectrsD`] indexed
+/// `exp_height`.
 ///
 /// If the notification is above `exp_height`, get the header at `exp_height`.
 /// Then, compare its hash with `exp_hash`.

@@ -19,20 +19,14 @@ btcd = []
 florestad = ["dep:electrum-client", "dep:miniscript"]
 utreexod = []
 # Indexers
-electrs = ["dep:electrum-client"]
 blockstream_electrs = ["dep:electrum-client", "dep:esplora-client"]
 electrumx = ["dep:electrum-client"]
 mempool_electrs = ["dep:electrum-client", "dep:esplora-client"]
+romanz_electrs = ["dep:electrum-client"]
 
 [[example]]
 name = "cross-compile-blockstream-electrs"
 path = "contrib/bins/compile_blockstream_electrs/build.rs"
-test = false
-bench = false
-
-[[example]]
-name = "cross-compile-electrs"
-path = "contrib/bins/compile_electrs/build.rs"
 test = false
 bench = false
 
@@ -45,6 +39,12 @@ bench = false
 [[example]]
 name = "cross-compile-mempool-electrs"
 path = "contrib/bins/compile_mempool_electrs/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "cross-compile-romanz-electrs"
+path = "contrib/bins/compile_romanz_electrs/build.rs"
 test = false
 bench = false
 
@@ -109,10 +109,10 @@ exclude_features = [
     "btcd",
     "florestad",
     "utreexod",
-    "electrs",
     "blockstream_electrs",
     "electrumx",
-    "mempool_electrs"
+    "mempool_electrs",
+    "romanz_electrs"
 ]
 
 [lints.rust]

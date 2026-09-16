@@ -11,10 +11,10 @@
     feature = "btcd",
     feature = "florestad",
     feature = "utreexod",
-    feature = "electrs",
     feature = "blockstream_electrs",
     feature = "electrumx",
-    feature = "mempool_electrs"
+    feature = "mempool_electrs",
+    feature = "romanz_electrs"
 ))]
 /// Shared binary download and extraction helpers.
 mod binary {
@@ -487,10 +487,10 @@ fn main() {
 
     // Emit `halfin_indexer` if any `Indexer` feature is enabled
     let indexer_enabled = cfg!(any(
-        feature = "electrs",
         feature = "blockstream_electrs",
         feature = "electrumx",
-        feature = "mempool_electrs"
+        feature = "mempool_electrs",
+        feature = "romanz_electrs"
     ));
     emit_cfg_alias("halfin_indexer", indexer_enabled);
 
@@ -508,8 +508,6 @@ fn main() {
         #[cfg(feature = "utreexod")]
         utreexod::download();
 
-        #[cfg(feature = "electrs")]
-        electrs::download();
         #[cfg(feature = "blockstream_electrs")]
         blockstream_electrs::download();
 
@@ -518,6 +516,9 @@ fn main() {
 
         #[cfg(feature = "mempool_electrs")]
         mempool_electrs::download();
+
+        #[cfg(feature = "romanz_electrs")]
+        romanz_electrs::download();
     }
 }
 
@@ -894,15 +895,15 @@ mod utreexod {
 }
 
 /// Read and verify the `romanz/electrs` binary for the enabled version feature.
-#[cfg(feature = "electrs")]
-mod electrs {
+#[cfg(feature = "romanz_electrs")]
+mod romanz_electrs {
     use super::binary::Binary;
     use super::binary::PathBuf;
 
-    include!("src/indexer/electrsd/versions.rs");
+    include!("src/indexer/romanz_electrsd/versions.rs");
 
     /// Compile-time environment variable containing the extracted `romanz/electrs` path.
-    const HALFIN_ELECTRS_PATH: &str = "HALFIN_ELECTRS_PATH";
+    const HALFIN_ROMANZ_ELECTRS_PATH: &str = "HALFIN_ROMANZ_ELECTRS_PATH";
 
     /// Return the platform-specific archive file name for this `romanz/electrs` version.
     ///
@@ -938,15 +939,15 @@ mod electrs {
         Binary {
             name: "electrs",
             implementation: "romanz/electrs",
-            version: ELECTRS_VERSION,
-            env_var: HALFIN_ELECTRS_PATH,
+            version: ROMANZ_ELECTRS_VERSION,
+            env_var: HALFIN_ROMANZ_ELECTRS_PATH,
             destination_dir_prefix: "electrs",
             checksum_file: PathBuf::from(format!(
-                "sha256/indexer/electrs/electrs-{}-SHA256SUMS",
-                ELECTRS_VERSION
+                "sha256/indexer/romanz_electrs/electrs-{}-SHA256SUMS",
+                ROMANZ_ELECTRS_VERSION
             )),
-            remote_dir: "electrs",
-            remote_version_dir: PathBuf::from(format!("electrs-{}", ELECTRS_VERSION)),
+            remote_dir: "romanz_electrs",
+            remote_version_dir: PathBuf::from(format!("electrs-{}", ROMANZ_ELECTRS_VERSION)),
             archive_filename: PathBuf::from(get_download_filename()),
             #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             codesign_on_macos_aarch64: false,
