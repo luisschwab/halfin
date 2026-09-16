@@ -17,6 +17,7 @@
 //! |         |                         |           |                       |                        |
 //! | Indexer | [`Blockstream/electrs`] | `4b1a018` | `blockstream_electrs` | Unsupported on Windows |
 //! | Indexer | [`ElectrumX`]           | `v1.20.0` | `electrumx`           | Needs Python 3.10      |
+//! | Indexer | [`Frigate`]             | `v1.5.3`  | `frigate`             | Unsupported on Windows |
 //! | Indexer | [`mempool/electrs`]     | `v3.3.0`  | `mempool_electrs`     | Unsupported on Windows |
 //! | Indexer | [`romanz/electrs`]      | `v0.12.0` | `romanz_electrs`      |                        |
 //!
@@ -28,6 +29,7 @@
 //! [`mempool/electrs`]: <https://github.com/mempool/electrs>
 //! [`romanz/electrs`]: <https://github.com/romanz/electrs>
 //! [`ElectrumX`]: <https://github.com/spesmilo/electrumx>
+//! [`Frigate`]: <https://github.com/sparrowwallet/frigate>
 //! [`electrumx`]: <https://github.com/spesmilo/electrumx>
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node

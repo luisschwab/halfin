@@ -13,6 +13,7 @@
     feature = "utreexod",
     feature = "blockstream_electrs",
     feature = "electrumx",
+    feature = "frigate",
     feature = "mempool_electrs",
     feature = "romanz_electrs"
 ))]
@@ -41,7 +42,7 @@ mod binary {
     use tar::Archive;
 
     /// Download timeout for each request, in seconds.
-    const BIN_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
+    const BIN_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(180);
 
     /// Base URLs for binary archive downloads.
     const BIN_DOWNLOAD_MIRRORS: &[&str] =
@@ -202,6 +203,45 @@ mod binary {
 
             let archive_bytes = self.download_archive();
             self.install_archive(&archive_bytes, &download_directory, expected_hash);
+        }
+
+        /// Install an archive containing an entire application and its runtime.
+        pub(crate) fn download_bundle_and_install(self) {
+            println!("cargo:rerun-if-changed={}", self.checksum_file.display());
+            let root = download_directory();
+            fs::create_dir_all(&root).unwrap();
+            let launcher = self.destination_path(&root);
+            println!("cargo:rustc-env={}={}", self.env_var, launcher.display());
+            let hash = self.expected_sha256();
+            if launcher.is_file() && self.cached_archive_hash_matches(&root, hash) {
+                println!(
+                    "cargo:warning=Found cached `{}` @ v{} at `{}`, skipping download...",
+                    self.implementation,
+                    self.version,
+                    launcher.display()
+                );
+                return;
+            }
+            let bytes = self.download_archive();
+            self.verify_archive_hash(&bytes, hash);
+            let destination = self.destination_directory(&root);
+            if destination.exists() {
+                fs::remove_dir_all(&destination).unwrap();
+            }
+            fs::create_dir_all(&destination).unwrap();
+            let mut archive = Archive::new(GzDecoder::new(bytes.as_slice()));
+            for entry in archive.entries().unwrap() {
+                let mut entry = entry.unwrap();
+                entry
+                    .unpack_in(&destination)
+                    .expect("Failed to extract Frigate bundle");
+            }
+            assert!(
+                launcher.is_file(),
+                "Frigate launcher missing at {}",
+                launcher.display()
+            );
+            fs::write(self.archive_hash_marker_path(&root), format!("{hash}\n")).unwrap();
         }
 
         /// Return the directory that stores this binary and its cache metadata.
@@ -489,6 +529,7 @@ fn main() {
     let indexer_enabled = cfg!(any(
         feature = "blockstream_electrs",
         feature = "electrumx",
+        feature = "frigate",
         feature = "mempool_electrs",
         feature = "romanz_electrs"
     ));
@@ -513,6 +554,9 @@ fn main() {
 
         #[cfg(feature = "electrumx")]
         electrumx::download();
+
+        #[cfg(feature = "frigate")]
+        frigate::download();
 
         #[cfg(feature = "mempool_electrs")]
         mempool_electrs::download();
@@ -588,6 +632,51 @@ mod blockstream_electrs {
     fn target_is_windows() -> bool {
         env::var("CARGO_CFG_TARGET_OS").expect("Cargo did not set CARGO_CFG_TARGET_OS for build.rs")
             == "windows"
+    }
+}
+
+/// Select the Frigate bundle for the enabled feature.
+#[cfg(feature = "frigate")]
+mod frigate {
+    use std::env;
+
+    use super::binary::Binary;
+    use super::binary::PathBuf;
+
+    include!("src/indexer/frigated/versions.rs");
+
+    /// Download and unpack the application image for the requested target.
+    pub(crate) fn download() {
+        let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+        let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+        let (archive, launcher) = match (os.as_str(), arch.as_str()) {
+            ("macos", "aarch64") => (
+                "frigate-darwin-arm64.tar.gz",
+                "Frigate.app/Contents/MacOS/Frigate",
+            ),
+            ("macos", "x86_64") => (
+                "frigate-darwin-amd64.tar.gz",
+                "Frigate.app/Contents/MacOS/Frigate",
+            ),
+            ("linux", "aarch64") => ("frigate-linux-arm64.tar.gz", "frigate/bin/frigate"),
+            ("linux", "x86_64") => ("frigate-linux-amd64.tar.gz", "frigate/bin/frigate"),
+            ("windows", _) => return,
+            _ => panic!("No Frigate bundle for {os}+{arch}"),
+        };
+        Binary {
+            name: launcher,
+            implementation: "Frigate",
+            version: FRIGATE_VERSION,
+            env_var: "HALFIN_FRIGATE_PATH",
+            destination_dir_prefix: "frigate",
+            checksum_file: PathBuf::from("sha256/indexer/frigate/frigate-1.5.3-SHA256SUMS"),
+            remote_dir: "indexer/frigate",
+            remote_version_dir: PathBuf::from("frigate-1.5.3"),
+            archive_filename: PathBuf::from(archive),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            codesign_on_macos_aarch64: false,
+        }
+        .download_bundle_and_install();
     }
 }
 

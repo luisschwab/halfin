@@ -71,6 +71,7 @@ jobs:
 
                         'src/indexer/blockstream_electrsd/': 'M-blockstream-electrsd',
                         'src/indexer/electrumxd/': 'M-electrumxd',
+                        'src/indexer/frigated/': 'M-frigated',
                         'src/indexer/mempool_electrsd': 'M-mempool-electrsd',
                         'src/indexer/romanz_electrsd/': 'M-romanz-electrsd',
                       };

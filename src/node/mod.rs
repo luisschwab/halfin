@@ -63,6 +63,7 @@ pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
     feature = "utreexod",
     feature = "blockstream_electrs",
     feature = "electrumx",
+    feature = "frigate",
     feature = "mempool_electrs",
     feature = "romanz_electrs"
 ))]

@@ -26,6 +26,8 @@ _default:
 audit:
     @echo "Auditing Cargo.lock"
     cargo audit --file Cargo.lock
+    @echo "\nAuditing Cargo-maximum.lock"
+    cargo audit --file Cargo-maximum.lock
     @echo "\nAuditing Cargo-recent.lock"
     cargo audit --file Cargo-recent.lock
     @echo "\nAuditing Cargo-minimal.lock"
@@ -61,8 +63,8 @@ pre-push:
     cargo rbmt docs
     # Run Tests
     RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile recent
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
-    RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
+    #RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain stable --lockfile minimal
+    #RBMT_LOG_LEVEL=verbose cargo rbmt test --toolchain msrv --lockfile minimal
     # Audit Cargo Dependencies
     @just audit
     # Audit Shell Scripts

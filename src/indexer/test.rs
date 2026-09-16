@@ -72,6 +72,20 @@ use crate::indexer::electrumxd::ElectrumxD;
 use crate::indexer::electrumxd::ElectrumxDConf;
 #[cfg(all(
     feature = "bitcoind",
+    feature = "frigate",
+    feature = "romanz_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::frigated::FrigateD;
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "frigate",
+    feature = "romanz_electrs",
+    not(target_os = "windows")
+))]
+use crate::indexer::frigated::FrigateDConf;
+#[cfg(all(
+    feature = "bitcoind",
     feature = "mempool_electrs",
     not(target_os = "windows")
 ))]
@@ -666,6 +680,24 @@ fn romanz_electrsd_implements_indexer() {
         &script_pubkey,
         txid,
     );
+}
+
+/// Verify Frigate's Electrum interface over a separate backend indexer.
+#[cfg(all(
+    feature = "bitcoind",
+    feature = "frigate",
+    feature = "romanz_electrs",
+    not(target_os = "windows")
+))]
+#[test]
+fn frigated_implements_indexer() {
+    let bitcoind = BitcoinD::new().unwrap();
+    let (script_pubkey, txid) = build_transaction(&bitcoind);
+    let backend = RomanzElectrsD::new(&bitcoind).unwrap();
+    backend.wait_until_caught_up(&bitcoind, None).unwrap();
+    let config = FrigateDConf::default();
+    let mut frigate = FrigateD::new_with_conf(&bitcoind, &backend, &config).unwrap();
+    assert_indexer_interface(&mut frigate, &config, &bitcoind, &script_pubkey, txid);
 }
 
 /// Verify the [`Indexer`] interface and Esplora endpoint for [`BlockstreamElectrsD`].

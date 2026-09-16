@@ -23,7 +23,7 @@
 > A runner for bitcoin nodes and indexers 🏃‍♂️
 
 This crate makes it simple to run [`bitcoind`], [`btcd`], [`florestad`], [`utreexod`],
-[`Blockstream/electrs`], [`electrumx`], [`mempool/electrs`], and [`romanz/electrs`]
+[`Blockstream/electrs`], [`electrumx`], [`Frigate`], [`mempool/electrs`], and [`romanz/electrs`]
 instances from Rust code, useful in integration test contexts.
 
 [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
@@ -32,6 +32,7 @@ instances from Rust code, useful in integration test contexts.
 [`utreexod`]: <https://github.com/utreexo/utreexod>
 [`Blockstream/electrs`]: <https://github.com/Blockstream/electrs>
 [`electrumx`]: <https://github.com/spesmilo/electrumx>
+[`Frigate`]: <https://github.com/sparrowwallet/frigate>
 [`mempool/electrs`]: <https://github.com/mempool/electrs>
 [`romanz/electrs`]: <https://github.com/romanz/electrs>
 
@@ -46,6 +47,7 @@ instances from Rust code, useful in integration test contexts.
 |         |                         |           |                       |                        |
 | Indexer | [`Blockstream/electrs`] | `4b1a018` | `blockstream_electrs` | Unsupported on Windows |
 | Indexer | [`ElectrumX`]           | `v1.20.0` | `electrumx`           | Needs Python 3.10      |
+| Indexer | [`Frigate`]             | `v1.5.3`  | `frigate`             | Unsupported on Windows |
 | Indexer | [`mempool/electrs`]     | `v3.3.0`  | `mempool_electrs`     | Unsupported on Windows |
 | Indexer | [`romanz/electrs`]      | `v0.12.0` | `romanz_electrs`      |                        |
 
@@ -117,6 +119,22 @@ bitcoind.generate(100).unwrap();
 let indexer = BlockstreamElectrsD::new(&bitcoind).unwrap();
 indexer.wait_until_caught_up(&bitcoind, None).unwrap();
 assert_eq!(indexer.get_esplora_client().get_height().unwrap(), 100);
+```
+
+### FrigateD
+
+```rust
+use halfin::indexer::frigated::FrigateD;
+use halfin::indexer::romanz_electrsd::RomanzElectrsD;
+use halfin::node::bitcoind::BitcoinD;
+
+let bitcoind = BitcoinD::new().unwrap();
+bitcoind.generate(100).unwrap();
+let backend = RomanzElectrsD::new(&bitcoind).unwrap();
+backend.wait_until_caught_up(&bitcoind, None).unwrap();
+
+let frigate = FrigateD::new(&bitcoind, &backend).unwrap();
+frigate.wait_until_caught_up(&bitcoind, None).unwrap();
 ```
 
 ### UtreexoD
