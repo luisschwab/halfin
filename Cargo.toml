@@ -1,6 +1,6 @@
 [package]
 name = "halfin"
-version = "0.6.0"
+version = "0.7.0"
 description = "A runner for bitcoin nodes and indexers 🏃‍♂️"
 authors = ["Luis Schwab <dev@luisschwab.net"]
 documentation = "https://docs.rs/halfin"
