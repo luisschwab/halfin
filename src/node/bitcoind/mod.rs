@@ -5,29 +5,32 @@
 //! [`BitcoinD`] starts `bitcoind` on the regtest network.
 //! It gives access to the JSON-RPC client, process data, and test operations.
 //!
-//! ## Start a [`Node`]
+//! # Start a [`BitcoinD`] process
 //!
-//! ```rust
+//! ```rust,no_run
 //! use halfin::node::bitcoind::BitcoinD;
+//! use halfin::node::bitcoind::BitcoinDConf;
 //!
-//! // Start a node with the default configuration.
-//! let node = BitcoinD::new().unwrap();
+//! // Start with the default configuration.
+//! let default_node = BitcoinD::new().unwrap();
 //!
-//! // Mine blocks.
-//! let _hashes = node.generate(10).unwrap();
-//! assert_eq!(node.get_chain_tip().unwrap(), 10);
+//! // Start with a custom configuration.
+//! let conf = BitcoinDConf::default();
+//! let custom_node = BitcoinD::new_with_conf(&conf).unwrap();
+//!
+//! // Use the node interface.
+//! let height = default_node.get_chain_tip().unwrap();
+//! let rpc_socket = custom_node.get_rpc_socket();
 //! ```
-//!
-//! ## Select a data directory
-//!
-//! By default, each [`BitcoinD`] instance uses a temporary directory.
-//! [`Drop`] removes this directory.
-//! Set [`BitcoinDConf::staticdir`] to keep the data after the process stops.
 //!
 //! [`Node`]: crate::node::Node
 
 /// Version-specific RPC client aliases for the bundled `bitcoind`.
 mod client_versions;
+
+#[cfg(all(test, halfin_node))]
+mod test;
+
 /// Bundled `bitcoind` version metadata.
 mod versions;
 
@@ -51,6 +54,7 @@ use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v30::AddNodeCommand;
 use corepc_client::client_sync::v30::Client;
+use serde_json::Value;
 use tracing::debug;
 
 use crate::CONNECTION_INTERVAL;
@@ -80,12 +84,12 @@ const BITCOIND_WALLET: &str = "wallet";
 
 /// Return the path to the downloaded `bitcoind` binary.
 ///
-/// At compile time, `build.rs` downloads and extracts the binary.
+/// `build.rs` downloads and extracts the executable during compilation.
 /// It stores the binary path in `HALFIN_BITCOIND_PATH`.
 ///
 /// # Errors
 ///
-/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
+/// Returns [`Error::BinaryNotFound`] if the executable does not exist.
 pub fn get_bitcoind_path() -> Result<PathBuf, Error> {
     let bin_name = BitcoinD::get_bin_name().to_string();
     #[allow(unused_mut)]
@@ -114,8 +118,8 @@ pub struct BitcoinDArgs {
 ///
 /// # Directory precedence
 ///
-/// Set only `tmpdir` or `staticdir`.
-/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
+/// Set `tmpdir` or `staticdir`. Do not set both.
+/// If you set both, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
@@ -138,20 +142,20 @@ pub struct BitcoinDConf {
     /// [`NodeError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root for the new temporary directory of each instance.
-    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
-    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
+    /// Parent directory for each new temporary data directory.
+    /// If this field is `None`, the wrapper uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is not set, the wrapper uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory.
-    /// The function creates the directory if necessary.
+    /// Data directory that remains after the process stops.
+    /// The wrapper creates the directory if it does not exist.
     /// [`Drop`] stops the process and keeps the files.
     pub staticdir: Option<PathBuf>,
 
     /// Maximum number of attempts to start `bitcoind`.
     ///
-    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
-    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
+    /// Each attempt selects new ports. A new attempt can resolve a port
+    /// conflict. The default is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -206,7 +210,7 @@ pub struct BitcoinD {
     pub client: Client,
     /// Data directory of the [`Node`] and its cleanup state.
     working_directory: DataDir,
-    /// Complete configuration used to start the [`Node`].
+    /// Settings that started the [`Node`].
     config: BitcoinDConf,
     /// Path to the cookie file used for RPC authentication.
     cookie_file: PathBuf,
@@ -246,7 +250,7 @@ impl Node for BitcoinD {
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
-    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
+    fn call(&self, method: &str, args: &[Value]) -> Result<Value, Error> {
         Ok(self.client.call(method, args).map_err(NodeError::JsonRpc)?)
     }
 }
@@ -255,7 +259,8 @@ impl BitcoinD {
     /// Start [`BitcoinD`] with the binary from [`get_bitcoind_path`].
     /// Use the default [`BitcoinDConf`].
     ///
-    /// If the binary is not in `target/bin/`, `build.rs` downloads it from `bitcoincore.org`.
+    /// During compilation, `build.rs` downloads the archive from a configured mirror.
+    /// It checks the archive against a committed checksum.
     ///
     /// # Errors
     ///
@@ -267,7 +272,8 @@ impl BitcoinD {
     /// Start [`BitcoinD`] with the binary from [`get_bitcoind_path`].
     /// Use the specified [`BitcoinDConf`].
     ///
-    /// If the binary is not in `target/bin/`, `build.rs` downloads it from `bitcoincore.org`.
+    /// During compilation, `build.rs` downloads the archive from a configured mirror.
+    /// It checks the archive against a committed checksum.
     ///
     /// # Errors
     ///
@@ -453,8 +459,8 @@ impl BitcoinD {
 
     /// Send `stop` via RPC and wait for the process to exit.
     ///
-    /// [`Drop`] stops the process without a call to this method.
-    /// Call this method to get the exit status or confirm that the process has stopped.
+    /// The wrapper stops the process when the instance drops.
+    /// Call this method to get the exit status.
     ///
     /// # Errors
     ///
@@ -492,7 +498,7 @@ impl BitcoinD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this [`Node`].
+    /// Return the settings that started this [`Node`].
     pub fn get_config(&self) -> &BitcoinDConf {
         &self.config
     }
@@ -910,6 +916,3 @@ impl Drop for BitcoinD {
         let _ = self.process.wait();
     }
 }
-
-#[cfg(all(test, halfin_node))]
-mod test;

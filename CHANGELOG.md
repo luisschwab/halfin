@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Add `LibbitcoinD` at commit `3620f1d`
 * Add `FrigateD` at v1.5.3
 * Rename `ElectrsD`/`electrs` to `RomanzElectrsD`/`romanz_electrs`
 * Add `BlockstreamElectrsD` at commit `4b1a018`

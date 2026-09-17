@@ -3,32 +3,24 @@
 //! Start and control a `romanz/electrs` [`Indexer`] process.
 //!
 //! [`RomanzElectrsD`] starts `romanz/electrs` and connects it to a local [`Node`].
-//! It gives an Electrum client and wait operations for integration tests.
+//! It provides an Electrum client and wait operations for tests.
 //!
-//! ## Start an [`Indexer`]
+//! # Start a [`RomanzElectrsD`] process
 //!
-//! ```rust
+//! ```rust,no_run
 //! use halfin::indexer::romanz_electrsd::RomanzElectrsD;
+//! use halfin::indexer::romanz_electrsd::RomanzElectrsDConf;
 //! use halfin::node::Node;
 //!
-//! fn start_electrs(node: &impl Node) {
-//!     node.generate(10).unwrap();
-//!     let electrs = RomanzElectrsD::new(node).unwrap();
-//!     electrs.wait_until_caught_up(node, None).unwrap();
+//! fn start_indexers(node: &impl Node) {
+//!     // Start with the default configuration.
+//!     let default_indexer = RomanzElectrsD::new(node).unwrap();
+//!
+//!     // Start with a custom configuration.
+//!     let conf = RomanzElectrsDConf::default();
+//!     let custom_indexer = RomanzElectrsD::new_with_conf(node, &conf).unwrap();
 //! }
-//!
-//! # #[cfg(feature = "bitcoind")]
-//! # {
-//! # let node = halfin::node::bitcoind::BitcoinD::new().unwrap();
-//! # start_electrs(&node);
-//! # }
 //! ```
-//!
-//! ## Select a data directory
-//!
-//! By default, each [`RomanzElectrsD`] instance uses a temporary directory.
-//! [`Drop`] removes this directory.
-//! Set [`RomanzElectrsDConf::staticdir`] to keep the data after the process stops.
 //!
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
@@ -40,6 +32,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::thread::sleep;
 use std::time::Duration;
@@ -78,10 +71,13 @@ use crate::node::NodeArgs;
 use crate::node::PruneMode;
 use crate::pipe_to_tracing;
 
+#[cfg(all(test, halfin_indexer))]
+mod test;
+
 /// Bundled `romanz/electrs` version metadata.
 mod versions;
 
-/// Wrap an Electrum client failure with [`Indexer`] context.
+/// Add [`Indexer`] context to an Electrum client error.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     IndexerError::UnresponsiveIndexer {
         indexer: RomanzElectrsD::get_name(),
@@ -96,7 +92,7 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
 ///
 /// # Errors
 ///
-/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
+/// Returns [`Error::BinaryNotFound`] if the executable does not exist.
 pub fn get_romanz_electrs_path() -> Result<PathBuf, Error> {
     #[allow(unused_mut)]
     let mut bin_path = PathBuf::from(option_env!("HALFIN_ROMANZ_ELECTRS_PATH").unwrap_or(""));
@@ -120,8 +116,8 @@ pub fn get_romanz_electrs_path() -> Result<PathBuf, Error> {
 ///
 /// # Directory precedence
 ///
-/// Set only `tmpdir` or `staticdir`.
-/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
+/// Set `tmpdir` or `staticdir`. Do not set both.
+/// If you set both, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
@@ -134,23 +130,23 @@ pub struct RomanzElectrsDConf {
     /// Extra CLI arguments sent unchanged to the `romanz/electrs` process.
     ///
     /// Do not use a raw argument for an option that `halfin` controls.
-    /// A duplicate option returns [`IndexerError::ConflictingArgument`].
+    /// A duplicate option causes [`IndexerError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root for the new temporary directory of each instance.
-    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
-    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
+    /// Parent directory for each new temporary data directory.
+    /// If this field is `None`, the wrapper uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is not set, the wrapper uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory.
-    /// The function creates the directory if necessary.
-    /// [`Drop`] stops the process but keeps the files.
+    /// Data directory that remains after the process stops.
+    /// The wrapper creates the directory if it does not exist.
+    /// The wrapper stops the process but keeps the files when the instance drops.
     pub staticdir: Option<PathBuf>,
 
     /// Maximum number of attempts to start `romanz/electrs`.
     ///
-    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
-    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
+    /// Each attempt selects new ports. A new attempt can resolve a port
+    /// conflict. The default is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -184,13 +180,13 @@ pub struct RomanzElectrsD {
     /// Plaintext Electrum client connected to `romanz/electrs`.
     pub client: RawClient<ElectrumPlaintextStream>,
 
-    /// Data directory of the [`Indexer`] and its cleanup state.
+    /// Data directory of the [`Indexer`] and its deletion policy.
     working_directory: DataDir,
 
-    /// Complete configuration used to start the [`Indexer`].
+    /// Settings that started the [`Indexer`].
     config: RomanzElectrsDConf,
 
-    /// Address of the Electrum RPC server.
+    /// Socket of the Electrum server.
     electrum_socket: SocketAddr,
 
     /// Address of the monitoring server.
@@ -207,7 +203,7 @@ impl Indexer for RomanzElectrsD {
 
     fn trigger(&self) -> Result<(), Error> { self.trigger() }
 
-    fn stop(&mut self) -> Result<std::process::ExitStatus, Error> { self.stop() }
+    fn stop(&mut self) -> Result<ExitStatus, Error> { self.stop() }
 
     fn get_pid(&self) -> u32 { self.get_pid() }
 
@@ -473,13 +469,13 @@ impl RomanzElectrsD {
 
     /// Terminate the `romanz/electrs` process and wait for it to exit.
     ///
-    /// [`Drop`] stops the process without a call to this method.
-    /// Call this method to get the exit status or confirm that the process has stopped.
+    /// The wrapper stops the process when the instance drops.
+    /// Call this method to get the exit status.
     ///
     /// # Errors
     ///
     /// Returns an error if the function cannot wait for the child process.
-    pub fn stop(&mut self) -> Result<std::process::ExitStatus, Error> {
+    pub fn stop(&mut self) -> Result<ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         let _ = self.process.kill();
         self.process.wait().map_err(Error::Io)
@@ -507,7 +503,7 @@ impl RomanzElectrsD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this [`Indexer`].
+    /// Return the settings that started this [`Indexer`].
     pub fn get_config(&self) -> &RomanzElectrsDConf {
         &self.config
     }
@@ -523,7 +519,7 @@ impl RomanzElectrsD {
         &self.client
     }
 
-    /// Return the Electrum RPC [`SocketAddr`] of the [`Indexer`].
+    /// Return the Electrum socket of the [`Indexer`].
     pub fn get_electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
@@ -534,7 +530,7 @@ impl RomanzElectrsD {
         self.electrum_socket
     }
 
-    /// Return the Electrum RPC URL for the [`Indexer`].
+    /// Return the Electrum URL of the [`Indexer`].
     pub fn get_electrum_url(&self) -> String {
         let electrum_url = self.electrum_socket.to_string();
 
@@ -561,7 +557,7 @@ impl RomanzElectrsD {
     /// Poll until the Electrum header tip matches the tip of a [`Node`].
     ///
     /// The function verifies the tip height and block hash.
-    /// Specify `None` to use [`INDEXING_TIMEOUT`].
+    /// Set `timeout` to `None` to use [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -588,7 +584,7 @@ impl RomanzElectrsD {
     /// Poll until the Electrum header tip of [`RomanzElectrsD`] reaches `exp_height`.
     ///
     /// The function compares the block hash at `exp_height` with `exp_hash`.
-    /// Specify `None` to use [`INDEXING_TIMEOUT`].
+    /// Set `timeout` to `None` to use [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -612,7 +608,7 @@ impl RomanzElectrsD {
 
     /// Poll until the history of `spk` contains `txid` as an unconfirmed transaction.
     ///
-    /// If `timeout` is `None`, the function uses [`INDEXING_TIMEOUT`].
+    /// If `timeout` is `None`, the wrapper uses [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -922,6 +918,3 @@ fn is_incomplete_read(err: &ElectrumError) -> bool {
             )
     )
 }
-
-#[cfg(all(test, halfin_indexer))]
-mod test;

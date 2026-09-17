@@ -1,5 +1,4 @@
-name: Cross-Testing
-
+name: Cross
 on:
     push:
         branches: [ master ]

@@ -5,7 +5,7 @@
 //! Run this Cargo example from the repository root:
 //!
 //! ```text
-//! cargo run --example cross-compile-electrumx
+//! cargo run --example compile-electrumx
 //! ```
 //!
 //! The program gets the specified upstream release and builds its Python wheel.
@@ -266,7 +266,7 @@ fn parse_args() -> Result<bool, Box<dyn std::error::Error>> {
             "--force" => force = true,
             "-h" | "--help" => {
                 println!(
-                    "usage: cargo run --example cross-compile-electrumx -- [--force]\n\n  --force    rebuild and repackage targets even when artifacts already exist"
+                    "usage: cargo run --example compile-electrumx -- [--force]\n\n  --force    rebuild and repackage targets even when artifacts already exist"
                 );
                 std::process::exit(0);
             }

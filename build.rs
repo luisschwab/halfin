@@ -2,7 +2,7 @@
 
 //! Get the program files for the enabled backends.
 //!
-//! This build script downloads the required archives and verifies their checksums.
+//! This build script obtains required archives and verifies their checksums.
 //! It extracts the required program files and caches them in the build directory.
 //! It gives each file path to Cargo in a compile-time environment variable.
 
@@ -10,6 +10,7 @@
     feature = "bitcoind",
     feature = "btcd",
     feature = "florestad",
+    feature = "libbitcoin",
     feature = "utreexod",
     feature = "blockstream_electrs",
     feature = "electrumx",
@@ -206,6 +207,7 @@ mod binary {
         }
 
         /// Install an archive containing an entire application and its runtime.
+        #[cfg(feature = "frigate")]
         pub(crate) fn download_bundle_and_install(self) {
             println!("cargo:rerun-if-changed={}", self.checksum_file.display());
             let root = download_directory();
@@ -521,6 +523,7 @@ fn main() {
         feature = "bitcoind",
         feature = "btcd",
         feature = "florestad",
+        feature = "libbitcoin",
         feature = "utreexod"
     ));
     emit_cfg_alias("halfin_node", node_enabled);
@@ -530,6 +533,7 @@ fn main() {
         feature = "blockstream_electrs",
         feature = "electrumx",
         feature = "frigate",
+        feature = "libbitcoin",
         feature = "mempool_electrs",
         feature = "romanz_electrs"
     ));
@@ -545,6 +549,9 @@ fn main() {
 
         #[cfg(feature = "florestad")]
         florestad::download();
+
+        #[cfg(feature = "libbitcoin")]
+        libbitcoin::download();
 
         #[cfg(feature = "utreexod")]
         utreexod::download();
@@ -563,6 +570,56 @@ fn main() {
 
         #[cfg(feature = "romanz_electrs")]
         romanz_electrs::download();
+    }
+}
+
+/// Select the libbitcoin-server binary for the enabled version feature.
+#[cfg(feature = "libbitcoin")]
+mod libbitcoin {
+    use std::env;
+
+    use super::binary::Binary;
+    use super::binary::PathBuf;
+
+    include!("src/node/libbitcoind/versions.rs");
+
+    /// Return the archive for the Cargo target.
+    fn archive_filename() -> &'static str {
+        let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+        let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+        match (os.as_str(), arch.as_str()) {
+            ("macos", "aarch64") => "libbitcoin-darwin-arm64.tar.gz",
+            ("macos", "x86_64") => "libbitcoin-darwin-amd64.tar.gz",
+            ("linux", "aarch64") => "libbitcoin-linux-arm64.tar.gz",
+            ("linux", "x86_64") => "libbitcoin-linux-amd64.tar.gz",
+            _ => panic!("unsupported libbitcoin target: {os}/{arch}"),
+        }
+    }
+
+    /// Download, verify, and extract the archive for this target.
+    pub(crate) fn download() {
+        if env::var("CARGO_CFG_TARGET_OS").expect("Cargo did not set CARGO_CFG_TARGET_OS")
+            == "windows"
+        {
+            return;
+        }
+
+        Binary {
+            name: "bs",
+            implementation: "libbitcoin-server",
+            version: LIBBITCOIN_VERSION,
+            env_var: "HALFIN_LIBBITCOIN_PATH",
+            destination_dir_prefix: "libbitcoin",
+            checksum_file: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("sha256/node/libbitcoin")
+                .join(format!("libbitcoin-{LIBBITCOIN_VERSION}-SHA256SUMS")),
+            remote_dir: "node/libbitcoin",
+            remote_version_dir: PathBuf::from(format!("libbitcoin-{LIBBITCOIN_VERSION}")),
+            archive_filename: PathBuf::from(archive_filename()),
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            codesign_on_macos_aarch64: true,
+        }
+        .download_and_install();
     }
 }
 

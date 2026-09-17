@@ -13,6 +13,7 @@ use std::thread::JoinHandle;
 
 use corepc_client::bitcoin::Network;
 use electrum_client::ElectrumApi;
+use serde_json::Value;
 
 use super::Client;
 use super::FlorestaD;
@@ -50,7 +51,7 @@ fn electrum_server_without_ping_response() -> (core::net::SocketAddr, JoinHandle
         BufReader::new(stream.try_clone().unwrap())
             .read_line(&mut request)
             .unwrap();
-        let version_request: serde_json::Value = serde_json::from_str(&request).unwrap();
+        let version_request: Value = serde_json::from_str(&request).unwrap();
         writeln!(
             stream,
             "{}",
@@ -141,8 +142,8 @@ fn florestad_rejects_malformed_rpc_results() {
         serde_json::json!("not-a-height"),
         serde_json::json!(0),
         serde_json::json!("not-a-block-hash"),
-        serde_json::Value::Null,
-        serde_json::Value::Null,
+        Value::Null,
+        Value::Null,
     ]);
     florestad.client = Client::new(&format!("http://{socket}"));
 

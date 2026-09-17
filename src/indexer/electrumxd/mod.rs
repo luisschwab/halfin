@@ -3,11 +3,24 @@
 //! Start and control an `ElectrumX` [`Indexer`] process.
 //!
 //! [`ElectrumxD`] starts `ElectrumX` and connects it to a local [`Node`].
-//! It gives Electrum and administration clients for integration tests.
+//! It provides Electrum and administration clients for integration tests.
 //!
-//! By default, each [`ElectrumxD`] instance uses a temporary directory.
-//! [`Drop`] removes this directory.
-//! Set [`ElectrumxDConf::staticdir`] to keep the data after the process stops.
+//! # Start a [`ElectrumxD`] process
+//!
+//! ```rust,no_run
+//! use halfin::indexer::electrumxd::ElectrumxD;
+//! use halfin::indexer::electrumxd::ElectrumxDConf;
+//! use halfin::node::Node;
+//!
+//! fn start_indexers(node: &impl Node) {
+//!     // Start with the default configuration.
+//!     let default_indexer = ElectrumxD::new(node).unwrap();
+//!
+//!     // Start with a custom configuration.
+//!     let conf = ElectrumxDConf::default();
+//!     let custom_indexer = ElectrumxD::new_with_conf(node, &conf).unwrap();
+//! }
+//! ```
 //!
 //! The bundled launcher requires Python 3.10.
 //! On Windows ARM64, it requires Python 3.11.
@@ -27,6 +40,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::thread::sleep;
 use std::time::Duration;
@@ -41,6 +55,7 @@ use electrum_client::Error as ElectrumError;
 use electrum_client::ScriptStatus;
 use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
+use serde_json::Value;
 use tracing::debug;
 
 use crate::DataDir;
@@ -63,10 +78,13 @@ use crate::node::Node;
 use crate::node::NodeArgs;
 use crate::pipe_to_tracing;
 
+#[cfg(all(test, halfin_indexer))]
+mod test;
+
 /// Bundled `ElectrumX` version metadata.
 mod versions;
 
-/// Wrap an Electrum client failure with [`Indexer`] context.
+/// Add [`Indexer`] context to an Electrum client error.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     IndexerError::UnresponsiveIndexer {
         indexer: ElectrumxD::get_name(),
@@ -81,7 +99,7 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
 ///
 /// # Errors
 ///
-/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
+/// Returns [`Error::BinaryNotFound`] if the executable does not exist.
 pub fn get_electrumx_path() -> Result<PathBuf, Error> {
     #[allow(unused_mut)]
     let mut bin_path = PathBuf::from(option_env!("HALFIN_ELECTRUMX_PATH").unwrap_or(""));
@@ -109,8 +127,8 @@ pub struct ElectrumxDArgs {
 ///
 /// # Directory precedence
 ///
-/// Set only `tmpdir` or `staticdir`.
-/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
+/// Set `tmpdir` or `staticdir`. Do not set both.
+/// If you set both, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
@@ -127,23 +145,23 @@ pub struct ElectrumxDConf {
     ///
     /// Do not use a raw argument for an option in [`electrumx_args`](Self::electrumx_args).
     /// Do not duplicate an option that `halfin` controls.
-    /// A duplicate option returns [`IndexerError::ConflictingArgument`].
+    /// A duplicate option causes [`IndexerError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root for the new temporary directory of each instance.
-    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
-    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
+    /// Parent directory for each new temporary data directory.
+    /// If this field is `None`, the wrapper uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is not set, the wrapper uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory.
-    /// The function creates the directory if necessary.
-    /// [`Drop`] stops the process but keeps the files.
+    /// Data directory that remains after the process stops.
+    /// The wrapper creates the directory if it does not exist.
+    /// The wrapper stops the process but keeps the files when the instance drops.
     pub staticdir: Option<PathBuf>,
 
     /// Maximum number of attempts to start `ElectrumX`.
     ///
-    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
-    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
+    /// Each attempt selects new ports. A new attempt can resolve a port
+    /// conflict. The default is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -170,13 +188,13 @@ pub struct ElectrumxD {
     /// Plaintext Electrum client connected to `ElectrumX`.
     pub client: RawClient<ElectrumPlaintextStream>,
 
-    /// Data directory of the [`Indexer`] and its cleanup state.
+    /// Data directory of the [`Indexer`] and its deletion policy.
     working_directory: DataDir,
 
-    /// Complete configuration used to start the [`Indexer`].
+    /// Settings that started the [`Indexer`].
     config: ElectrumxDConf,
 
-    /// Address of the Electrum RPC server.
+    /// Socket of the Electrum server.
     electrum_socket: SocketAddr,
 
     /// Address of the admin RPC server.
@@ -193,7 +211,7 @@ impl Indexer for ElectrumxD {
 
     fn trigger(&self) -> Result<(), Error> { self.trigger() }
 
-    fn stop(&mut self) -> Result<std::process::ExitStatus, Error> { self.stop() }
+    fn stop(&mut self) -> Result<ExitStatus, Error> { self.stop() }
 
     fn get_pid(&self) -> u32 { self.get_pid() }
 
@@ -436,19 +454,19 @@ impl ElectrumxD {
     /// Send a command to the local `ElectrumX` admin RPC socket.
     ///
     /// Return `false` if the server does not accept connections.
-    fn send_admin_rpc(&self, method: &str, params: &serde_json::Value) -> Result<bool, Error> {
+    fn send_admin_rpc(&self, method: &str, params: &Value) -> Result<bool, Error> {
         send_admin_rpc_to(self.rpc_socket, method, params)
     }
 
     /// Stop the `ElectrumX` process and wait for it to exit.
     ///
-    /// [`Drop`] stops the process without a call to this method.
-    /// Call this method to get the exit status or confirm that the process has stopped.
+    /// The wrapper stops the process when the instance drops.
+    /// Call this method to get the exit status.
     ///
     /// # Errors
     ///
     /// Returns an error if the function cannot wait for the child process.
-    pub fn stop(&mut self) -> Result<std::process::ExitStatus, Error> {
+    pub fn stop(&mut self) -> Result<ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         if !matches!(
             self.send_admin_rpc("stop", &serde_json::json!({})),
@@ -489,7 +507,7 @@ impl ElectrumxD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this [`Indexer`].
+    /// Return the settings that started this [`Indexer`].
     pub fn get_config(&self) -> &ElectrumxDConf {
         &self.config
     }
@@ -505,7 +523,7 @@ impl ElectrumxD {
         &self.client
     }
 
-    /// Return the Electrum RPC [`SocketAddr`] of the [`Indexer`].
+    /// Return the Electrum socket of the [`Indexer`].
     pub fn get_electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
@@ -516,7 +534,7 @@ impl ElectrumxD {
         self.electrum_socket
     }
 
-    /// Return the Electrum RPC URL for the [`Indexer`].
+    /// Return the Electrum URL of the [`Indexer`].
     pub fn get_electrum_url(&self) -> String {
         let electrum_url = self.electrum_socket.to_string();
 
@@ -588,7 +606,7 @@ impl ElectrumxD {
 
     /// Poll until the history of `spk` contains `txid` as an unconfirmed transaction.
     ///
-    /// If `timeout` is `None`, the function uses [`INDEXING_TIMEOUT`].
+    /// If `timeout` is `None`, the wrapper uses [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -878,11 +896,7 @@ impl ElectrumxD {
 }
 
 /// Send a command to an `ElectrumX` admin RPC socket.
-fn send_admin_rpc_to(
-    rpc_socket: SocketAddr,
-    method: &str,
-    params: &serde_json::Value,
-) -> Result<bool, Error> {
+fn send_admin_rpc_to(rpc_socket: SocketAddr, method: &str, params: &Value) -> Result<bool, Error> {
     let mut stream = match TcpStream::connect_timeout(&rpc_socket, Duration::from_secs(1)) {
         Ok(stream) => stream,
         Err(err) if err.kind() == ErrorKind::ConnectionRefused => return Ok(false),
@@ -908,7 +922,7 @@ fn send_admin_rpc_to(
     BufReader::new(stream)
         .read_line(&mut response)
         .map_err(Error::Io)?;
-    let response: serde_json::Value = serde_json::from_str(&response)
+    let response: Value = serde_json::from_str(&response)
         .map_err(|err| Error::UnexpectedResponse(err.to_string()))?;
 
     if let Some(error) = response.get("error").filter(|error| !error.is_null()) {
@@ -971,6 +985,3 @@ fn is_empty_subscription_read(err: &ElectrumError) -> bool {
 fn is_header_not_ready(err: &ElectrumError) -> bool {
     is_empty_subscription_read(err) || matches!(err, ElectrumError::Protocol(_))
 }
-
-#[cfg(all(test, halfin_indexer))]
-mod test;

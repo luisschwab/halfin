@@ -1,21 +1,18 @@
 # Blockstream/electrs binary builder
 
-This directory contains the local builder for the `Blockstream/electrs` binaries
-that `halfin` can download at build time. The builder pins
-`Blockstream/electrs` commit `4b1a018`.
+Use this Cargo example to build `Blockstream/electrs` archives for `halfin`.
+The builder uses commit `4b1a018`.
 
-The builder is a Cargo example so its scripting dependency, `xshell`, stays in
-`dev-dependencies`.
+The builder is a Cargo example. It uses `xshell` from `dev-dependencies`.
 
 ## Prerequisites
 
-Run this builder from an Apple Silicon macOS host. The script builds macOS
-artifacts with `cargo build` and Linux artifacts with `cross`. It does not
-provide a non-macOS path for producing the macOS release archives.
+Run this builder on an Apple Silicon Mac. The builder uses `cargo build` for macOS and `cross` for Linux. It needs macOS
+to build the macOS archives.
 
-The pinned checkout selects Rust 1.92.0 through `rust-toolchain.toml`.
-Install that toolchain and its target triples with rustup before building.
-The builder uses upstream `Cargo.lock` with `--locked`.
+The upstream `rust-toolchain.toml` selects Rust 1.92.0. Install this toolchain
+and its target triples before you build. The builder uses the upstream
+`Cargo.lock` file and the `--locked` option.
 
 Install the Rust build helpers:
 
@@ -23,23 +20,21 @@ Install the Rust build helpers:
 cargo install cross
 ```
 
-Start Docker or Podman before running the builder. `cross` uses a container
-engine for the Linux targets, and the script selects an engine only after
-`docker info` or `podman info` succeeds.
+Start Docker or Podman before you run the builder. `cross` uses a container
+for each Linux target. The builder checks the container engine before use.
 
 ## Usage
 
-From the repository root:
+From the repository root, run:
 
 ```sh
-just compile-bins cross-compile-blockstream-electrs
+just compile-bins compile-blockstream-electrs
 ```
 
-Existing archives are skipped on later runs. To rebuild and repackage every
-target:
+The builder uses existing archives on later runs. To rebuild all targets, run:
 
 ```sh
-cargo run --example cross-compile-blockstream-electrs -- --force
+cargo run --example compile-blockstream-electrs -- --force
 ```
 
 The script checks out and verifies the full upstream commit hash under:
@@ -54,7 +49,7 @@ It writes archives and checksums under:
 contrib/bins/compile_blockstream_electrs/dist/blockstream-electrs-4b1a0186b12ae3e0ef6697a547d53f3a93d9c66b/
 ```
 
-Generated files:
+Output files:
 
 ```text
 blockstream-electrs-darwin-amd64.tar.gz
@@ -64,29 +59,24 @@ blockstream-electrs-linux-arm64.tar.gz
 blockstream-electrs-4b1a0186b12ae3e0ef6697a547d53f3a93d9c66b-SHA256SUMS
 ```
 
-Upload those files to the `blockstream_electrs/blockstream-electrs-4b1a0186b12ae3e0ef6697a547d53f3a93d9c66b/`
-directory on each binary mirror. Copy the generated checksum file to
+Upload the archives to `indexer/blockstream_electrs/blockstream-electrs-4b1a0186b12ae3e0ef6697a547d53f3a93d9c66b/`
+on both mirrors. Copy the checksum file to
 `sha256/indexer/blockstream_electrs/` in this repository.
 
 ## Notes
 
-The builder follows the upstream README: it builds the `electrs` Cargo binary
-from the `Blockstream/electrs` repository. The archives use a
-`blockstream-electrs-*` prefix to keep them distinct from the upstream
-`romanz/electrs` artifacts, but the executable inside each archive remains
-`electrs`.
+The builder makes the `electrs` executable from the `Blockstream/electrs`
+repository. Each archive name starts with `blockstream-electrs-`. The
+executable in each archive has the name `electrs`.
 
-The pinned upstream release uses Unix-only networking APIs, so the builder does
-not produce native Windows binaries.
+This source uses Unix networking APIs. The builder does not make Windows archives.
 
-The Linux builds use `Cross.toml` from this directory. The image setup links its
-distro-provided libclang into `/opt/halfin/libclang`, and the builder passes that stable
-`LIBCLANG_PATH` plus `CLANG_PATH=/usr/bin/clang` because RocksDB's bindings require libclang.
+The Linux builds use `Cross.toml` from this directory. The container setup
+links libclang to `/opt/halfin/libclang`. The builder sets `LIBCLANG_PATH` to
+this path. It also sets `CLANG_PATH=/usr/bin/clang` for RocksDB bindings.
 
-The checkout and Cargo cache remain under `tmp/` so later runs can reuse
-compiled dependencies. The script checks out the pinned commit on each run but
-does not clean `target/`.
+The builder keeps source files and Cargo build files under `tmp/`. It checks
+the pinned commit on each run. It keeps compiled dependencies in `target/`.
 
-On Apple Silicon, the script sets `DOCKER_DEFAULT_PLATFORM=linux/amd64` for
-`cross` builds. Docker Desktop can require Rosetta or amd64 emulation for
-those Linux containers.
+On Apple Silicon, the builder sets `DOCKER_DEFAULT_PLATFORM=linux/amd64` for
+`cross`. Docker Desktop can need Rosetta or amd64 emulation for these containers.

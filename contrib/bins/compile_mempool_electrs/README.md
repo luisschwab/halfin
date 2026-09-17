@@ -1,23 +1,19 @@
 # mempool/electrs binary builder
 
-This directory contains the local builder for the `mempool/electrs` binaries
-that `halfin` can download at build time. The builder pins the stable
-`mempool/electrs` v3.3.0 tag.
+Use this Cargo example to build `mempool/electrs` archives for `halfin`.
+The builder uses the `v3.3.0` tag.
 
-The builder is a Cargo example so its scripting dependency, `xshell`, stays in
-`dev-dependencies`.
+The builder is a Cargo example. It uses `xshell` from `dev-dependencies`.
 
 ## Prerequisites
 
-Run this builder from an Apple Silicon macOS host. The script builds macOS
-artifacts with `cargo build` and Linux artifacts with `cross`. It does not
-provide a non-macOS path for producing the macOS release archives.
+Run this builder on an Apple Silicon Mac. The builder uses `cargo build` for macOS and `cross` for Linux. It needs macOS
+to build the macOS archives.
 
-The upstream release pins Rust 1.87 in its `rust-toolchain` file. Rustup
-selects that toolchain inside the checkout, and the builder installs all target
-triples for that selected toolchain. The builder removes the parent Cargo
-process's `RUSTUP_TOOLCHAIN` override from child commands so they honor the
-upstream file.
+The upstream `rust-toolchain` file selects Rust 1.87. Rustup selects this
+toolchain in the source directory. The builder installs its target triples.
+It removes the parent process's `RUSTUP_TOOLCHAIN` setting so child commands
+use the upstream file.
 
 Install the Rust build helpers:
 
@@ -25,23 +21,21 @@ Install the Rust build helpers:
 cargo install cross
 ```
 
-Start Docker or Podman before running the builder. `cross` uses a container
-engine for the Linux targets, and the script selects an engine only after
-`docker info` or `podman info` succeeds.
+Start Docker or Podman before you run the builder. `cross` uses a container
+for each Linux target. The builder checks the container engine before use.
 
 ## Usage
 
-From the repository root:
+From the repository root, run:
 
 ```sh
-cargo run --example cross-compile-mempool-electrs
+just compile-bins compile-mempool-electrs
 ```
 
-Existing archives are skipped on later runs. To rebuild and repackage every
-target:
+The builder uses existing archives on later runs. To rebuild all targets, run:
 
 ```sh
-cargo run --example cross-compile-mempool-electrs -- --force
+cargo run --example compile-mempool-electrs -- --force
 ```
 
 The script checks out upstream tag `v3.3.0` under:
@@ -56,7 +50,7 @@ It writes archives and checksums under:
 contrib/bins/compile_mempool_electrs/dist/mempool-electrs-3.3.0/
 ```
 
-Generated files:
+Output files:
 
 ```text
 mempool-electrs-darwin-amd64.tar.gz
@@ -66,29 +60,25 @@ mempool-electrs-linux-arm64.tar.gz
 mempool-electrs-3.3.0-SHA256SUMS
 ```
 
-Upload those files to the `mempool_electrs/mempool-electrs-3.3.0/`
-directory on each binary mirror. Copy the generated checksum file to
+Upload the archives to `indexer/mempool_electrs/mempool-electrs-3.3.0/`
+on both mirrors. Copy the checksum file to
 `sha256/indexer/mempool_electrs/` in this repository.
 
 ## Notes
 
-The builder follows the upstream README: it builds the `electrs` Cargo binary
-from the `mempool/electrs` repository. The archives use a
-`mempool-electrs-*` prefix to keep them distinct from the upstream
-`romanz/electrs` artifacts, but the executable inside each archive remains
-`electrs`.
+The builder makes the `electrs` executable from the `mempool/electrs`
+repository. Each archive name starts with `mempool-electrs-`. The executable
+in each archive has the name `electrs`.
 
-The pinned upstream release uses Unix-only networking APIs, so the builder does
-not produce native Windows binaries.
+This source uses Unix networking APIs. The builder does not make Windows archives.
 
-The Linux builds use `Cross.toml` from this directory. The image setup links its
-distro-provided libclang into `/opt/halfin/libclang`, and the builder passes that stable
-`LIBCLANG_PATH` plus `CLANG_PATH=/usr/bin/clang` because RocksDB's bindings require libclang.
+The Linux builds use `Cross.toml` from this directory. The container setup
+links libclang to `/opt/halfin/libclang`. The builder sets `LIBCLANG_PATH` to
+this path. It also sets `CLANG_PATH=/usr/bin/clang` for RocksDB bindings.
 
 The checkout and Cargo cache remain under `tmp/` so later runs can reuse
 compiled dependencies. The script checks out the pinned tag on each run but
 does not clean `target/`.
 
-On Apple Silicon, the script sets `DOCKER_DEFAULT_PLATFORM=linux/amd64` for
-`cross` builds. Docker Desktop can require Rosetta or amd64 emulation for
-those Linux containers.
+On Apple Silicon, the builder sets `DOCKER_DEFAULT_PLATFORM=linux/amd64` for
+`cross`. Docker Desktop can need Rosetta or amd64 emulation for these containers.

@@ -19,6 +19,7 @@ use corepc_client::bitcoin::hex::DisplayHex;
 use electrum_client::ElectrumApi;
 use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
+use serde_json::Value;
 
 use super::FrigateD;
 use super::FrigateDConf;
@@ -52,7 +53,7 @@ struct StubIndexer<const IS_FRIGATE: bool>;
 /// Wrap a scripted Electrum client with the Frigate state needed by wait methods.
 fn scripted_frigate<'a>(
     backend: &'a StubIndexer<false>,
-    responses: Vec<Option<Result<serde_json::Value, serde_json::Value>>>,
+    responses: Vec<Option<Result<Value, Value>>>,
 ) -> (
     FrigateD<'a, StubIndexer<false>>,
     std::thread::JoinHandle<()>,

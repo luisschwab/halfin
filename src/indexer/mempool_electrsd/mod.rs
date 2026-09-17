@@ -3,37 +3,28 @@
 //! Start and control a `mempool/electrs` [`Indexer`] process.
 //!
 //! [`MempoolElectrsD`] starts the mempool/electrs fork and connects it to a local [`Node`].
-//! It gives Electrum and Esplora clients and wait operations for integration tests.
+//! It provides Electrum and Esplora clients and wait operations for tests.
 //!
-//! ## Start an [`Indexer`]
+//! # Start a [`MempoolElectrsD`] process
 //!
-//! ```rust
+//! ```rust,no_run
 //! use halfin::indexer::mempool_electrsd::MempoolElectrsD;
+//! use halfin::indexer::mempool_electrsd::MempoolElectrsDConf;
 //! use halfin::node::Node;
 //!
-//! fn start_mempool_electrs(node: &impl Node) {
-//!     node.generate(10).unwrap();
-//!     let mempool_electrs = MempoolElectrsD::new(node).unwrap();
-//!     mempool_electrs.wait_until_caught_up(node, None).unwrap();
-//!     let height = mempool_electrs.get_esplora_client().get_height().unwrap();
-//! }
+//! fn start_indexers(node: &impl Node) {
+//!     // Start with the default configuration.
+//!     let default_indexer = MempoolElectrsD::new(node).unwrap();
 //!
-//! # #[cfg(feature = "bitcoind")]
-//! # {
-//! # let node = halfin::node::bitcoind::BitcoinD::new().unwrap();
-//! # start_mempool_electrs(&node);
-//! # }
+//!     // Start with a custom configuration.
+//!     let conf = MempoolElectrsDConf::default();
+//!     let custom_indexer = MempoolElectrsD::new_with_conf(node, &conf).unwrap();
+//! }
 //! ```
 //!
 //! `mempool/electrs` serves an Esplora-compatible API on the dynamically selected
 //! [`MempoolElectrsD::get_esplora_socket`] address. Use
 //! [`MempoolElectrsD::get_esplora_client`] for a configured blocking client.
-//!
-//! ## Select a data directory
-//!
-//! By default, each [`MempoolElectrsD`] instance uses a temporary directory.
-//! [`Drop`] removes this directory.
-//! Set [`MempoolElectrsDConf::staticdir`] to keep the data after the process stops.
 //!
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
@@ -45,6 +36,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
 use std::process::Command;
+use std::process::ExitStatus;
 use std::process::Stdio;
 use std::thread::sleep;
 use std::time::Duration;
@@ -84,10 +76,13 @@ use crate::node::NodeArgs;
 use crate::node::PruneMode;
 use crate::pipe_to_tracing;
 
+#[cfg(test)]
+mod test;
+
 /// Bundled `mempool/electrs` version metadata.
 mod versions;
 
-/// Wrap an Electrum client failure with [`Indexer`] context.
+/// Add [`Indexer`] context to an Electrum client error.
 fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
     IndexerError::UnresponsiveIndexer {
         indexer: MempoolElectrsD::get_name(),
@@ -97,12 +92,12 @@ fn unresponsive_indexer(source: ElectrumError) -> IndexerError {
 
 /// Return the path to the downloaded `mempool/electrs` binary.
 ///
-/// At compile time, `build.rs` downloads and extracts the binary.
+/// `build.rs` downloads and extracts the executable during compilation.
 /// It stores the binary path in `HALFIN_MEMPOOL_ELECTRS_PATH`.
 ///
 /// # Errors
 ///
-/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
+/// Returns [`Error::BinaryNotFound`] if the executable does not exist.
 pub fn get_mempool_electrs_path() -> Result<PathBuf, Error> {
     let bin_path = PathBuf::from(option_env!("HALFIN_MEMPOOL_ELECTRS_PATH").unwrap_or(""));
 
@@ -119,8 +114,8 @@ pub fn get_mempool_electrs_path() -> Result<PathBuf, Error> {
 ///
 /// # Directory precedence
 ///
-/// Set only `tmpdir` or `staticdir`.
-/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
+/// Set `tmpdir` or `staticdir`. Do not set both.
+/// If you set both, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
@@ -133,23 +128,23 @@ pub struct MempoolElectrsDConf {
     /// Extra CLI arguments sent unchanged to the `mempool/electrs` process.
     ///
     /// Do not use a raw argument for an option that `halfin` controls.
-    /// A duplicate option returns [`IndexerError::ConflictingArgument`].
+    /// A duplicate option causes [`IndexerError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root for the new temporary directory of each instance.
-    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
-    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
+    /// Parent directory for each new temporary data directory.
+    /// If this field is `None`, the wrapper uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is not set, the wrapper uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory.
-    /// The function creates the directory if necessary.
-    /// [`Drop`] stops the process but keeps the files.
+    /// Data directory that remains after the process stops.
+    /// The wrapper creates the directory if it does not exist.
+    /// The wrapper stops the process but keeps the files when the instance drops.
     pub staticdir: Option<PathBuf>,
 
     /// Maximum number of attempts to start `mempool/electrs`.
     ///
-    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
-    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
+    /// Each attempt selects new ports. A new attempt can resolve a port
+    /// conflict. The default is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -176,13 +171,13 @@ pub struct MempoolElectrsD {
     /// Blocking client connected to the Esplora endpoint.
     pub esplora_client: BlockingClient,
 
-    /// Data directory of the [`Indexer`] and its cleanup state.
+    /// Data directory of the [`Indexer`] and its deletion policy.
     working_directory: DataDir,
 
-    /// Complete configuration used to start the [`Indexer`].
+    /// Settings that started the [`Indexer`].
     config: MempoolElectrsDConf,
 
-    /// Address of the Electrum RPC server.
+    /// Socket of the Electrum server.
     electrum_socket: SocketAddr,
 
     /// Address of the monitoring server.
@@ -202,7 +197,7 @@ impl Indexer for MempoolElectrsD {
 
     fn trigger(&self) -> Result<(), Error> { self.trigger() }
 
-    fn stop(&mut self) -> Result<std::process::ExitStatus, Error> { self.stop() }
+    fn stop(&mut self) -> Result<ExitStatus, Error> { self.stop() }
 
     fn get_pid(&self) -> u32 { self.get_pid() }
 
@@ -468,13 +463,13 @@ impl MempoolElectrsD {
 
     /// Terminate the `mempool/electrs` process and wait for it to exit.
     ///
-    /// [`Drop`] stops the process without a call to this method.
-    /// Call this method to get the exit status or confirm that the process has stopped.
+    /// The wrapper stops the process when the instance drops.
+    /// Call this method to get the exit status.
     ///
     /// # Errors
     ///
     /// Returns an error if the function cannot wait for the child process.
-    pub fn stop(&mut self) -> Result<std::process::ExitStatus, Error> {
+    pub fn stop(&mut self) -> Result<ExitStatus, Error> {
         debug!("Stopping {} [PID={}]", Self::get_name(), self.process.id());
         let _ = self.process.kill();
         self.process.wait().map_err(Error::Io)
@@ -502,7 +497,7 @@ impl MempoolElectrsD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this [`Indexer`].
+    /// Return the settings that started this [`Indexer`].
     pub fn get_config(&self) -> &MempoolElectrsDConf {
         &self.config
     }
@@ -523,7 +518,7 @@ impl MempoolElectrsD {
         &self.esplora_client
     }
 
-    /// Return the Electrum RPC [`SocketAddr`] of the [`Indexer`].
+    /// Return the Electrum socket of the [`Indexer`].
     pub fn get_electrum_socket(&self) -> SocketAddr {
         debug!(
             "{}: got electrum socket at socket={}",
@@ -534,7 +529,7 @@ impl MempoolElectrsD {
         self.electrum_socket
     }
 
-    /// Return the Electrum RPC URL for the [`Indexer`].
+    /// Return the Electrum URL of the [`Indexer`].
     pub fn get_electrum_url(&self) -> String {
         let electrum_url = self.electrum_socket.to_string();
 
@@ -577,7 +572,7 @@ impl MempoolElectrsD {
     /// Poll until the Electrum header tip matches the tip of a [`Node`].
     ///
     /// The function verifies the tip height and block hash.
-    /// Specify `None` to use [`INDEXING_TIMEOUT`].
+    /// Set `timeout` to `None` to use [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -604,7 +599,7 @@ impl MempoolElectrsD {
     /// Poll until the Electrum header tip of [`MempoolElectrsD`] reaches `exp_height`.
     ///
     /// The function compares the block hash at `exp_height` with `exp_hash`.
-    /// Specify `None` to use [`INDEXING_TIMEOUT`].
+    /// Set `timeout` to `None` to use [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -628,7 +623,7 @@ impl MempoolElectrsD {
 
     /// Poll until the history of `spk` contains `txid` as an unconfirmed transaction.
     ///
-    /// If `timeout` is `None`, the function uses [`INDEXING_TIMEOUT`].
+    /// If `timeout` is `None`, the wrapper uses [`INDEXING_TIMEOUT`].
     ///
     /// # Errors
     ///
@@ -940,6 +935,3 @@ fn is_incomplete_read(err: &ElectrumError) -> bool {
             )
     )
 }
-
-#[cfg(test)]
-mod test;

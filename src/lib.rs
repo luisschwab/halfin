@@ -1,36 +1,38 @@
 //! # halfin
 //!
-//! Start local Bitcoin [`Node`] and Electrum [`Indexer`] implementations for integration tests.
+//! Start local Bitcoin [`Node`] and Electrum [`Indexer`] processes for integration tests.
 //!
-//! The crate finds each enabled program and starts it in an isolated data directory.
-//! It assigns local ports and supplies typed clients for test operations.
-//! It also stops each child process when Rust drops its handle.
+//! The crate downloads the executable for each supported, enabled feature. It gives each
+//! process a data directory and local ports. It provides clients for test
+//! operations and stops each process when its handle drops.
 //!
 //! ## Supported implementations
 //!
-//! | Kind    | Implementation          | Version   | Feature Flag          | Notes                  |
-//! |---------|-------------------------|-----------|-----------------------|------------------------|
-//! | Node    | [`Bitcoin Core`]        | `v31.0`   | `bitcoind`            |                        |
-//! | Node    | [`btcd`]                | `v0.26.2` | `btcd`                |                        |
-//! | Node    | [`Floresta`]            | `v0.9.1`  | `florestad`           |                        |
-//! | Node    | [`utreexod`]            | `v0.6.0`  | `utreexod`            |                        |
-//! |         |                         |           |                       |                        |
-//! | Indexer | [`Blockstream/electrs`] | `4b1a018` | `blockstream_electrs` | Unsupported on Windows |
-//! | Indexer | [`ElectrumX`]           | `v1.20.0` | `electrumx`           | Needs Python 3.10      |
-//! | Indexer | [`Frigate`]             | `v1.5.3`  | `frigate`             | Unsupported on Windows |
-//! | Indexer | [`mempool/electrs`]     | `v3.3.0`  | `mempool_electrs`     | Unsupported on Windows |
-//! | Indexer | [`romanz/electrs`]      | `v0.12.0` | `romanz_electrs`      |                        |
+//! | Kind         | Implementation          | Version   | Feature Flag          | Notes                                 |
+//! |--------------|-------------------------|-----------|-----------------------|---------------------------------------|
+//! | Node         | [`Bitcoin Core`]        | `v31.0`   | `bitcoind`            |                                       |
+//! | Node         | [`btcd`]                | `v0.26.2` | `btcd`                |                                       |
+//! | Node         | [`Floresta`]            | `v0.9.1`  | `florestad`           |                                       |
+//! | Node         | [`utreexod`]            | `v0.6.0`  | `utreexod`            |                                       |
+//! |              |                         |           |                       |                                       |
+//! | Indexer      | [`Blockstream/electrs`] | `4b1a018` | `blockstream_electrs` | Unsupported on Windows                |
+//! | Indexer      | [`ElectrumX`]           | `v1.20.0` | `electrumx`           | Needs Python 3.10                     |
+//! | Indexer      | [`Frigate`]             | `v1.5.3`  | `frigate`             | Unsupported on Windows                |
+//! | Indexer      | [`mempool/electrs`]     | `v3.3.0`  | `mempool_electrs`     | Unsupported on Windows                |
+//! | Indexer      | [`romanz/electrs`]      | `v0.12.0` | `romanz_electrs`      |                                       |
+//! |              |                         |           |                       |                                       |
+//! | Node/Indexer | [`libbitcoin-server`]   | `3620f1d` | `libbitcoin`          | Unsupported on Windows / Mainnet-only |
 //!
 //! [`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
 //! [`btcd`]: <https://github.com/btcsuite/btcd>
 //! [`Floresta`]: <https://github.com/getfloresta/Floresta>
 //! [`utreexod`]: <https://github.com/utreexo/utreexod>
 //! [`Blockstream/electrs`]: <https://github.com/Blockstream/electrs>
-//! [`mempool/electrs`]: <https://github.com/mempool/electrs>
-//! [`romanz/electrs`]: <https://github.com/romanz/electrs>
 //! [`ElectrumX`]: <https://github.com/spesmilo/electrumx>
 //! [`Frigate`]: <https://github.com/sparrowwallet/frigate>
-//! [`electrumx`]: <https://github.com/spesmilo/electrumx>
+//! [`mempool/electrs`]: <https://github.com/mempool/electrs>
+//! [`romanz/electrs`]: <https://github.com/romanz/electrs>
+//! [`libbitcoin-server`]: <https://github.com/libbitcoin/libbitcoin-server>
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
 

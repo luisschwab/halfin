@@ -8,6 +8,8 @@ use core::error;
 use core::fmt;
 use core::time::Duration;
 
+use electrum_client::Error as ElectrumError;
+
 /// Errors produced by [`Indexer`](crate::indexer::Indexer) configuration, startup, and operations.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -31,12 +33,20 @@ pub enum IndexerError {
         node: &'static str,
     },
 
+    /// An [`Indexer`](crate::indexer::Indexer) does not support a requested command.
+    UnsupportedCommand {
+        /// Human-readable [`Indexer`](crate::indexer::Indexer) name.
+        indexer: &'static str,
+        /// Unsupported command name.
+        command: &'static str,
+    },
+
     /// An [`Indexer`](crate::indexer::Indexer) is unresponsive to Electrum requests.
     UnresponsiveIndexer {
         /// Human-readable [`Indexer`](crate::indexer::Indexer) name.
         indexer: &'static str,
         /// Electrum client error that made the [`Indexer`](crate::indexer::Indexer) unresponsive.
-        source: electrum_client::Error,
+        source: ElectrumError,
     },
 
     /// An [`Indexer`](crate::indexer::Indexer) did not index the expected data before the timeout.
@@ -59,6 +69,7 @@ impl fmt::Display for IndexerError {
             #[cfg(feature = "electrumx")]
             Self::InvalidPython(description) => write!(f, "Invalid Python runtime for `ElectrumX`: {description}"),
             Self::UnsupportedBackend { node } => write!(f, "`{node}` cannot be used as a backing node for an indexer"),
+            Self::UnsupportedCommand { indexer, command } => write!(f, "`{indexer}` does not support the `{command}` command"),
             Self::UnresponsiveIndexer { indexer, source } => write!(f, "`{indexer}` is unresponsive to Electrum requests: {source}"),
             Self::IndexingTimeout { indexer, description, timeout } => write!(f, "Timed out after {} seconds whilst waiting for `{indexer}` to index {description}", timeout.as_secs()),
         }
@@ -80,6 +91,10 @@ mod tests {
             IndexerError::ConflictingArgument("db-dir".to_string()),
             IndexerError::InvalidConfiguration("invalid value".to_string()),
             IndexerError::UnsupportedBackend { node: "FakeNode" },
+            IndexerError::UnsupportedCommand {
+                indexer: "TestIndexer",
+                command: "trigger",
+            },
             IndexerError::UnresponsiveIndexer {
                 indexer: "TestIndexer",
                 source: electrum_client::Error::Message("unavailable".to_string()),

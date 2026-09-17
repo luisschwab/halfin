@@ -4,7 +4,24 @@
 //!
 //! [`FlorestaD`] starts the Floresta daemon with an isolated data directory.
 //! It assigns local JSON-RPC and Electrum ports.
-//! Use it as an outbound peer because this version does not accept inbound peer connections.
+//!
+//! # Start a [`FlorestaD`] process
+//!
+//! ```rust,no_run
+//! use halfin::node::florestad::FlorestaD;
+//! use halfin::node::florestad::FlorestaDConf;
+//!
+//! // Start with the default configuration.
+//! let default_node = FlorestaD::new().unwrap();
+//!
+//! // Start with a custom configuration.
+//! let conf = FlorestaDConf::default();
+//! let custom_node = FlorestaD::new_with_conf(&conf).unwrap();
+//!
+//! // Use the node interface.
+//! let height = default_node.get_chain_tip().unwrap();
+//! let rpc_socket = custom_node.get_rpc_socket();
+//! ```
 //!
 //! [`Node`]: crate::node::Node
 
@@ -27,6 +44,7 @@ use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
 use miniscript::Descriptor;
 use miniscript::DescriptorPublicKey;
+use serde_json::Value;
 use tracing::debug;
 
 use self::client_versions::Client;
@@ -50,17 +68,21 @@ use crate::pipe_to_tracing;
 
 /// Version-specific JSON-RPC client aliases for the bundled `florestad`.
 mod client_versions;
+
 /// Bundled `florestad` version metadata.
 mod versions;
 
+#[cfg(all(test, halfin_node))]
+mod test;
+
 /// Return the path to the downloaded `florestad` binary.
 ///
-/// At compile time, `build.rs` downloads and extracts the binary.
+/// `build.rs` downloads and extracts the executable during compilation.
 /// It stores the binary path in `HALFIN_FLORESTAD_PATH`.
 ///
 /// # Errors
 ///
-/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
+/// Returns [`Error::BinaryNotFound`] if the executable does not exist.
 pub fn get_florestad_path() -> Result<PathBuf, Error> {
     #[allow(unused_mut)]
     let mut bin_path = PathBuf::from(option_env!("HALFIN_FLORESTAD_PATH").unwrap_or(""));
@@ -98,7 +120,7 @@ pub struct FlorestaDArgs {
 
 /// Configuration for a [`FlorestaD`] instance.
 ///
-/// Set only `tmpdir` or `staticdir`.
+/// Set `tmpdir` or `staticdir`. Do not set both.
 /// By default, each [`Node`] uses a new temporary directory that [`Drop`] deletes.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FlorestaDConf {
@@ -168,7 +190,7 @@ pub struct FlorestaD {
     pub electrum_client: RawClient<ElectrumPlaintextStream>,
     /// Base data directory and its cleanup state.
     working_directory: DataDir,
-    /// Complete configuration used to start the [`Node`].
+    /// Settings that started the [`Node`].
     config: FlorestaDConf,
     /// Address of the JSON-RPC listener.
     rpc_socket: SocketAddr,
@@ -210,7 +232,7 @@ impl Node for FlorestaD {
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
-    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
+    fn call(&self, method: &str, args: &[Value]) -> Result<Value, Error> {
         Ok(self.client.call(method, args).map_err(NodeError::JsonRpc)?)
     }
 
@@ -400,7 +422,7 @@ impl FlorestaD {
 
         let _ = self
             .client
-            .call::<serde_json::Value>("stop", &[])
+            .call::<Value>("stop", &[])
             .map_err(NodeError::FailedToStop)?;
         self.process.wait().map_err(Error::Io)
     }
@@ -453,7 +475,7 @@ impl FlorestaD {
     pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self
             .client
-            .call::<serde_json::Value>("getblockcount", &[])
+            .call::<Value>("getblockcount", &[])
             .map_err(NodeError::JsonRpc)?
             .as_u64()
             .ok_or_else(|| {
@@ -472,7 +494,7 @@ impl FlorestaD {
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self
             .client
-            .call::<serde_json::Value>("getblockhash", &[height.into()])
+            .call::<Value>("getblockhash", &[height.into()])
             .map_err(NodeError::JsonRpc)?
             .as_str()
             .ok_or_else(|| {
@@ -498,7 +520,7 @@ impl FlorestaD {
     pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
         let peers = self
             .client
-            .call::<serde_json::Value>("getpeerinfo", &[])
+            .call::<Value>("getpeerinfo", &[])
             .map_err(NodeError::JsonRpc)?;
         let peers = peers.as_array().ok_or_else(|| {
             Error::UnexpectedResponse("getpeerinfo returned a non-array value".to_string())
@@ -527,7 +549,7 @@ impl FlorestaD {
     /// [`CONNECTION_TIMEOUT`].
     pub fn add_peer(&self, socket: SocketAddr) -> Result<(), Error> {
         self.client
-            .call::<serde_json::Value>(
+            .call::<Value>(
                 "addnode",
                 &[
                     socket.to_string().into(),
@@ -558,7 +580,7 @@ impl FlorestaD {
     pub fn get_peer_count(&self) -> Result<u32, Error> {
         let peers = self
             .client
-            .call::<serde_json::Value>("getpeerinfo", &[])
+            .call::<Value>("getpeerinfo", &[])
             .map_err(NodeError::JsonRpc)?;
         let count = peers
             .as_array()
@@ -667,10 +689,7 @@ impl FlorestaD {
         let start = Instant::now();
         while start.elapsed() < timeout {
             let client = Client::new(rpc_url);
-            if client
-                .call::<serde_json::Value>("getblockchaininfo", &[])
-                .is_ok()
-            {
+            if client.call::<Value>("getblockchaininfo", &[]).is_ok() {
                 return Ok(client);
             }
             sleep(Duration::from_millis(200));
@@ -727,6 +746,3 @@ impl Drop for FlorestaD {
         let _ = &self.working_directory;
     }
 }
-
-#[cfg(all(test, halfin_node))]
-mod test;

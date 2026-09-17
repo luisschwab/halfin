@@ -13,26 +13,34 @@ edition = "2024"
 
 [features]
 default = []
+# Each backend enables logging and the shared archive downloader.
 # Nodes
-bitcoind = []
-btcd = []
-florestad = ["dep:electrum-client", "dep:miniscript"]
-utreexod = []
+bitcoind = ["dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+btcd = ["dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+florestad = ["dep:electrum-client", "dep:miniscript", "dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+libbitcoin = ["dep:electrum-client", "dep:esplora-client", "dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+utreexod = ["dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
 # Indexers
-blockstream_electrs = ["dep:electrum-client", "dep:esplora-client"]
-electrumx = ["dep:electrum-client"]
-frigate = ["dep:electrum-client"]
-mempool_electrs = ["dep:electrum-client", "dep:esplora-client"]
-romanz_electrs = ["dep:electrum-client"]
+blockstream_electrs = ["dep:electrum-client", "dep:esplora-client", "dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+electrumx = ["dep:electrum-client", "dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+frigate = ["dep:electrum-client", "dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+mempool_electrs = ["dep:electrum-client", "dep:esplora-client", "dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
+romanz_electrs = ["dep:electrum-client", "dep:tracing", "dep:bitcoin_hashes", "dep:flate2", "dep:bitreq", "dep:tar", "dep:zip"]
 
 [[example]]
-name = "cross-compile-blockstream-electrs"
+name = "compile-libbitcoin"
+path = "contrib/bins/compile_libbitcoin/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "compile-blockstream-electrs"
 path = "contrib/bins/compile_blockstream_electrs/build.rs"
 test = false
 bench = false
 
 [[example]]
-name = "cross-compile-electrumx"
+name = "compile-electrumx"
 path = "contrib/bins/compile_electrumx/build.rs"
 test = false
 bench = false
@@ -44,13 +52,13 @@ test = false
 bench = false
 
 [[example]]
-name = "cross-compile-mempool-electrs"
+name = "compile-mempool-electrs"
 path = "contrib/bins/compile_mempool_electrs/build.rs"
 test = false
 bench = false
 
 [[example]]
-name = "cross-compile-romanz-electrs"
+name = "compile-romanz-electrs"
 path = "contrib/bins/compile_romanz_electrs/build.rs"
 test = false
 bench = false
@@ -66,18 +74,20 @@ esplora-client = { version = "0.13", default-features = false, features = ["bloc
 miniscript = { version = "13", default-features = false, features = ["std"], optional = true }
 tempfile = { version = "3.7", default-features = false }
 serde_json = { version = "1.0.117", default-features = false }
-tracing = { version = "0.1.5", default-features = false, features = ["std"] }
+tracing = { version = "0.1.5", default-features = false, features = ["std"], optional = true }
 
 [build-dependencies]
-bitcoin_hashes = { version = "1.1.0", features = ["hex"] }
-flate2 = { version = "1.1.1" }
-bitreq = { version = "0.3.7", features = ["https"] }
-tar = { version = "0.4.46" }
-zip = { version = "7", default-features = false, features = ["bzip2", "deflate"] }
-# Pinned transitive deps:
+bitcoin_hashes = { version = "1.1.0", features = ["hex"], optional = true }
+flate2 = { version = "1.1.1", optional = true }
+bitreq = { version = "0.3.7", features = ["https"], optional = true }
+tar = { version = "0.4.46", optional = true }
+zip = { version = "7", default-features = false, features = ["bzip2", "deflate"], optional = true }
+# Transitive dependency pins:
+[target.'cfg(false)'.build-dependencies]
 rustls = { version = "0.23.45", default-features = false } # blame: bitreq@0.3.7 -> rustls@0.23.38 (RUSTSEC-2026-0285)
 
 [dev-dependencies]
+bitcoin_hashes = { version = "1.1.0", features = ["hex"] }
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
 xshell = { version = "=0.3.0-pre.2" }
 # Transitive dependency pins:
@@ -85,7 +95,7 @@ lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber@0.3.23
 
 [package.metadata.rbmt]
 version = "0.5.3"
-toolchains = { stable = "1.98.0", nightly = "nightly-2026-09-02" }
+toolchains = { stable = "1.98.1", nightly = "nightly-2026-09-17" }
 lint = { allowed_duplicates = [
     "base64",
     "bitflags",
@@ -112,10 +122,13 @@ zizmor = "1.30.1"
 # unconditionally and there are no mutually exclusive
 # features, so we may skip redundant test runs
 exclude_features = [
+    # Nodes
     "bitcoind",
     "btcd",
     "florestad",
+    "libbitcoin",
     "utreexod",
+    # Indexers
     "blockstream_electrs",
     "electrumx",
     "frigate",

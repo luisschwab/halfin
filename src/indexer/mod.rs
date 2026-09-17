@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Common interfaces and operations for Electrum [`Indexer`] implementations.
+//! Common interfaces and operations for Electrum [`Indexer`] processes.
 //!
-//! The [`Indexer`] trait defines the operations that each implementation supplies.
-//! The shared functions validate a backing [`Node`] and its RPC cookie.
+//! The [`Indexer`] trait defines the operations that each process supports.
+//! Shared functions check the backing [`Node`] and its RPC cookie.
 //!
-//! Enable the `blockstream_electrs`, `electrumx`, `frigate`, `mempool_electrs`, or `romanz_electrs`
-//! feature to use the selected implementation.
+//! Enable `blockstream_electrs`, `electrumx`, `frigate`, `mempool_electrs`, or
+//! `romanz_electrs` to use a separate indexer. Enable `libbitcoin` to use a
+//! server that implements both [`Node`] and [`Indexer`].
 //!
 //! [`Indexer`]: crate::indexer::Indexer
 //! [`Node`]: crate::node::Node
@@ -23,6 +24,9 @@ pub mod mempool_electrsd;
 #[cfg(feature = "romanz_electrs")]
 pub mod romanz_electrsd;
 
+#[cfg(all(test, halfin_indexer))]
+pub(crate) mod test;
+
 use core::net::SocketAddr;
 use core::time::Duration;
 use std::fs;
@@ -35,6 +39,7 @@ use corepc_client::bitcoin::Script;
 use corepc_client::bitcoin::Txid;
 use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
+use serde_json::Value;
 use tracing::debug;
 
 pub use self::error::IndexerError;
@@ -50,10 +55,15 @@ use crate::node::RPC_COOKIE_FILE_NAME;
 ///   indexers require.
 /// * [`FlorestaD`]: does not accept inbound P2P connections and does not provide a compatible
 ///   Bitcoin Core JSON-RPC interface.
+/// * [`LibbitcoinD`]: this version only runs on mainnet. The crate uses regtest for backing
+///   indexers.
 /// * [`UtreexoD`]: uses a `btcd`-derived JSON-RPC interface that does not provide all Bitcoin Core
 ///   methods and response fields that the indexers require.
 pub(crate) fn validate_backend<N: Node>() -> Result<(), Error> {
-    if matches!(N::get_name(), "BtcD" | "FlorestaD" | "UtreexoD") {
+    if matches!(
+        N::get_name(),
+        "BtcD" | "FlorestaD" | "LibbitcoinD" | "UtreexoD"
+    ) {
         return Err(IndexerError::UnsupportedBackend {
             node: N::get_name(),
         }
@@ -71,11 +81,11 @@ pub(crate) fn ensure_backend_ready(
     let blockchain_info = node.call("getblockchaininfo", &[])?;
     let initial_block_download = blockchain_info
         .get("initialblockdownload")
-        .and_then(serde_json::Value::as_bool)
+        .and_then(Value::as_bool)
         .unwrap_or(false);
     let blocks = blockchain_info
         .get("blocks")
-        .and_then(serde_json::Value::as_u64)
+        .and_then(Value::as_u64)
         .unwrap_or(0);
 
     debug!(
@@ -139,13 +149,13 @@ pub trait Indexer {
     /// Return the data directory of the [`Indexer`].
     fn get_working_directory(&self) -> PathBuf;
 
-    /// Return the complete configuration used to start this [`Indexer`].
+    /// Return the settings that started this [`Indexer`].
     fn get_config(&self) -> &Self::Config;
 
     /// Return a reference to the Electrum client of the [`Indexer`].
     fn get_electrum_client(&self) -> &RawClient<ElectrumPlaintextStream>;
 
-    /// Return the Electrum RPC [`SocketAddr`] of the [`Indexer`].
+    /// Return the Electrum socket of the [`Indexer`].
     fn get_electrum_socket(&self) -> SocketAddr;
 
     /// Return the Electrum RPC URL of the [`Indexer`].
@@ -189,6 +199,3 @@ pub trait Indexer {
         timeout: Option<Duration>,
     ) -> Result<(), Error>;
 }
-
-#[cfg(all(test, halfin_indexer))]
-mod test;

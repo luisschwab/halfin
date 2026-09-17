@@ -28,6 +28,7 @@ use corepc_client::bitcoin::hashes::Hash;
 use electrum_client::ElectrumApi;
 use electrum_client::Error as ElectrumError;
 #[cfg(feature = "bitcoind")]
+use serde_json::Value;
 use tracing::Level;
 #[cfg(feature = "bitcoind")]
 use tracing::info;
@@ -118,7 +119,7 @@ fn electrumxd_classifies_subscription_reads() {
         Arc::new(IoError::from(ErrorKind::PermissionDenied))
     )));
 
-    let error = ElectrumError::Protocol(serde_json::Value::Null);
+    let error = ElectrumError::Protocol(Value::Null);
     assert!(is_header_not_ready(&error));
 
     let error = ElectrumError::Message("unavailable".to_string());

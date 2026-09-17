@@ -15,6 +15,7 @@ use std::collections::VecDeque;
     feature = "bitcoind",
     feature = "btcd",
     feature = "florestad",
+    feature = "libbitcoin",
     feature = "utreexod"
 ))]
 use std::fs;
@@ -22,6 +23,7 @@ use std::fs;
     feature = "bitcoind",
     feature = "btcd",
     feature = "florestad",
+    feature = "libbitcoin",
     feature = "utreexod"
 ))]
 use std::io::Read;
@@ -29,6 +31,7 @@ use std::io::Read;
     feature = "bitcoind",
     feature = "btcd",
     feature = "florestad",
+    feature = "libbitcoin",
     feature = "utreexod"
 ))]
 use std::io::Write;
@@ -36,6 +39,7 @@ use std::io::Write;
     feature = "bitcoind",
     feature = "btcd",
     feature = "florestad",
+    feature = "libbitcoin",
     feature = "utreexod"
 ))]
 use std::net::TcpListener;
@@ -44,6 +48,7 @@ use std::path::PathBuf;
     feature = "bitcoind",
     feature = "btcd",
     feature = "florestad",
+    feature = "libbitcoin",
     feature = "utreexod"
 ))]
 use std::thread::JoinHandle;
@@ -54,12 +59,14 @@ use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
+use serde_json::Value;
 #[cfg(all(
     unix,
     any(
         feature = "bitcoind",
         feature = "btcd",
         feature = "florestad",
+        feature = "libbitcoin",
         feature = "utreexod"
     )
 ))]
@@ -177,8 +184,8 @@ impl Node for FakeNode {
         unreachable!("shared wait tests do not request block hashes")
     }
 
-    fn call(&self, _method: &str, _args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
-        Ok(serde_json::Value::Null)
+    fn call(&self, _method: &str, _args: &[Value]) -> Result<Value, Error> {
+        Ok(Value::Null)
     }
 
     fn get_p2p_socket(&self) -> SocketAddr {
@@ -222,6 +229,7 @@ impl Node for FakeNode {
         feature = "bitcoind",
         feature = "btcd",
         feature = "florestad",
+        feature = "libbitcoin",
         feature = "utreexod"
     )
 ))]
@@ -241,11 +249,10 @@ pub(super) fn test_program(body: &str, executable: bool) -> (TempDir, PathBuf) {
     feature = "bitcoind",
     feature = "btcd",
     feature = "florestad",
+    feature = "libbitcoin",
     feature = "utreexod"
 ))]
-pub(super) fn scripted_json_rpc_server(
-    results: Vec<serde_json::Value>,
-) -> (SocketAddr, JoinHandle<()>) {
+pub(super) fn scripted_json_rpc_server(results: Vec<Value>) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let socket = listener.local_addr().unwrap();
     let handle = std::thread::spawn(move || {
@@ -275,7 +282,7 @@ pub(super) fn scripted_json_rpc_server(
                 assert!(count > 0, "JSON-RPC client closed before sending its body");
                 request.extend_from_slice(&buffer[..count]);
             }
-            let request: serde_json::Value =
+            let request: Value =
                 serde_json::from_slice(&request[header_end..header_end + content_length]).unwrap();
             let response = serde_json::json!({
                 "jsonrpc": "2.0",

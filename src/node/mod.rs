@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Common interfaces and operations for Bitcoin [`Node`] implementations.
+//! Common interfaces and operations for Bitcoin [`Node`] processes.
 //!
-//! The [`Node`] trait defines the operations that each implementation supplies.
-//! [`NodeArgs`] contains configuration that is common to all [`Node`] implementations.
-//! The connection and wait functions coordinate two or more enabled [`Node`] implementations.
+//! The [`Node`] trait defines the operations that each process supports.
+//! [`NodeArgs`] holds settings that all [`Node`] implementations use.
+//! The connection and wait functions coordinate two or more [`Node`] processes.
 //!
-//! Enable the `bitcoind`, `btcd`, `florestad`, or `utreexod` features to use the selected
-//! implementation.
+//! Enable `bitcoind`, `btcd`, `florestad`, `libbitcoin`, or `utreexod` to use
+//! the selected implementation.
 //!
 //! [`Node`]: crate::node::Node
 
@@ -18,16 +18,36 @@ pub mod btcd;
 pub mod error;
 #[cfg(feature = "florestad")]
 pub mod florestad;
+#[cfg(all(feature = "libbitcoin", not(target_os = "windows")))]
+pub mod libbitcoind;
 #[cfg(feature = "utreexod")]
 pub mod utreexod;
 
+#[cfg(all(test, halfin_node))]
+mod test;
+
 use core::net::SocketAddr;
 use core::time::Duration;
-#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "libbitcoin",
+    feature = "utreexod"
+))]
 use std::fs::OpenOptions;
-#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "libbitcoin",
+    feature = "utreexod"
+))]
 use std::io::Write;
-#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "libbitcoin",
+    feature = "utreexod"
+))]
 use std::path::Path;
 use std::path::PathBuf;
 #[cfg(halfin_node)]
@@ -37,6 +57,7 @@ use std::time::Instant;
 
 use corepc_client::bitcoin::BlockHash;
 use corepc_client::bitcoin::Network;
+use serde_json::Value;
 #[cfg(halfin_node)]
 use tracing::debug;
 #[cfg(halfin_node)]
@@ -64,17 +85,28 @@ pub(crate) const MIN_PRUNE_TARGET_MIB: u64 = 550;
     feature = "blockstream_electrs",
     feature = "electrumx",
     feature = "frigate",
+    feature = "libbitcoin",
     feature = "mempool_electrs",
     feature = "romanz_electrs"
 ))]
 pub(crate) const RPC_COOKIE_FILE_NAME: &str = ".cookie";
 
 /// User name in RPC authentication cookies that `halfin` creates.
-#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "libbitcoin",
+    feature = "utreexod"
+))]
 pub(crate) const RPC_USER: &str = "__cookie__";
 
 /// Password in RPC authentication cookies that `halfin` creates.
-#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "libbitcoin",
+    feature = "utreexod"
+))]
 pub(crate) const RPC_PASS: &str = "halfin";
 
 /// Arguments shared by the supported [`Node`] implementations.
@@ -118,7 +150,7 @@ pub trait Node {
     /// Binary name of the [`Node`].
     fn get_bin_name() -> &'static str;
 
-    /// Return the complete configuration used to start this [`Node`].
+    /// Return the settings that started this [`Node`].
     fn get_config(&self) -> &Self::Config;
 
     /// Return the effective runtime data directory of the [`Node`].
@@ -167,12 +199,12 @@ pub trait Node {
     /// Call a JSON-RPC `method` with the specified `args` list.
     ///
     /// This method does not deserialize the response.
-    /// Parse the returned [`Value`](serde_json::Value) into the required type.
+    /// Parse the returned [`Value`] into the required type.
     ///
     /// # Errors
     ///
     /// Returns an error if the JSON-RPC call fails.
-    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error>;
+    fn call(&self, method: &str, args: &[Value]) -> Result<Value, Error>;
 
     /// Return the inbound P2P [`SocketAddr`] of the [`Node`].
     ///
@@ -427,7 +459,12 @@ pub(crate) fn validate_node_arguments(args: &NodeArgs) -> Result<(), Error> {
 
 /// Write the RPC cookie shared by a [`Node`] and its [`Indexer`](crate::indexer::Indexer)
 /// implementations.
-#[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
+#[cfg(any(
+    feature = "bitcoind",
+    feature = "btcd",
+    feature = "libbitcoin",
+    feature = "utreexod"
+))]
 pub(crate) fn write_rpc_cookie(data_dir: &Path) -> Result<PathBuf, Error> {
     let cookie_file = data_dir.join(RPC_COOKIE_FILE_NAME);
     let mut options = OpenOptions::new();
@@ -447,6 +484,3 @@ pub(crate) fn write_rpc_cookie(data_dir: &Path) -> Result<PathBuf, Error> {
     write!(file, "{RPC_USER}:{RPC_PASS}").map_err(Error::Io)?;
     Ok(cookie_file)
 }
-
-#[cfg(all(test, halfin_node))]
-mod test;
