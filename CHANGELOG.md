@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] – 2026-09-17
+
 * Add `LibbitcoinD` at commit `3620f1d`
 * Add `FrigateD` at v1.5.3
 * Rename `ElectrsD`/`electrs` to `RomanzElectrsD`/`romanz_electrs`
@@ -64,5 +66,6 @@
 
 [Unreleased]: https://github.com/luisschwab/halfin/compare/v0.6.0...HEAD
 
+[0.7.0]: https://github.com/luisschwab/halfin/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/luisschwab/halfin/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/luisschwab/halfin/compare/v0.4.0...v0.5.0
