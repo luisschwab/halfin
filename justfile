@@ -138,16 +138,26 @@ test features="":
 
 # Build
 
+[doc: "Check a Binary Builder Cargo Example"]
+[group("Build")]
+check-bins example_name:
+    cargo rbmt run -- check --example "{{ example_name }}" --no-default-features
+    cargo rbmt run -- clippy --example "{{ example_name }}" --no-default-features -- -D warnings -D clippy::missing_docs_in_private_items
+
 [doc: "Compile Binaries with a Cargo Example"]
 [group("Build")]
 compile-bins example_name:
-    RBMT_LOG_LEVEL=versbose cargo rbmt run -- run --example "{{ example_name }}"
+    RBMT_LOG_LEVEL=verbose cargo rbmt run -- run --example "{{ example_name }}"
 
 [doc: "Build `halfin`"]
 [env("RBMT_LOG_LEVEL", "verbose")]
 [group("Build")]
-build:
-    cargo rbmt run -- build
+build features="":
+    {{ if features == "" { \
+        "cargo rbmt run -- build" \
+    } else { \
+        "cargo rbmt run -- build --no-default-features --features " + quote(features) \
+    } }}
 
 # Dependencies
 

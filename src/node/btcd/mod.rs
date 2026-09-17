@@ -3,20 +3,25 @@
 //! Start and control a `btcd` process.
 //!
 //! [`BtcD`] starts `btcd` on the regtest network.
-//! It gives access to the JSON-RPC client, process data, and test operations.
+//! It provides a JSON-RPC client, process information, and test operations.
 //!
-//! ## Start a [`Node`]
+//! # Start a [`BtcD`] process
 //!
-//! ```rust
+//! ```rust,no_run
 //! use halfin::node::btcd::BtcD;
+//! use halfin::node::btcd::BtcDConf;
 //!
-//! // Start a node with the default configuration.
-//! let node = BtcD::new().unwrap();
+//! // Start with the default configuration.
+//! let default_node = BtcD::new().unwrap();
+//!
+//! // Start with a custom configuration.
+//! let conf = BtcDConf::default();
+//! let custom_node = BtcD::new_with_conf(&conf).unwrap();
+//!
+//! // Use the node interface.
+//! let height = default_node.get_chain_tip().unwrap();
+//! let rpc_socket = custom_node.get_rpc_socket();
 //! ```
-//!
-//! By default, each [`BtcD`] instance uses a temporary directory.
-//! [`Drop`] removes this directory.
-//! Set [`BtcDConf::staticdir`] to keep the data after the process stops.
 //!
 //! [`Node`]: crate::node::Node
 
@@ -41,6 +46,7 @@ use corepc_client::bitcoin::address::NetworkUnchecked;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v17::AddNodeCommand;
 use corepc_client::client_sync::v17::Client;
+use serde_json::Value;
 use tracing::debug;
 
 use crate::CONNECTION_INTERVAL;
@@ -64,6 +70,9 @@ use crate::node::validate_node_arguments;
 use crate::node::write_rpc_cookie;
 use crate::pipe_to_tracing;
 
+#[cfg(all(test, halfin_node))]
+mod test;
+
 /// Bundled `btcd` version metadata.
 mod versions;
 
@@ -75,12 +84,12 @@ const MIN_PRUNE_TARGET_MIB: u64 = 1_536;
 
 /// Return the path to the downloaded `btcd` binary.
 ///
-/// At compile time, `build.rs` downloads and extracts the binary.
+/// `build.rs` downloads and extracts the executable during compilation.
 /// It stores the binary path in `HALFIN_BTCD_PATH`.
 ///
 /// # Errors
 ///
-/// Returns [`Error::BinaryNotFound`] if the compiled-in binary path does not exist.
+/// Returns [`Error::BinaryNotFound`] if the executable does not exist.
 pub fn get_btcd_path() -> Result<PathBuf, Error> {
     #[allow(unused_mut)]
     let mut bin_path = PathBuf::from(option_env!("HALFIN_BTCD_PATH").unwrap_or(""));
@@ -111,8 +120,8 @@ pub struct BtcDArgs {
 ///
 /// # Directory precedence
 ///
-/// Set only `tmpdir` or `staticdir`.
-/// If you set both fields, the function returns [`Error::BothDirsSpecified`].
+/// Set `tmpdir` or `staticdir`. Do not set both.
+/// If you set both, the function returns [`Error::BothDirsSpecified`].
 ///
 /// | `tmpdir` | `staticdir` | Result |
 /// |----------|-------------|--------|
@@ -135,20 +144,20 @@ pub struct BtcDConf {
     /// A duplicate option returns [`NodeError::ConflictingArgument`].
     pub raw_args: Vec<String>,
 
-    /// Root for the new temporary directory of each instance.
-    /// If this field is empty, the function uses `TEMPDIR_ROOT`.
-    /// If `TEMPDIR_ROOT` is empty, the function uses the system temporary directory.
+    /// Parent directory for each new temporary data directory.
+    /// If this field is `None`, the wrapper uses `TEMPDIR_ROOT`.
+    /// If `TEMPDIR_ROOT` is not set, the wrapper uses the system temporary directory.
     pub tmpdir: Option<PathBuf>,
 
-    /// Persistent data directory.
-    /// The function creates the directory if necessary.
+    /// Data directory that remains after the process stops.
+    /// The wrapper creates the directory if it does not exist.
     /// [`Drop`] stops the process and keeps the files.
     pub staticdir: Option<PathBuf>,
 
     /// Maximum number of attempts to start `btcd`.
     ///
-    /// Each attempt uses new random ports. Thus, a new attempt can correct a temporary port
-    /// conflict. The default value is [`SPAWN_ATTEMPTS`].
+    /// Each attempt selects new ports. A new attempt can resolve a port
+    /// conflict. The default is [`SPAWN_ATTEMPTS`].
     pub max_retries: u8,
 }
 
@@ -209,7 +218,7 @@ pub struct BtcD {
     /// Data directory of the [`Node`] and its cleanup state.
     working_directory: DataDir,
 
-    /// Complete configuration used to start the [`Node`].
+    /// Settings that started the [`Node`].
     config: BtcDConf,
 
     /// Address of the JSON-RPC server.
@@ -249,7 +258,7 @@ impl Node for BtcD {
 
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> { self.get_block_hash(height) }
 
-    fn call(&self, method: &str, args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
+    fn call(&self, method: &str, args: &[Value]) -> Result<Value, Error> {
         Ok(self.client.call(method, args).map_err(NodeError::JsonRpc)?)
     }
 
@@ -259,7 +268,8 @@ impl BtcD {
     /// Start [`BtcD`] with the binary from [`get_btcd_path`].
     /// Use the default [`BtcDConf`].
     ///
-    /// If the binary is not in `target/bin/`, `build.rs` downloads it from `github.com`.
+    /// During compilation, `build.rs` downloads the archive from a configured mirror.
+    /// It checks the archive against a committed checksum.
     ///
     /// # Errors
     ///
@@ -271,7 +281,8 @@ impl BtcD {
     /// Start [`BtcD`] with the binary from [`get_btcd_path`].
     /// Use the specified [`BtcDConf`].
     ///
-    /// If the binary is not in `target/bin/`, `build.rs` downloads it from `github.com`.
+    /// During compilation, `build.rs` downloads the archive from a configured mirror.
+    /// It checks the archive against a committed checksum.
     ///
     /// # Errors
     ///
@@ -443,8 +454,8 @@ impl BtcD {
 
     /// Send `stop` via RPC and wait for the process to exit.
     ///
-    /// [`Drop`] stops the process without a call to this method.
-    /// Call this method to get the exit status or confirm that the process has stopped.
+    /// The wrapper stops the process when the instance drops.
+    /// Call this method to get the exit status.
     ///
     /// # Errors
     ///
@@ -483,7 +494,7 @@ impl BtcD {
         working_directory
     }
 
-    /// Return the complete configuration used to start this [`Node`].
+    /// Return the settings that started this [`Node`].
     pub fn get_config(&self) -> &BtcDConf {
         &self.config
     }
@@ -531,7 +542,7 @@ impl BtcD {
     pub fn get_chain_tip(&self) -> Result<u32, Error> {
         let height = self
             .client
-            .call::<serde_json::Value>("getblockchaininfo", &[])
+            .call::<Value>("getblockchaininfo", &[])
             .map_err(NodeError::JsonRpc)?["blocks"]
             .as_u64()
             .ok_or(Error::UnexpectedResponse(
@@ -553,12 +564,9 @@ impl BtcD {
         let hash = self.get_block_hash(height)?;
 
         self.client
-            .call::<serde_json::Value>(
+            .call::<Value>(
                 "getcfilterheader",
-                &[
-                    serde_json::Value::String(hash.to_string()),
-                    serde_json::Value::Number(0.into()),
-                ],
+                &[Value::String(hash.to_string()), Value::Number(0.into())],
             )
             .map_err(NodeError::JsonRpc)?;
 
@@ -575,7 +583,7 @@ impl BtcD {
     pub fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         let hash = self
             .client
-            .call::<serde_json::Value>("getblockhash", &[height.into()])
+            .call::<Value>("getblockhash", &[height.into()])
             .map_err(NodeError::JsonRpc)?
             .as_str()
             .ok_or(Error::UnexpectedResponse(
@@ -602,7 +610,7 @@ impl BtcD {
     pub fn has_peer(&self, socket: SocketAddr) -> Result<bool, Error> {
         let peers = self
             .client
-            .call::<serde_json::Value>("getpeerinfo", &[])
+            .call::<Value>("getpeerinfo", &[])
             .map_err(NodeError::JsonRpc)?;
 
         let has_peer = peers.as_array().is_some_and(|v| {
@@ -656,7 +664,7 @@ impl BtcD {
         while start.elapsed() < CONNECTION_TIMEOUT {
             let peers = self
                 .client
-                .call::<serde_json::Value>("getpeerinfo", &[])
+                .call::<Value>("getpeerinfo", &[])
                 .map_err(NodeError::JsonRpc)?;
             if peers.as_array().is_some_and(|v| {
                 v.iter().any(|p| {
@@ -683,7 +691,7 @@ impl BtcD {
     pub fn get_peer_count(&self) -> Result<u32, Error> {
         let peers = self
             .client
-            .call::<serde_json::Value>("getpeerinfo", &[])
+            .call::<Value>("getpeerinfo", &[])
             .map_err(NodeError::JsonRpc)?;
         let peer_count = peers
             .as_array()
@@ -709,7 +717,7 @@ impl BtcD {
 
         let hashes = self
             .client
-            .call::<serde_json::Value>("generate", &[serde_json::Value::Number(count.into())])
+            .call::<Value>("generate", &[Value::Number(count.into())])
             .map_err(NodeError::JsonRpc)?
             .as_array()
             .ok_or(Error::UnexpectedResponse(
@@ -869,10 +877,7 @@ impl BtcD {
         let start = Instant::now();
         while start.elapsed() < timeout {
             if let Ok(client) = Client::new_with_auth(rpc_url, auth.clone()) {
-                if client
-                    .call::<serde_json::Value>("getblockchaininfo", &[])
-                    .is_ok()
-                {
+                if client.call::<Value>("getblockchaininfo", &[]).is_ok() {
                     return Ok(client);
                 }
             }
@@ -897,6 +902,3 @@ impl Drop for BtcD {
         let _ = self.process.wait();
     }
 }
-
-#[cfg(all(test, halfin_node))]
-mod test;

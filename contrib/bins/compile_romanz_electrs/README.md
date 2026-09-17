@@ -1,17 +1,14 @@
 # romanz/electrs binary builder
 
-This directory contains the local builder for the `romanz/electrs` binaries that
-`halfin` can later download at build time.
+Use this Cargo example to build `romanz/electrs` archives for `halfin`.
 
-The builder is a Cargo example so its scripting dependency, `xshell`, stays in
-`dev-dependencies`.
+The builder is a Cargo example. It uses `xshell` from `dev-dependencies`.
 
 ## Prerequisites
 
-Run this builder from an Apple Silicon macOS host. The script builds macOS
-artifacts with `cargo build`, Linux artifacts with `cross`, and Windows MSVC
-artifacts with `cargo-xwin`; it does not provide a non-macOS path for producing
-the macOS release archives.
+Run this builder on an Apple Silicon Mac. It uses `cargo build` for macOS,
+`cross` for Linux, and `cargo-xwin` for Windows MSVC. It needs macOS to build
+the macOS archives.
 
 Install the Rust build helpers:
 
@@ -36,23 +33,21 @@ Start Docker or Podman before running the builder. `cross` uses a container
 engine for the Linux targets, and the script only selects an engine after
 `docker info` or `podman info` succeeds.
 
-Windows targets do not use Docker or Podman. They are built with `cargo-xwin`,
-which uses the Rust `llvm-tools` component and the Windows SDK metadata it
-downloads.
+Windows builds use `cargo-xwin` instead of Docker or Podman. `cargo-xwin` uses
+the Rust `llvm-tools` component and downloads Windows SDK metadata.
 
 ## Usage
 
-From the repository root:
+From the repository root, run:
 
 ```sh
-cargo run --example cross-compile-romanz-electrs
+just compile-bins compile-romanz-electrs
 ```
 
-Existing archives are skipped on later runs. To rebuild and repackage every
-target:
+The builder uses existing archives on later runs. To rebuild all targets, run:
 
 ```sh
-cargo run --example cross-compile-romanz-electrs -- --force
+cargo run --example compile-romanz-electrs -- --force
 ```
 
 The script reads the upstream `romanz/electrs` release from
@@ -69,7 +64,7 @@ It writes archives and checksums under:
 contrib/bins/compile_romanz_electrs/dist/electrs-0.12.0/
 ```
 
-Generated files:
+Output files:
 
 ```text
 electrs-darwin-amd64.tar.gz
@@ -81,23 +76,20 @@ electrs-windows-arm64.zip
 electrs-0.12.0-SHA256SUMS
 ```
 
-Upload those files to the web server location that `build.rs`
-will later use for `romanz/electrs` downloads.
+Upload the archives to `indexer/romanz_electrs/electrs-0.12.0/` on both mirrors.
+Copy the checksum file to `sha256/indexer/romanz_electrs/` in this repository.
 
 ## Notes
 
-The Linux builds use `Cross.toml` from this directory. The macOS builds use
-`cargo build`, and the Windows MSVC builds use `cargo xwin build`.
-The Linux images install `clang` and `libclang-dev` for the RocksDB bindings.
-The build discovers Clang inside the container; host Clang paths are not forwarded.
-RocksDB is built from source and linked statically, following the
-[upstream build instructions](https://github.com/romanz/electrs/blob/v0.12.0/doc/install.md).
-The resulting binaries still depend on the target system's C/C++ runtime libraries.
+The Linux builds use `Cross.toml` from this directory. The Linux images
+install `clang` and `libclang-dev` for RocksDB bindings. The builder finds
+Clang in the container. It builds and links RocksDB from source as the
+[upstream build instructions](https://github.com/romanz/electrs/blob/v0.12.0/doc/install.md)
+describe. The executables still need the target system's C/C++ runtime libraries.
 
-The `romanz/electrs` checkout and Cargo build cache are kept under `tmp/` so reruns can
-reuse previously compiled dependencies. The script checks out the pinned tag on
-each run, but it does not clean `target/`.
+The builder keeps the source directory and Cargo build files under `tmp/`.
+It checks out the pinned tag on each run. It keeps compiled dependencies in
+`target/` for later runs.
 
-On Apple Silicon, the script sets `DOCKER_DEFAULT_PLATFORM=linux/amd64` for
-`cross` builds. Docker Desktop may need Rosetta or amd64 emulation enabled for
-those Linux container builds.
+On Apple Silicon, the builder sets `DOCKER_DEFAULT_PLATFORM=linux/amd64` for
+`cross`. Docker Desktop can need Rosetta or amd64 emulation for these containers.

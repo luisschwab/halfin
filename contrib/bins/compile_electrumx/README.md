@@ -1,20 +1,16 @@
 # ElectrumX binary builder
 
-This directory contains the local builder for `ElectrumX` launcher binaries
-that `halfin` can later download at build time.
+Use this Cargo example to build `ElectrumX` launchers for `halfin`.
 
-The builder is a Cargo example so its scripting dependency, `xshell`, stays in
-`dev-dependencies`.
+The builder is a Cargo example. It uses `xshell` from `dev-dependencies`.
 
 ## Prerequisites
 
-Run this builder from a machine with `uv`, `cross`, `cargo-xwin`, `zig`, and
-`cmake`. The script creates a local `uv`-managed CPython 3.10 virtualenv under
-`tmp/build-venv`, builds the ElectrumX wheel from the pinned GitHub tag, and
-uses that venv's `pip download --platform` to resolve wheels for each target
-platform's CPython ABI. It then embeds that wheelhouse into a small Rust
-launcher executable for each target, using the same Cargo/Cross/cargo-xwin split
-as the `romanz/electrs` builder.
+Install `uv`, `cross`, `cargo-xwin`, `zig`, and `cmake` before you run the builder.
+The builder creates a CPython 3.10 virtual environment in `tmp/build-venv`.
+It builds the ElectrumX wheel from the pinned GitHub tag. It downloads the
+Python wheels for each target platform. Then it puts those wheels in a Rust
+launcher for each target.
 
 Install `uv` if it is missing:
 
@@ -22,34 +18,33 @@ Install `uv` if it is missing:
 cargo install --git https://github.com/astral-sh/uv uv
 ```
 
-The generated binaries still require a compatible Python interpreter on the
-machine that runs ElectrumX. The compiled launcher extracts its embedded
-wheelhouse, creates a private virtualenv on first use, then runs
-`electrumx_server`.
-macOS and Linux launchers default to `python3.10`, Windows x86_64 defaults to
-`py -3.10`, and Windows ARM64 defaults to `py -3.11`. Set
-`PYTHON=/path/to/python` when the default command is not on `PATH`.
+The launchers need a compatible Python interpreter on the target machine.
+On first use, a launcher extracts its Python wheels, creates a private virtual
+environment, and starts `electrumx_server`.
 
-`plyvel` does not publish wheels for the target matrix. macOS and Linux
-wheelhouses include the `plyvel` source distribution, so the target machine
-needs LevelDB development headers and a compiler the first time the launcher
-creates its private virtualenv. Windows wheelhouses include `plyvel` wheels
-cross-built locally by this builder using `zig`, CMake, LevelDB, and
-`python-build-standalone` headers/import libraries.
+- macOS and Linux use `python3.10` by default.
+- Windows x86_64 uses `py -3.10` by default.
+- Windows ARM64 uses `py -3.11` by default.
+
+If the default command is not on `PATH`, set `PYTHON=/path/to/python`.
+
+`plyvel` does not publish wheels for all targets. The macOS and Linux launchers
+include its source archive. On first use, these targets need a compiler and
+LevelDB development headers. The builder makes Windows `plyvel` wheels with
+`zig`, CMake, LevelDB, and `python-build-standalone` files.
 
 ## Usage
 
-From the repository root:
+From the repository root, run:
 
 ```sh
-cargo run --example cross-compile-electrumx
+just compile-bins compile-electrumx
 ```
 
-Existing archives are skipped on later runs. To rebuild and repackage every
-target:
+The builder uses existing archives on later runs. To rebuild all targets, run:
 
 ```sh
-cargo run --example cross-compile-electrumx -- --force
+cargo run --example compile-electrumx -- --force
 ```
 
 The script hardcodes upstream `spesmilo/electrumx` release tag `1.20.0`. It
@@ -65,7 +60,7 @@ It writes archives and checksums under:
 contrib/bins/compile_electrumx/dist/electrumx-1.20.0/
 ```
 
-Generated files:
+Output files:
 
 ```text
 electrumx-darwin-amd64.tar.gz
@@ -89,20 +84,18 @@ Windows archives contain exactly one file:
 electrumx.exe
 ```
 
-Upload those files to the web server location that future download code will
-use for `ElectrumX` downloads.
+Upload the archives to `indexer/electrumx/electrumx-1.20.0/` on both mirrors.
+Copy the checksum file to `sha256/indexer/electrumx/` in this repository.
 
 ## Notes
 
-ElectrumX is a Python project, so the published binary is a compiled launcher
-with an embedded wheelhouse rather than the upstream Python application itself.
-This builder mirrors the `romanz/electrs` cross-building flow: pinned upstream
-checkout, single-file target artifacts, local `tmp/` build cache, Cargo for
-macOS, Cross for Linux, cargo-xwin for Windows, `dist/` output, `--force`,
-archive verification, and `SHA256SUMS`.
+ElectrumX is a Python project. Each archive contains a Rust launcher with
+Python wheels. The builder keeps source files and build files in `tmp/`.
+It uses Cargo for macOS, `cross` for Linux, and `cargo-xwin` for Windows.
+It checks each archive and writes a `SHA256SUMS` file.
 
-The upstream project declares Unix support. Windows x86_64 and aarch64 bundles
-are supported by cross-building the native `plyvel` extension locally, because
-`plyvel` does not publish compatible Windows wheels on PyPI. Windows x86_64
-uses CPython 3.10; Windows ARM64 uses CPython 3.11 because the standalone
-CPython provider does not publish Windows ARM64 CPython 3.10 archives.
+The upstream project declares Unix support. This builder also makes Windows
+launchers. It builds the native `plyvel` extension for Windows because PyPI
+does not have compatible wheels. Windows x86_64 uses CPython 3.10. Windows
+ARM64 uses CPython 3.11 because the standalone CPython provider does not
+publish CPython 3.10 for that target.

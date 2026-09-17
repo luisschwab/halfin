@@ -8,6 +8,8 @@ use core::error;
 use core::fmt;
 use core::time::Duration;
 
+use electrum_client::Error as ElectrumError;
+
 /// Errors produced by [`Indexer`](crate::indexer::Indexer) configuration, startup, and operations.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -44,7 +46,7 @@ pub enum IndexerError {
         /// Human-readable [`Indexer`](crate::indexer::Indexer) name.
         indexer: &'static str,
         /// Electrum client error that made the [`Indexer`](crate::indexer::Indexer) unresponsive.
-        source: electrum_client::Error,
+        source: ElectrumError,
     },
 
     /// An [`Indexer`](crate::indexer::Indexer) did not index the expected data before the timeout.

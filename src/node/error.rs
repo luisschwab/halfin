@@ -10,16 +10,20 @@ use core::fmt;
 use core::net::SocketAddr;
 use core::time::Duration;
 
+use corepc_client::client_sync::Error as RpcError;
+#[cfg(feature = "florestad")]
+use electrum_client::Error as ElectrumError;
+
 /// Client errors that can make a [`Node`](crate::node::Node) unresponsive.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum NodeClientError {
     /// A JSON-RPC client error.
-    JsonRpc(corepc_client::client_sync::Error),
+    JsonRpc(RpcError),
 
     /// An Electrum client error.
     #[cfg(feature = "florestad")]
-    Electrum(electrum_client::Error),
+    Electrum(ElectrumError),
 }
 
 impl fmt::Display for NodeClientError {
@@ -34,15 +38,15 @@ impl fmt::Display for NodeClientError {
 
 impl error::Error for NodeClientError {}
 
-impl From<corepc_client::client_sync::Error> for NodeClientError {
-    fn from(err: corepc_client::client_sync::Error) -> Self {
+impl From<RpcError> for NodeClientError {
+    fn from(err: RpcError) -> Self {
         Self::JsonRpc(err)
     }
 }
 
 #[cfg(feature = "florestad")]
-impl From<electrum_client::Error> for NodeClientError {
-    fn from(err: electrum_client::Error) -> Self {
+impl From<ElectrumError> for NodeClientError {
+    fn from(err: ElectrumError) -> Self {
         Self::Electrum(err)
     }
 }
@@ -52,10 +56,10 @@ impl From<electrum_client::Error> for NodeClientError {
 #[non_exhaustive]
 pub enum NodeError {
     /// A JSON-RPC request did not stop a [`Node`](crate::node::Node).
-    FailedToStop(corepc_client::client_sync::Error),
+    FailedToStop(RpcError),
 
     /// A JSON-RPC operation failed.
-    JsonRpc(corepc_client::client_sync::Error),
+    JsonRpc(RpcError),
 
     /// A peer connection did not complete before the timeout.
     PeerConnectionTimeout((SocketAddr, SocketAddr)),

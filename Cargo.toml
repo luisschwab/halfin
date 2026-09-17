@@ -17,6 +17,7 @@ default = []
 bitcoind = []
 btcd = []
 florestad = ["dep:electrum-client", "dep:miniscript"]
+libbitcoin = ["dep:electrum-client", "dep:esplora-client"]
 utreexod = []
 # Indexers
 blockstream_electrs = ["dep:electrum-client", "dep:esplora-client"]
@@ -26,13 +27,19 @@ mempool_electrs = ["dep:electrum-client", "dep:esplora-client"]
 romanz_electrs = ["dep:electrum-client"]
 
 [[example]]
-name = "cross-compile-blockstream-electrs"
+name = "compile-libbitcoin"
+path = "contrib/bins/compile_libbitcoin/build.rs"
+test = false
+bench = false
+
+[[example]]
+name = "compile-blockstream-electrs"
 path = "contrib/bins/compile_blockstream_electrs/build.rs"
 test = false
 bench = false
 
 [[example]]
-name = "cross-compile-electrumx"
+name = "compile-electrumx"
 path = "contrib/bins/compile_electrumx/build.rs"
 test = false
 bench = false
@@ -44,13 +51,13 @@ test = false
 bench = false
 
 [[example]]
-name = "cross-compile-mempool-electrs"
+name = "compile-mempool-electrs"
 path = "contrib/bins/compile_mempool_electrs/build.rs"
 test = false
 bench = false
 
 [[example]]
-name = "cross-compile-romanz-electrs"
+name = "compile-romanz-electrs"
 path = "contrib/bins/compile_romanz_electrs/build.rs"
 test = false
 bench = false
@@ -78,6 +85,7 @@ zip = { version = "7", default-features = false, features = ["bzip2", "deflate"]
 rustls = { version = "0.23.45", default-features = false } # blame: bitreq@0.3.7 -> rustls@0.23.38 (RUSTSEC-2026-0285)
 
 [dev-dependencies]
+bitcoin_hashes = { version = "1.1.0", features = ["hex"] }
 tracing-subscriber = { version = "=0.3.23", features = ["fmt"] }
 xshell = { version = "=0.3.0-pre.2" }
 # Transitive dependency pins:
@@ -112,10 +120,13 @@ zizmor = "1.30.1"
 # unconditionally and there are no mutually exclusive
 # features, so we may skip redundant test runs
 exclude_features = [
+    # Nodes
     "bitcoind",
     "btcd",
     "florestad",
+    "libbitcoin",
     "utreexod",
+    # Indexers
     "blockstream_electrs",
     "electrumx",
     "frigate",

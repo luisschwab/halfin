@@ -67,6 +67,7 @@ jobs:
                         'src/node/bitcoind/': 'M-bitcoind',
                         'src/node/btcd/': 'M-btcd',
                         'src/node/florestad/': 'M-florestad',
+                        'src/node/libbitcoind/': 'M-libbitcoind',
                         'src/node/utreexod/': 'M-utreexod',
 
                         'src/indexer/blockstream_electrsd/': 'M-blockstream-electrsd',

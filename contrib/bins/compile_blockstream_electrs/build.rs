@@ -5,7 +5,7 @@
 //! Run this Cargo example from the repository root:
 //!
 //! ```text
-//! cargo run --example cross-compile-blockstream-electrs
+//! cargo run --example compile-blockstream-electrs
 //! ```
 //!
 //! The program gets the pinned Blockstream/electrs commit and builds each supported target.
@@ -213,7 +213,7 @@ fn parse_args() -> Result<bool, Box<dyn std::error::Error>> {
             "--force" => force = true,
             "-h" | "--help" => {
                 println!(
-                    "usage: cargo run --example cross-compile-blockstream-electrs -- [--force]\n\n  --force    rebuild and repackage targets even when artifacts already exist"
+                    "usage: cargo run --example compile-blockstream-electrs -- [--force]\n\n  --force    rebuild and repackage targets even when artifacts already exist"
                 );
                 std::process::exit(0);
             }

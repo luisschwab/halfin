@@ -33,6 +33,7 @@ use electrum_client::ElectrumApi;
 use electrum_client::Error as ElectrumError;
 use electrum_client::HeaderNotification;
 #[cfg(feature = "bitcoind")]
+use serde_json::Value;
 use tracing::Level;
 
 #[cfg(feature = "bitcoind")]
@@ -82,7 +83,7 @@ use crate::node::utreexod::UtreexoD;
 /// Start an Electrum server that queues an invalid raw header during two ping calls.
 #[cfg(feature = "bitcoind")]
 fn electrum_server_with_invalid_queued_header(
-    initial_header: serde_json::Value,
+    initial_header: Value,
     notification_height: u32,
 ) -> (core::net::SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -567,8 +568,8 @@ fn blockstream_electrsd_accepts_bitcoind() {
     });
     let (socket, server) = scripted_electrum_socket(vec![
         Some(Ok(older_notification)),
-        Some(Ok(serde_json::Value::Null)),
-        Some(Ok(serde_json::Value::Null)),
+        Some(Ok(Value::Null)),
+        Some(Ok(Value::Null)),
     ]);
     blockstream_electrs.client =
         electrum_client::raw_client::RawClient::new(socket, Some(Duration::from_secs(1)), None)

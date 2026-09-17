@@ -10,6 +10,7 @@ use corepc_client::bitcoin::Address;
 use corepc_client::bitcoin::Network;
 use corepc_client::client_sync::Auth;
 use corepc_client::client_sync::v17::Client;
+use serde_json::Value;
 
 use super::BtcD;
 use super::BtcDConf;
@@ -101,10 +102,10 @@ fn btcd_rejects_malformed_rpc_results() {
     let (socket, server) = scripted_json_rpc_server(vec![
         serde_json::json!(0),
         serde_json::json!("not-a-block-hash"),
-        serde_json::Value::Null,
+        Value::Null,
         serde_json::json!([0]),
         serde_json::json!(["not-a-block-hash"]),
-        serde_json::Value::Null,
+        Value::Null,
     ]);
     btcd.client = Client::new_with_auth(
         &format!("http://{socket}"),

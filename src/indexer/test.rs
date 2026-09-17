@@ -38,17 +38,14 @@ use corepc_client::bitcoin::Txid;
 use electrum_client::ElectrumApi;
 use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
+use serde_json::Value;
 use tempfile::TempDir;
 
 #[cfg(feature = "bitcoind")]
 use super::Indexer;
 use super::ensure_backend_ready;
 use super::read_backend_cookie;
-#[cfg(all(
-    feature = "bitcoind",
-    feature = "romanz_electrs",
-    feature = "electrumx"
-))]
+#[cfg(feature = "bitcoind")]
 use crate::CONFIRMATION_BLOCK_COUNT;
 use crate::Error;
 #[cfg(feature = "bitcoind")]
@@ -120,9 +117,7 @@ pub(super) fn scripted_electrum_reader(stream: &TcpStream) -> BufReader<TcpStrea
 }
 
 /// Read and parse one request, or stop when the client closes or becomes idle.
-pub(super) fn read_scripted_electrum_request(
-    reader: &mut impl BufRead,
-) -> Option<serde_json::Value> {
+pub(super) fn read_scripted_electrum_request(reader: &mut impl BufRead) -> Option<Value> {
     let mut request = String::new();
     match reader.read_line(&mut request) {
         Ok(0) => None,
@@ -147,7 +142,7 @@ impl AsRef<NodeArgs> for FakeNodeConfig {
 pub(super) struct FakeNode {
     directory: TempDir,
     config: FakeNodeConfig,
-    blockchain_info: serde_json::Value,
+    blockchain_info: Value,
     generated_blocks: Cell<u32>,
     fail_blockchain_info: bool,
     fail_generation: bool,
@@ -155,7 +150,7 @@ pub(super) struct FakeNode {
 
 impl FakeNode {
     /// Create a backing node with the specified network and blockchain information.
-    pub(super) fn new(network: Network, blockchain_info: serde_json::Value) -> Self {
+    pub(super) fn new(network: Network, blockchain_info: Value) -> Self {
         Self {
             directory: tempfile::tempdir().unwrap(),
             config: FakeNodeConfig(NodeArgs {
@@ -258,7 +253,7 @@ impl Node for FakeNode {
         unreachable!("indexer preparation tests do not request block hashes")
     }
 
-    fn call(&self, method: &str, _args: &[serde_json::Value]) -> Result<serde_json::Value, Error> {
+    fn call(&self, method: &str, _args: &[Value]) -> Result<Value, Error> {
         assert_eq!(method, "getblockchaininfo");
         if self.fail_blockchain_info {
             return Err(Error::UnexpectedResponse(
@@ -299,8 +294,8 @@ pub(super) fn test_program(body: &str, executable: bool) -> (TempDir, PathBuf) {
 }
 
 /// Start a local Electrum server with a version handshake and scripted responses.
-pub(super) fn scripted_electrum_socket(
-    responses: Vec<Option<Result<serde_json::Value, serde_json::Value>>>,
+pub(crate) fn scripted_electrum_socket(
+    responses: Vec<Option<Result<Value, Value>>>,
 ) -> (core::net::SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
     let socket = listener.local_addr().unwrap();
@@ -337,7 +332,7 @@ pub(super) fn scripted_electrum_socket(
 /// Start a local Electrum server that stalls after its initial response until released.
 #[cfg(feature = "bitcoind")]
 pub(super) fn stalled_electrum_socket(
-    initial_response: serde_json::Value,
+    initial_response: Value,
 ) -> (
     core::net::SocketAddr,
     std::sync::mpsc::Sender<()>,
@@ -382,7 +377,7 @@ pub(super) fn stalled_electrum_socket(
 
 /// Connect a raw Electrum client to a one-request scripted server.
 pub(super) fn scripted_electrum_client(
-    response: Option<Result<serde_json::Value, serde_json::Value>>,
+    response: Option<Result<Value, Value>>,
 ) -> (RawClient<ElectrumPlaintextStream>, JoinHandle<()>) {
     let (socket, handle) = scripted_electrum_socket(vec![response]);
     let client = RawClient::new(socket, Some(Duration::from_secs(1)), None).unwrap();
@@ -392,7 +387,7 @@ pub(super) fn scripted_electrum_client(
 /// Verify unused scripted responses do not leave the server blocked on a read.
 #[test]
 fn scripted_electrum_server_stops_after_read_timeout() {
-    let (socket, server) = scripted_electrum_socket(vec![Some(Ok(serde_json::Value::Null))]);
+    let (socket, server) = scripted_electrum_socket(vec![Some(Ok(Value::Null))]);
     let _client = RawClient::new(socket, Some(Duration::from_secs(1)), None).unwrap();
 
     server.join().unwrap();

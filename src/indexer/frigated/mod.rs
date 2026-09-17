@@ -1,10 +1,31 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Start Frigate over a Bitcoin Core [`Node`] and another Electrum [`Indexer`].
+//! Start and control a Frigate [`Indexer`] process.
 //!
-//! Frigate keeps its own database in a temporary directory by default. Set
-//! [`FrigateDConf::staticdir`] to preserve it between runs. Frigate requires an unpruned,
-//! transaction-indexed Bitcoin Core node and an Electrum backend other than Frigate.
+//! [`FrigateD`] uses a Bitcoin Core [`Node`] and another Electrum [`Indexer`].
+//! Frigate needs an unpruned Bitcoin Core node with a transaction index.
+//! It also needs an Electrum backend other than Frigate.
+//!
+//! # Start a [`FrigateD`] process
+//!
+//! ```rust,no_run
+//! use halfin::indexer::Indexer;
+//! use halfin::indexer::frigated::FrigateD;
+//! use halfin::indexer::frigated::FrigateDConf;
+//! use halfin::node::Node;
+//!
+//! fn start_frigate<N: Node, I: Indexer>(node: &N, backend: &I) {
+//!     // Start with the default configuration.
+//!     let default_indexer = FrigateD::new(node, backend).unwrap();
+//!
+//!     // Start with a custom configuration.
+//!     let conf = FrigateDConf::default();
+//!     let custom_indexer = FrigateD::new_with_conf(node, backend, &conf).unwrap();
+//! }
+//! ```
+//!
+//! [`Indexer`]: crate::indexer::Indexer
+//! [`Node`]: crate::node::Node
 
 use core::net::SocketAddr;
 use core::net::SocketAddrV4;
@@ -50,6 +71,9 @@ use crate::node::NodeArgs;
 use crate::node::PruneMode;
 use crate::pipe_to_tracing;
 
+#[cfg(test)]
+mod test;
+
 /// Bundled Frigate release metadata.
 mod versions;
 
@@ -72,11 +96,12 @@ pub fn get_frigate_path() -> Result<PathBuf, Error> {
 /// Configuration for a Frigate instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrigateDConf {
-    /// Additional Frigate CLI arguments. Owned directory and network options are rejected.
+    /// Additional Frigate CLI arguments. The wrapper rejects directory and network options
+    /// that it sets itself.
     pub raw_args: Vec<String>,
     /// Root for a new temporary directory.
     pub tmpdir: Option<PathBuf>,
-    /// Persistent data directory. This is not removed on drop.
+    /// Data directory that remains after the process stops. This is not removed on drop.
     pub staticdir: Option<PathBuf>,
     /// Maximum number of attempts to start Frigate with a fresh Electrum port.
     pub max_retries: u8,
@@ -277,7 +302,7 @@ impl<'a, I: Indexer> FrigateD<'a, I> {
     /// Stop Frigate and return its exit status.
     ///
     /// # Errors
-    /// Returns an I/O error if the child cannot be waited on.
+    /// Returns an I/O error if the wrapper cannot wait for the child process.
     pub fn stop(&mut self) -> Result<ExitStatus, Error> {
         let _ = self.process.kill();
         self.process.wait().map_err(Error::Io)
@@ -324,7 +349,7 @@ impl<'a, I: Indexer> FrigateD<'a, I> {
     /// Wait until Frigate reports a specific block at a specific height.
     ///
     /// # Errors
-    /// Returns an error if Frigate cannot be queried or the timeout expires.
+    /// Returns an error if a Frigate request fails or the time limit expires.
     pub fn wait_until_tip(
         &self,
         height: u32,
@@ -354,7 +379,7 @@ impl<'a, I: Indexer> FrigateD<'a, I> {
     /// Wait until Frigate reports an unconfirmed transaction in a script's history.
     ///
     /// # Errors
-    /// Returns an error if Frigate cannot be queried or the timeout expires.
+    /// Returns an error if a Frigate request fails or the time limit expires.
     pub fn wait_until_mempool_tx(
         &self,
         spk: &Script,
@@ -463,6 +488,3 @@ fn wait_for_client(
     debug!("Frigate did not become responsive at {socket}");
     Err(Error::ClientSetupTimeout)
 }
-
-#[cfg(test)]
-mod test;
