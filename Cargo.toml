@@ -95,7 +95,7 @@ lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber@0.3.23
 
 [package.metadata.rbmt]
 version = "0.5.3"
-toolchains = { stable = "1.98.1", nightly = "nightly-2026-09-17" }
+toolchains = { stable = "1.99.0", nightly = "nightly-2026-10-01" }
 lint = { allowed_duplicates = [
     "base64",
     "bitflags",
