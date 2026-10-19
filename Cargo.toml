@@ -81,7 +81,7 @@ bitcoin_hashes = { version = "1.1.0", features = ["hex"], optional = true }
 flate2 = { version = "1.1.1", optional = true }
 bitreq = { version = "0.3.7", features = ["https"], optional = true }
 tar = { version = "0.4.46", optional = true }
-zip = { version = "7", default-features = false, features = ["bzip2", "deflate"], optional = true }
+zip = { version = "8", default-features = false, features = ["bzip2", "deflate"], optional = true }
 # Transitive dependency pins:
 [target.'cfg(false)'.build-dependencies]
 rustls = { version = "0.23.45", default-features = false } # blame: bitreq@0.3.7 -> rustls@0.23.38 (RUSTSEC-2026-0285)
