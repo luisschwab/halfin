@@ -27,20 +27,20 @@ implementations in the table below and gives each process its own data directory
 
 ## Supported Implementations
 
-| Kind         | Implementation          | Version   | Feature Flag          | Notes                                 |
-|--------------|-------------------------|-----------|-----------------------|---------------------------------------|
-| Node         | [`Bitcoin Core`]        | `v31.0`   | `bitcoind`            |                                       |
-| Node         | [`btcd`]                | `v0.26.2` | `btcd`                |                                       |
-| Node         | [`Floresta`]            | `v0.9.1`  | `florestad`           |                                       |
-| Node         | [`utreexod`]            | `v0.6.0`  | `utreexod`            |                                       |
-|              |                         |           |                       |                                       |
-| Indexer      | [`Blockstream/electrs`] | `4b1a018` | `blockstream_electrs` | Unsupported on Windows                |
-| Indexer      | [`ElectrumX`]           | `v1.20.0` | `electrumx`           | Needs Python 3.10                     |
-| Indexer      | [`Frigate`]             | `v1.5.3`  | `frigate`             | Unsupported on Windows                |
-| Indexer      | [`mempool/electrs`]     | `v3.3.0`  | `mempool_electrs`     | Unsupported on Windows                |
-| Indexer      | [`romanz/electrs`]      | `v0.12.0` | `romanz_electrs`      |                                       |
-|              |                         |           |                       |                                       |
-| Node/Indexer | [`libbitcoin-server`]   | `3620f1d` | `libbitcoin`          | Unsupported on Windows / Mainnet-only |
+| Kind           | Implementation          | Version        | Feature Flag          | Notes                                 |
+|----------------|-------------------------|----------------|-----------------------|---------------------------------------|
+| Node           | [`Bitcoin Core`]        | `v31.0`        | `bitcoind`            |                                       |
+| Node           | [`btcd`]                | `v0.26.2`      | `btcd`                |                                       |
+| Node           | [`Floresta`]            | `v0.9.1`       | `florestad`           |                                       |
+| Node           | [`utreexod`]            | `v0.6.0`       | `utreexod`            |                                       |
+|                |                         |                |                       |                                       |
+| Indexer        | [`Blockstream/electrs`] | `4b1a018`      | `blockstream_electrs` | Unsupported on Windows                |
+| Indexer        | [`ElectrumX`]           | `v1.20.0`      | `electrumx`           | Needs Python 3.10                     |
+| Indexer        | [`Frigate`]             | `v1.5.3`       | `frigate`             | Unsupported on Windows                |
+| Indexer        | [`mempool/electrs`]     | `v3.3.0`       | `mempool_electrs`     | Unsupported on Windows                |
+| Indexer        | [`romanz/electrs`]      | `v0.12.0`      | `romanz_electrs`      |                                       |
+|                |                         |                |                       |                                       |
+| Node/Indexer   | [`libbitcoin-server`]   | `3620f1d`      | `libbitcoin`          | Unsupported on Windows / Mainnet-only |
 
 [`Bitcoin Core`]: <https://github.com/bitcoin/bitcoin>
 [`bitcoind`]: <https://github.com/bitcoin/bitcoin>
@@ -57,6 +57,10 @@ implementations in the table below and gives each process its own data directory
 
 When you enable a feature, [`build.rs`](./build.rs) downloads the required
 executable during compilation. It checks the archive against a SHA-256 checksum.
+
+Windows ZIP downloads require a ZIP-capable `tar` in `PATH`, such as the one
+included with Windows. GNU tar does not support ZIP archives. Unix `.tar.gz`
+downloads are extracted directly by the build script without external tools.
 
 ### BitcoinD
 
