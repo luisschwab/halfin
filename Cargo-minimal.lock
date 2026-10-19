@@ -172,10 +172,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b65c2e1ab98050c93cc9ada070d5070e014329c65196d03f6f8f1f75c2666f37"
 dependencies = [
  "base64 0.22.1",
- "rustls",
- "rustls-webpki",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "bitreq"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a95e202ed3a38fd87f384e6ca46ecbcba9779d3b0fae69006431f7c9e25b3f11"
+dependencies = [
+ "rustls",
+ "rustls-webpki",
  "webpki-roots",
 ]
 
@@ -286,7 +294,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "647f9c89c653d69cce478202b7377c03737e33fc6bc5ec044187bf83e5597ea2"
 dependencies = [
  "bitcoin",
- "bitreq",
+ "bitreq 0.3.7",
  "hex-conservative 0.2.2",
  "serde",
  "serde_json",
@@ -337,7 +345,7 @@ name = "halfin"
 version = "0.7.0"
 dependencies = [
  "bitcoin_hashes 1.1.0",
- "bitreq",
+ "bitreq 0.4.0",
  "corepc-client",
  "electrum-client",
  "esplora-client",
@@ -407,7 +415,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12f6b9ae59887c395c907855e24b48cf61593a44a2d6757b1ada83d5a2d6b85a"
 dependencies = [
  "base64 0.22.1",
- "bitreq",
+ "bitreq 0.3.7",
  "serde",
  "serde_json",
 ]
