@@ -29,9 +29,10 @@ mod binary {
     use std::io;
     use std::io::BufRead;
     use std::io::BufReader;
-    use std::io::Cursor;
     use std::path::Path;
     pub(crate) use std::path::PathBuf;
+    use std::process::Command;
+    use std::process::Stdio;
     use std::str::FromStr;
     use std::time::Duration;
 
@@ -316,7 +317,7 @@ mod binary {
                 );
 
                 let response = Request::new(Method::Get, download_url.as_str())
-                    .with_timeout(BIN_DOWNLOAD_TIMEOUT.as_secs())
+                    .with_timeout(BIN_DOWNLOAD_TIMEOUT)
                     .send();
 
                 match response {
@@ -443,26 +444,78 @@ mod binary {
             panic!("Failed to find `{}` in downloaded archive", self.name);
         }
 
-        /// Extract a Windows executable from a `.zip` archive.
+        /// Extract a Windows executable using a ZIP-capable system `tar`.
         fn extract_zip(&self, archive_bytes: &[u8], destination_directory: &Path) {
-            let cursor = Cursor::new(archive_bytes);
-            let mut archive = zip::ZipArchive::new(cursor).unwrap();
-            let executable_name = format!("{}.exe", self.name);
+            let archive_path = destination_directory.join(".download.zip");
+            fs::write(&archive_path, archive_bytes).unwrap();
 
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i).unwrap();
-                if file
-                    .enclosed_name()
-                    .is_some_and(|p| p.file_name() == Some(OsStr::new(&executable_name)))
-                {
-                    let destination_path = destination_directory.join(&executable_name);
-                    let mut output_file = self.create_binary_file(&destination_path);
-                    io::copy(&mut file, &mut output_file).unwrap();
-                    return;
-                }
+            let result = self.extract_zip_file(&archive_path, destination_directory);
+            fs::remove_file(&archive_path).expect("Failed to remove temporary ZIP archive");
+
+            result.unwrap();
+        }
+
+        /// Find the executable in a ZIP file and stream it into the flattened cache path.
+        fn extract_zip_file(
+            &self,
+            archive_path: &Path,
+            destination_directory: &Path,
+        ) -> io::Result<()> {
+            let listing = Command::new("tar")
+                .arg("-tf")
+                .arg(archive_path)
+                .output()
+                .map_err(|e| {
+                    io::Error::other(format!(
+                        "Failed to run tar; ensure a ZIP-capable tar is in PATH: {e}"
+                    ))
+                })?;
+            if !listing.status.success() {
+                return Err(io::Error::other(format!(
+                    "tar failed to list {}: {}",
+                    archive_path.display(),
+                    String::from_utf8_lossy(&listing.stderr)
+                )));
             }
-
-            panic!("Failed to find `{executable_name}` in downloaded archive");
+            let members = String::from_utf8(listing.stdout).map_err(io::Error::other)?;
+            let executable_name = format!("{}.exe", self.name);
+            let mut matches = members.lines().filter(|member| {
+                !member.ends_with('/')
+                    && Path::new(member).file_name() == Some(OsStr::new(&executable_name))
+            });
+            let member = matches.next().ok_or_else(|| {
+                io::Error::other(format!(
+                    "Failed to find `{executable_name}` in downloaded archive"
+                ))
+            })?;
+            if matches.next().is_some() {
+                return Err(io::Error::other(format!(
+                    "Multiple `{executable_name}` entries in downloaded archive"
+                )));
+            }
+            let destination_path = destination_directory.join(&executable_name);
+            let output_file = File::create(&destination_path)?;
+            let extraction = Command::new("tar")
+                .arg("-xOf")
+                .arg(archive_path)
+                .arg("--")
+                .arg(member)
+                .stdout(Stdio::from(output_file))
+                .output()
+                .map_err(|e| {
+                    io::Error::other(format!(
+                        "Failed to run tar; ensure a ZIP-capable tar is in PATH: {e}"
+                    ))
+                })?;
+            if !extraction.status.success() {
+                fs::remove_file(&destination_path)?;
+                return Err(io::Error::other(format!(
+                    "tar failed to extract `{member}` from {}: {}",
+                    archive_path.display(),
+                    String::from_utf8_lossy(&extraction.stderr)
+                )));
+            }
+            Ok(())
         }
 
         /// Create the destination executable file.
@@ -482,8 +535,6 @@ mod binary {
         /// Sign macOS aarch64 binaries ad hoc if they are not already accepted by `codesign -v`.
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         fn codesign_on_macos_aarch64(&self, destination_path: &Path) {
-            use std::process::Command;
-
             let signing_status = Command::new("codesign")
                 .arg("-v")
                 .arg(destination_path)
