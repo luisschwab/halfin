@@ -25,12 +25,13 @@ _default:
 [group("Quality")]
 audit:
     @echo "Auditing Cargo.lock"
+    cargo generate-lockfile
     cargo audit --file Cargo.lock
-    @echo "\nAuditing Cargo-maximum.lock"
+    @echo "Auditing Cargo-maximum.lock"
     cargo audit --file Cargo-maximum.lock
-    @echo "\nAuditing Cargo-recent.lock"
+    @echo "Auditing Cargo-recent.lock"
     cargo audit --file Cargo-recent.lock
-    @echo "\nAuditing Cargo-minimal.lock"
+    @echo "Auditing Cargo-minimal.lock"
     cargo audit --file Cargo-minimal.lock
 
 [doc: "Assert Commit Bisectability"]
@@ -119,13 +120,6 @@ test features="":
         "cargo rbmt test --toolchain stable --lockfile recent" \
     } else { \
         "cargo rbmt run --toolchain stable --lockfile recent -- test" + \
-            " --no-default-features --features " + quote(features) \
-    } }}
-    @echo "Test: toolchain=stable lockfile=minimal"
-    {{ if features == "" { \
-        "cargo rbmt test --toolchain stable --lockfile minimal" \
-    } else { \
-        "cargo rbmt run --toolchain stable --lockfile minimal -- test" + \
             " --no-default-features --features " + quote(features) \
     } }}
     @echo "Test: toolchain=msrv lockfile=minimal"

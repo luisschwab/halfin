@@ -72,9 +72,6 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - name: Stable Toolchain + Minimal Lockfile
-                      toolchain: stable
-                      lockfile: minimal
                     - name: Stable Toolchain + Recent Lockfile
                       toolchain: stable
                       lockfile: recent
