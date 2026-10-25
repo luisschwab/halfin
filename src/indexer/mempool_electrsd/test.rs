@@ -18,16 +18,16 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 #[cfg(feature = "bitcoind")]
-use corepc_client::bitcoin::Amount;
+use corepc_regtest_client::bitcoin::Amount;
 #[cfg(feature = "bitcoind")]
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
-use corepc_client::bitcoin::ScriptBuf;
-use corepc_client::bitcoin::Txid;
-use corepc_client::bitcoin::consensus::serialize;
-use corepc_client::bitcoin::constants::genesis_block;
-use corepc_client::bitcoin::hashes::Hash;
-use corepc_client::bitcoin::hex::DisplayHex;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::ScriptBuf;
+use corepc_regtest_client::bitcoin::Txid;
+use corepc_regtest_client::bitcoin::consensus::serialize;
+use corepc_regtest_client::bitcoin::constants::genesis_block;
+use corepc_regtest_client::bitcoin::hashes::Hash;
+use corepc_regtest_client::bitcoin::hex::DisplayHex;
 #[cfg(feature = "bitcoind")]
 use electrum_client::ElectrumApi;
 use electrum_client::Error as ElectrumError;

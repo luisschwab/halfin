@@ -57,8 +57,8 @@ use std::thread::sleep;
 #[cfg(any(feature = "bitcoind", feature = "btcd", feature = "utreexod"))]
 use std::time::Instant;
 
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
 use serde_json::Value;
 #[cfg(all(
     unix,

@@ -68,7 +68,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-corepc-client = { version = "0.16", features = ["client-sync"] }
+corepc-regtest-client = { version = "0.18" }
 electrum-client = { version = "0.25", default-features = false, optional = true }
 esplora-client = { version = "0.13", default-features = false, features = ["blocking"], optional = true }
 miniscript = { version = "13", default-features = false, features = ["std"], optional = true }
@@ -79,11 +79,11 @@ tracing = { version = "0.1.5", default-features = false, features = ["std"], opt
 [build-dependencies]
 bitcoin_hashes = { version = "1.1.0", features = ["hex"], optional = true }
 flate2 = { version = "1.1.1", optional = true }
-bitreq = { version = "0.4.0", features = ["https"], optional = true }
+bitreq = { version = "0.4.3", features = ["https"], optional = true }
 tar = { version = "0.4.46", optional = true }
 # Transitive dependency pins:
 [target.'cfg(false)'.build-dependencies]
-rustls = { version = "0.23.46", default-features = false } # blame: bitreq@0.4.0 -> rustls@0.23.45 (RUSTSEC-2026-034{6,7,8,9})
+ring = { version = "0.17.12", default-features = false } # blame: bitreq@0.4.3 -> rustls@0.23.46 -> ring@0.17.0 (RUSTSEC-2025-0009)
 
 [dev-dependencies]
 bitcoin_hashes = { version = "1.1.0", features = ["hex"] }
@@ -94,10 +94,11 @@ lazy_static = { version = "=1.5.0" } # blame: tracing-subsbcriber@0.3.23
 
 [package.metadata.rbmt]
 version = "0.5.3"
-toolchains = { stable = "1.99.0", nightly = "nightly-2026-10-01" }
+toolchains = { stable = "1.99.1", nightly = "nightly-2026-10-25" }
 lint = { allowed_duplicates = [
     "base64",
     "bitflags",
+    "bitreq",
     "hex-conservative",
     "windows-sys",
     "windows-targets",
@@ -113,8 +114,8 @@ lint = { allowed_duplicates = [
 [package.metadata.rbmt.tools]
 cargo-audit = "0.22.2"
 cargo-llvm-cov = "0.9.1"
-cargo-semver-checks = "0.50.0"
-zizmor = "1.30.1"
+cargo-semver-checks = "0.51.0"
+zizmor = "1.31.1"
 
 [package.metadata.rbmt.test]
 # `cargo-rbmt` already runs tests with `--all-features`

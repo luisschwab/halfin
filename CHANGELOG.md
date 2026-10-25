@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+* Replace `corepc-client` with `corepc-regtest-client` and bump it to v0.18
+* Bump `bitreq` to v0.4.3
+
 ## [0.7.0] – 2026-09-17
 
 * Add `LibbitcoinD` at commit `3620f1d`

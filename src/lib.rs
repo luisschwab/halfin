@@ -53,7 +53,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub use corepc_client::bitcoin;
+pub use corepc_regtest_client::bitcoin;
 pub use serde_json;
 use tempfile::TempDir;
 #[cfg(any(halfin_node, halfin_indexer))]

@@ -42,11 +42,11 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
-use corepc_client::bitcoin::Script;
-use corepc_client::bitcoin::Txid;
-use corepc_client::bitcoin::block::Header;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::Script;
+use corepc_regtest_client::bitcoin::Txid;
+use corepc_regtest_client::bitcoin::block::Header;
 use electrum_client::ElectrumApi;
 use electrum_client::Error as ElectrumError;
 use electrum_client::HeaderNotification;

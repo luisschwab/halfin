@@ -7,14 +7,14 @@ use core::time::Duration;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Script;
-use corepc_client::bitcoin::ScriptBuf;
-use corepc_client::bitcoin::Txid;
-use corepc_client::bitcoin::consensus::serialize;
-use corepc_client::bitcoin::constants::genesis_block;
-use corepc_client::bitcoin::hashes::Hash;
-use corepc_client::bitcoin::hex::DisplayHex;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Script;
+use corepc_regtest_client::bitcoin::ScriptBuf;
+use corepc_regtest_client::bitcoin::Txid;
+use corepc_regtest_client::bitcoin::consensus::serialize;
+use corepc_regtest_client::bitcoin::constants::genesis_block;
+use corepc_regtest_client::bitcoin::hashes::Hash;
+use corepc_regtest_client::bitcoin::hex::DisplayHex;
 #[cfg(feature = "bitcoind")]
 use electrum_client::ElectrumApi;
 use electrum_client::raw_client::ElectrumPlaintextStream;
@@ -96,7 +96,7 @@ impl<const IS_FRIGATE: bool> Indexer for StubIndexer<IS_FRIGATE> {
     fn wait_until_mempool_tx(&self, _spk: &Script, _txid: Txid, _timeout: Option<Duration>) -> Result<(), Error> { unreachable!() }
 }
 
-use corepc_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::Network;
 
 use super::toml_string;
 use super::validate_node_args;

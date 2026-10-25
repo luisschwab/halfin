@@ -10,7 +10,7 @@ use core::fmt;
 use core::net::SocketAddr;
 use core::time::Duration;
 
-use corepc_client::client_sync::Error as RpcError;
+use corepc_regtest_client::Error as RpcError;
 #[cfg(feature = "florestad")]
 use electrum_client::Error as ElectrumError;
 
@@ -126,7 +126,7 @@ mod tests {
     use core::net::SocketAddr;
     use core::time::Duration;
 
-    use corepc_client::client_sync::Error as RpcError;
+    use corepc_regtest_client::Error as RpcError;
 
     use super::NodeClientError;
     use super::NodeError;

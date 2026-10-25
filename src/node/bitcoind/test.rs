@@ -8,11 +8,11 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::time::Duration;
 
-use corepc_client::bitcoin::Amount;
-use corepc_client::bitcoin::FeeRate;
-use corepc_client::bitcoin::Network;
-use corepc_client::client_sync::Auth;
-use corepc_client::client_sync::v30::Client;
+use corepc_regtest_client::Auth;
+use corepc_regtest_client::bitcoin::Amount;
+use corepc_regtest_client::bitcoin::FeeRate;
+use corepc_regtest_client::bitcoin::Network;
+use corepc_regtest_client::v30::Client;
 
 use super::BitcoinD;
 use super::BitcoinDConf;
