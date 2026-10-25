@@ -68,7 +68,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-corepc-client = { version = "0.16", features = ["client-sync"] }
+corepc-regtest-client = { version = "0.18" }
 electrum-client = { version = "0.25", default-features = false, optional = true }
 esplora-client = { version = "0.13", default-features = false, features = ["blocking"], optional = true }
 miniscript = { version = "13", default-features = false, features = ["std"], optional = true }
@@ -98,6 +98,7 @@ toolchains = { stable = "1.99.0", nightly = "nightly-2026-10-01" }
 lint = { allowed_duplicates = [
     "base64",
     "bitflags",
+    "bitreq",
     "hex-conservative",
     "windows-sys",
     "windows-targets",

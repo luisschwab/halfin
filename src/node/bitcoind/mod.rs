@@ -46,14 +46,14 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
-use corepc_client::bitcoin::Address;
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Denomination;
-use corepc_client::bitcoin::FeeRate;
-use corepc_client::bitcoin::Network;
-use corepc_client::client_sync::Auth;
-use corepc_client::client_sync::v30::AddNodeCommand;
-use corepc_client::client_sync::v30::Client;
+use corepc_regtest_client::Auth;
+use corepc_regtest_client::bitcoin::Address;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Denomination;
+use corepc_regtest_client::bitcoin::FeeRate;
+use corepc_regtest_client::bitcoin::Network;
+use corepc_regtest_client::v30::AddNodeCommand;
+use corepc_regtest_client::v30::Client;
 use serde_json::Value;
 use tracing::debug;
 
@@ -745,7 +745,8 @@ impl BitcoinD {
         Ok(hashes)
     }
 
-    /// Invalidate `count` [`Block`](corepc_client::bitcoin::Block)s in the [`BitcoinD`] chain.
+    /// Invalidate `count` [`Block`](corepc_regtest_client::bitcoin::Block)s in the [`BitcoinD`]
+    /// chain.
     ///
     /// # Errors
     ///

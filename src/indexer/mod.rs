@@ -33,10 +33,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
-use corepc_client::bitcoin::Script;
-use corepc_client::bitcoin::Txid;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::Script;
+use corepc_regtest_client::bitcoin::Txid;
 use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;
 use serde_json::Value;

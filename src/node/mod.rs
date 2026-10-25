@@ -55,8 +55,8 @@ use std::thread::sleep;
 #[cfg(halfin_node)]
 use std::time::Instant;
 
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
 use serde_json::Value;
 #[cfg(halfin_node)]
 use tracing::debug;

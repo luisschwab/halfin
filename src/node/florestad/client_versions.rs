@@ -3,6 +3,6 @@
 #![allow(unused_imports)]
 
 #[cfg(feature = "florestad")]
-pub(super) use corepc_client::client_sync::v30::*;
+pub(super) use corepc_regtest_client::types::v30 as vtype;
 #[cfg(feature = "florestad")]
-pub(super) use corepc_client::types::v30 as vtype;
+pub(super) use corepc_regtest_client::v30::*;

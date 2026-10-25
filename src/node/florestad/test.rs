@@ -11,7 +11,7 @@ use std::net::TcpListener;
 use std::process::Command;
 use std::thread::JoinHandle;
 
-use corepc_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::Network;
 use electrum_client::ElectrumApi;
 use serde_json::Value;
 

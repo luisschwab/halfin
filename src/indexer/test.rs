@@ -25,15 +25,15 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 #[cfg(feature = "bitcoind")]
-use corepc_client::bitcoin::Amount;
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::Amount;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
 #[cfg(feature = "bitcoind")]
-use corepc_client::bitcoin::Script;
+use corepc_regtest_client::bitcoin::Script;
 #[cfg(feature = "bitcoind")]
-use corepc_client::bitcoin::ScriptBuf;
+use corepc_regtest_client::bitcoin::ScriptBuf;
 #[cfg(feature = "bitcoind")]
-use corepc_client::bitcoin::Txid;
+use corepc_regtest_client::bitcoin::Txid;
 #[cfg(feature = "bitcoind")]
 use electrum_client::ElectrumApi;
 use electrum_client::raw_client::ElectrumPlaintextStream;

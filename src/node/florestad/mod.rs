@@ -37,8 +37,8 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
 use electrum_client::ElectrumApi;
 use electrum_client::raw_client::ElectrumPlaintextStream;
 use electrum_client::raw_client::RawClient;

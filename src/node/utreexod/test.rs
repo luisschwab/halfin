@@ -7,10 +7,10 @@ use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
 
-use corepc_client::bitcoin::Address;
-use corepc_client::bitcoin::Network;
-use corepc_client::client_sync::Auth;
-use corepc_client::client_sync::v17::Client;
+use corepc_regtest_client::Auth;
+use corepc_regtest_client::bitcoin::Address;
+use corepc_regtest_client::bitcoin::Network;
+use corepc_regtest_client::v17::Client;
 use serde_json::Value;
 
 use super::DEFAULT_MINING_ADDRESS;

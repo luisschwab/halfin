@@ -39,13 +39,13 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
 
-use corepc_client::bitcoin::Address;
-use corepc_client::bitcoin::BlockHash;
-use corepc_client::bitcoin::Network;
-use corepc_client::bitcoin::address::NetworkUnchecked;
-use corepc_client::client_sync::Auth;
-use corepc_client::client_sync::v17::AddNodeCommand;
-use corepc_client::client_sync::v17::Client;
+use corepc_regtest_client::Auth;
+use corepc_regtest_client::bitcoin::Address;
+use corepc_regtest_client::bitcoin::BlockHash;
+use corepc_regtest_client::bitcoin::Network;
+use corepc_regtest_client::bitcoin::address::NetworkUnchecked;
+use corepc_regtest_client::v17::AddNodeCommand;
+use corepc_regtest_client::v17::Client;
 use serde_json::Value;
 use tracing::debug;
 
