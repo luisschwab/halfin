@@ -83,7 +83,7 @@ bitreq = { version = "0.4.3", features = ["https"], optional = true }
 tar = { version = "0.4.46", optional = true }
 # Transitive dependency pins:
 [target.'cfg(false)'.build-dependencies]
-rustls = { version = "0.23.46", default-features = false } # blame: bitreq@0.4.0 -> rustls@0.23.45 (RUSTSEC-2026-034{6,7,8,9})
+ring = { version = "0.17.12", default-features = false } # blame: bitreq@0.4.3 -> rustls@0.23.46 -> ring@0.17.0 (RUSTSEC-2025-0009)
 
 [dev-dependencies]
 bitcoin_hashes = { version = "1.1.0", features = ["hex"] }
