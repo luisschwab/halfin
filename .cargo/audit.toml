@@ -1,5 +1,2 @@
 [advisories]
-ignore = [
-    # Cargo-minimal.lock
-    "RUSTSEC-2025-0009", # blame: bitreq@v0.3.7 -> rustls@v0.23.38 -> ring@v0.17.0
-]
+ignore = []

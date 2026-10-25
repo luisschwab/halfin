@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.1] – 2026-10-25
+
 * Replace `corepc-client` with `corepc-regtest-client` and bump it to v0.18
 * Bump `bitreq` to v0.4.3
 
@@ -67,8 +69,9 @@
   Electrum header notifications.
 * Add `ElectrsD` reorg coverage to verify the indexer follows replacement chain tips.
 
-[Unreleased]: https://github.com/luisschwab/halfin/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/luisschwab/halfin/compare/v0.7.1...HEAD
 
+[0.7.1]: https://github.com/luisschwab/halfin/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/luisschwab/halfin/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/luisschwab/halfin/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/luisschwab/halfin/compare/v0.4.0...v0.5.0

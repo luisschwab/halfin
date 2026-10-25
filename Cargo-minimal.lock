@@ -311,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "halfin"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "bitcoin_hashes 1.1.0",
  "bitreq 0.4.3",
