@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+* Bump `bitreq` to v0.4.3
+
 ## [0.7.0] – 2026-09-17
 
 * Add `LibbitcoinD` at commit `3620f1d`
