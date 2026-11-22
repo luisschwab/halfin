@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+* Bump `corepc-regtest-client` to v0.19
 * Bump `bitreq` to v0.4.4
 
 ## [0.7.1] – 2026-10-25

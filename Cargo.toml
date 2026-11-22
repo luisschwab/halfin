@@ -68,7 +68,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-corepc-regtest-client = { version = "0.18" }
+corepc-regtest-client = { version = "0.19" }
 electrum-client = { version = "0.25", default-features = false, optional = true }
 esplora-client = { version = "0.13", default-features = false, features = ["blocking"], optional = true }
 miniscript = { version = "13", default-features = false, features = ["std"], optional = true }

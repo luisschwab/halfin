@@ -171,9 +171,9 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "corepc-regtest-client"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d31c915f51a65d3fb5f07732e385a4a3a33804c449a98041ae62fa354048233"
+checksum = "9402c08ed6ef0a78b435a599c4acf815a76af04a1c8dee54e2921ba91ee166ff"
 dependencies = [
  "bitcoin",
  "corepc-types",
@@ -185,9 +185,9 @@ dependencies = [
 
 [[package]]
 name = "corepc-types"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fa32f494e25aa816dc5adfed14374676765deb0914b8fe8dfb63058866cce86"
+checksum = "62d331cb4009f3cb5032e12f8bcd46c7ee6fd903b7106440d0ed7a1915be7804"
 dependencies = [
  "bitcoin",
  "serde",
