@@ -149,9 +149,9 @@ dependencies = [
 
 [[package]]
 name = "bitreq"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd5a7b68e617647b750d9014ddcc82d009264afb70e0484bc99d9664506840b6"
+checksum = "bac88674befd70484999943a62a9cdd0fc0d83bb68bdd31ed1f54eebc8c8efe3"
 dependencies = [
  "rustls",
  "rustls-webpki",
@@ -184,9 +184,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "corepc-regtest-client"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d31c915f51a65d3fb5f07732e385a4a3a33804c449a98041ae62fa354048233"
+checksum = "9402c08ed6ef0a78b435a599c4acf815a76af04a1c8dee54e2921ba91ee166ff"
 dependencies = [
  "bitcoin",
  "corepc-types",
@@ -198,9 +198,9 @@ dependencies = [
 
 [[package]]
 name = "corepc-types"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fa32f494e25aa816dc5adfed14374676765deb0914b8fe8dfb63058866cce86"
+checksum = "62d331cb4009f3cb5032e12f8bcd46c7ee6fd903b7106440d0ed7a1915be7804"
 dependencies = [
  "bitcoin",
  "serde",
@@ -301,7 +301,7 @@ name = "halfin"
 version = "0.7.1"
 dependencies = [
  "bitcoin_hashes 1.1.0",
- "bitreq 0.4.3",
+ "bitreq 0.4.4",
  "corepc-regtest-client",
  "electrum-client",
  "esplora-client",
@@ -358,12 +358,12 @@ checksum = "d2f3e61cf687687b30c9e6ddf0fc36cf15f035e66d491e6da968fa49ffa9a378"
 
 [[package]]
 name = "jsonrpc"
-version = "0.21.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6802a88c69545937a980fcc973543364aa948d7a7c0f258eb8713a7781248f1c"
+checksum = "6188ee56fd18b84bc34c1e9c03f87ff8167d0e708cd22ab8e6e323cc2148c9a6"
 dependencies = [
  "base64 0.22.1",
- "bitreq 0.4.3",
+ "bitreq 0.4.4",
  "serde",
  "serde_json",
 ]
